@@ -49,7 +49,12 @@ input {
   width: 100%; font: inherit; padding: 12px; border-radius: 10px;
   border: 1px solid var(--cizgi); background: var(--zemin); color: var(--metin);
 }
-input:focus { outline: 2px solid var(--kahve); border-color: transparent; }
+select {
+  width: 100%; font: inherit; padding: 12px; border-radius: 10px; min-width: 0;
+  border: 1px solid var(--cizgi); background: var(--zemin); color: var(--metin);
+}
+select:disabled { opacity: .6; }
+select:focus, input:focus { outline: 2px solid var(--kahve); border-color: transparent; }
 button {
   font: inherit; font-weight: 600; cursor: pointer;
   min-height: 48px; padding: 0 18px; border-radius: 10px; border: 0;
@@ -81,4 +86,14 @@ button:disabled { opacity: .5; }
 }
 .satir:first-of-type { border-top: 0; }
 .satir small { display: block; color: var(--soluk); }
+.dugmeler { display: flex; gap: 6px; flex-shrink: 0; }
+.uyari { color: var(--kirmizi); }
+details { margin-top: 10px; border-top: 1px solid var(--cizgi); padding-top: 10px; }
+summary { cursor: pointer; color: var(--soluk); padding: 6px 0; }
+.tarif-satir {
+  display: grid; grid-template-columns: 1fr 84px 36px auto; gap: 6px; align-items: center;
+  margin-bottom: 8px;
+}
+.tarif-satir input { padding: 12px 8px; }
+.tarif-satir .birim { color: var(--soluk); font-size: 15px; }
 #ust-sag button { min-height: 34px; background: transparent; color: inherit; border: 1px solid currentColor; }
