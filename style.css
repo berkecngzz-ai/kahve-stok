@@ -96,4 +96,28 @@ summary { cursor: pointer; color: var(--soluk); padding: 6px 0; }
 }
 .tarif-satir input { padding: 12px 8px; }
 .tarif-satir .birim { color: var(--soluk); font-size: 15px; }
+.sekmeler.dort { gap: 6px; }
+.sekmeler.dort button { padding: 0 4px; font-size: 15px; }
+.genis { flex: 1; min-width: 0; }
+.izgara { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.izgara button { min-height: 64px; }
+details.giris { border-top: 1px solid var(--cizgi); padding: 10px 0; }
+details.giris summary { list-style: none; cursor: pointer; }
+details.giris summary::-webkit-details-marker { display: none; }
+details.giris small { display: block; color: var(--soluk); }
+details.giris ul { margin: 8px 0; padding-left: 20px; }
+details.giris button { margin-top: 8px; }
+.iptal summary b, .iptal ul, .gecmis-satir.iptal { text-decoration: line-through; opacity: .7; }
+details.gecmis { border-top: 0; margin-top: 2px; padding-top: 0; font-size: 15px; }
+details.gecmis summary { padding: 2px 0; font-size: 14px; }
+.gecmis-satir { padding: 4px 0; border-top: 1px dashed var(--cizgi); }
+.liste-satir {
+  display: grid; grid-template-columns: 1fr 96px 44px; gap: 8px; align-items: center;
+  padding: 6px 0; border-top: 1px solid var(--cizgi);
+}
+.liste-satir label { margin: 0; color: var(--metin); font-size: 16px; }
+.liste-satir .birim, .giris-alt .birim { color: var(--soluk); font-size: 15px; }
+.giris-satir { padding: 10px 0; border-top: 1px solid var(--cizgi); }
+.giris-alt { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.giris-alt input { flex: 1; min-width: 0; padding: 12px 8px; }
 #ust-sag button { min-height: 34px; background: transparent; color: inherit; border: 1px solid currentColor; }
