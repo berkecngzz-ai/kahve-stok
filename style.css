@@ -120,4 +120,34 @@ details.gecmis summary { padding: 2px 0; font-size: 14px; }
 .giris-satir { padding: 10px 0; border-top: 1px solid var(--cizgi); }
 .giris-alt { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .giris-alt input { flex: 1; min-width: 0; padding: 12px 8px; }
+h3 { font-size: 16px; margin: 20px 0 6px; }
+.iki { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+label.dugme {
+  display: flex; align-items: center; justify-content: center; min-height: 48px; margin: 0;
+  border-radius: 10px; font-weight: 600; cursor: pointer; text-align: center; padding: 0 10px;
+}
+label.dugme.ikincil { background: var(--kahve-acik); color: var(--metin); font-size: 15px; }
+.belge-dugmeler { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.belgeler { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.belgeler img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; border: 1px solid var(--cizgi); }
+.belge-kucuk { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.belge-pdf { display: inline-block; padding: 8px 10px; border-radius: 8px; background: var(--kahve-acik);
+  color: var(--metin); font-size: 14px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fatura-satir { padding: 10px; margin: 8px 0; border: 1px solid var(--cizgi); border-left-width: 5px; border-radius: 10px; }
+.fatura-satir.yesil, .fatura-satir.onayli { border-left-color: var(--yesil); }
+.fatura-satir.sari { border-left-color: #e0a100; background: color-mix(in srgb, #e0a100 8%, transparent); }
+.fatura-satir.kirmizi { border-left-color: var(--kirmizi); }
+.satir-ust { display: flex; gap: 6px; }
+.satir-ust select { flex: 1; min-width: 0; }
+.fatura-satir > input { margin-top: 6px; }
+.giris-alt select.oran { width: 96px; flex: none; padding: 12px 6px; }
+.satir-durum small { display: block; color: var(--soluk); margin-top: 6px; }
+.satir-durum .uyari { display: inline-block; margin-top: 6px; font-size: 15px; }
+.onay-kutu { display: block; color: var(--metin); font-size: 15px; margin: 8px 0 0; }
+.onay-kutu input { width: auto; margin-right: 6px; transform: scale(1.3); }
+.ek-toplamlar { border-top: 0; margin-top: 8px; padding-top: 0; }
+.kontrol { margin-top: 14px; font-size: 15px; }
+.kontrol > div { margin: 6px 0 0; }
+.engeller { color: var(--metin); background: var(--kahve-acik); padding: 8px 12px; border-radius: 10px; }
+.engeller ul { margin: 4px 0 0; padding-left: 20px; }
 #ust-sag button { min-height: 34px; background: transparent; color: inherit; border: 1px solid currentColor; }

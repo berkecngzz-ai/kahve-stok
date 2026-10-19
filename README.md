@@ -19,7 +19,17 @@ Kahve dükkanları için stok açığı takibi. Barista gelen malı, satışlar�
   Faturadaki fiyat malzemenin güncel fiyatını günceller (eski tarihli fatura güncel fiyatı ezmez);
   her fiyat değişikliği `fiyat_gecmisi`nde kalır. Geçmiş girişler ay seçilerek görülür.
 
+- **Adım 4 / Parça 1** (`sql/04_fatura_belge_kdv.sql`): KDV'li fatura, fatura belgeleri ve kontroller.
+  Her fatura satırında KDV hariç tutar + KDV oranı ayrı saklanır (KDV dahil tutar hesaplanır); malzeme fiyatı ve
+  fiyat geçmişi de öyle. Eski kayıtlar "KDV dahil, oran bilinmiyor" kalır. Mekan ayarı `kdv_gosterim`
+  (varsayılan dahil) yalnız gösterimi değiştirir. Fotoğraf/PDF Supabase Storage'daki gizli `fatura-belgeleri`
+  kovasında `<mekan_id>/…` klasöründe; her mekan yalnız kendi klasörüne yükler/görür, silme yok.
+  `fatura_kaydet` toplamlar tutmazsa (satırlar − indirim ≠ genel toplam vb., pay 1 TL) kaydetmez.
+  Stoğa eklenmeyen satırlar (deterjan vb.) toplamda sayılır, stoğa girmez. Fiyat (%30) ve miktar (3 kat)
+  uyarıları barista onaylamadan geçilmez.
+
 ## Yerel izolasyon testi
 Postgres 16 ile, boş bir veritabanında tek oturumda sırayla:
 `test/supabase_taklit.sql`, `sql/01_giris_mekan.sql`, `sql/02_malzeme_tarif.sql`, `test/izolasyon_test.sql`,
-`test/malzeme_tarif_test.sql`, `sql/03_girisler.sql`, `test/girisler_test.sql`.
+`test/malzeme_tarif_test.sql`, `sql/03_girisler.sql`, `test/girisler_test.sql`,
+`sql/04_fatura_belge_kdv.sql`, `test/fatura_kdv_test.sql`.
