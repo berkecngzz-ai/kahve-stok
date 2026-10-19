@@ -129,6 +129,8 @@ test('OCR karakter düzeltme', () => {
   assert.equal(ocrDuzelt('ESPRESSO BLEND İKG 5 Adet'), 'ESPRESSO BLEND 1KG 5 Adet');
   assert.equal(ocrDuzelt('İLK SATIR'), 'İLK SATIR');          // kelime başı İ değişmez
   assert.equal(ocrDuzelt('KILO'), 'KILO');
+  assert.equal(ocrDuzelt('ESPRESSO BLEND 1İKG 5 Adet'), 'ESPRESSO BLEND 1KG 5 Adet');   // canlı OCR çıktısı
+  assert.equal(ocrDuzelt('SÜT 11L'), 'SÜT 11L');
 });
 // Gerçek OCR çıktısı (tarayıcıda Tesseract ile okunmuş sentetik fatura): "%1" → "Yi", "(%1)" → "(11)"
 const ocrCiktisi = `ÖRNEK GIDA PAZARLAMA LTD. ŞTİ.

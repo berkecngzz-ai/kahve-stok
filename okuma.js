@@ -141,7 +141,9 @@ const toplamSatiriMi = (s) => TOPLAM_ETIKETLERI.some(([, re]) => re.test(s)) || 
 
 // OCR'ın sık karıştırdığı karakterler: birimden önceki "İ/I/l/|" aslında "1" ("SÜT İL" → "SÜT 1L", "İKG" → "1KG").
 export function ocrDuzelt(s) {
-  return String(s).replace(/(^|\s)[İIl|](?=(?:L|LT|KG|GR|G|ML|CL)(?![A-Za-zÇĞİÖŞÜçğıöşü]))/g, '$11');
+  return String(s)
+    .replace(/(^|\s)[İIl|](?=(?:L|LT|KG|GR|G|ML|CL)(?![A-Za-zÇĞİÖŞÜçğıöşü]))/g, '$11')
+    .replace(/(\d)[İIl|](?=(?:KG|GR|ML|CL|LT)(?![A-Za-zÇĞİÖŞÜçğıöşü]))/g, '$1');   // "1İKG" → "1KG"
 }
 
 // Satırlarda KDV oranı okunamadıysa (OCR "%1"i "Yi" okur), oranları faturanın KDV tutarlarından çıkarır:
