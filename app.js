@@ -1,5 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol } from './okuma.js';
+import { anahtar, siniflandir, carpanBul } from './eslestirme.js';
 
 const app = document.getElementById('app');
 const ustSag = document.getElementById('ust-sag');
@@ -138,15 +140,20 @@ function mekanSecEkrani(user) {
 let aktifSekme = 'giris';
 // Giriş yapan kişinin mekanı: id ve raporlarda KDV gösterimi ('dahil' | 'haric').
 let mekan = { id: null, kdv_gosterim: 'dahil' };
+// Giriş yapan kişi kurulum (servis) hesabı mı?
+let kurulumcu = false;
 
 async function anaEkran(user, uye) {
   const patron = uye.rol === 'patron';
   mekan = { id: uye.mekan_id, kdv_gosterim: uye.mekanlar.kdv_gosterim ?? 'dahil' };
+  if (!patron) return baristaEkrani(user, uye);
   const sekmeler = [['giris', 'Girişler'], ['malzeme', 'Malzeme'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
+  if (kurulumcu) sekmeler.push(['kurulum', 'Kurulum']);
+  if (aktifSekme === 'kurulum' && !kurulumcu) aktifSekme = 'giris';
   app.innerHTML = `
     <h1>${esc(uye.mekanlar.ad)}</h1>
-    <p><span class="rozet">${patron ? 'Patron' : 'Barista'}</span> ${esc(uye.ad)}</p>
-    <div class="sekmeler dort">
+    <p><span class="rozet">Patron</span> ${esc(uye.ad)}</p>
+    <div class="sekmeler ${sekmeler.length > 4 ? 'bes' : 'dort'}">
       ${sekmeler.map(([k, ad]) =>
         `<button data-sekme="${k}" class="${aktifSekme === k ? 'secili' : ''}">${ad}</button>`).join('')}
     </div>
@@ -159,6 +166,7 @@ async function anaEkran(user, uye) {
   if (aktifSekme === 'malzeme') return malzemeSekmesi(icerik, patron);
   if (aktifSekme === 'urun') return urunSekmesi(icerik, patron);
   if (aktifSekme === 'mekan') return mekanSekmesi(icerik, user, uye, patron);
+  if (aktifSekme === 'kurulum') return kurulumEkrani(icerik);
   return girisSekmesi(icerik, user, patron);
 }
 
@@ -239,10 +247,16 @@ function sayiOku(s) {
   return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
 }
 
-async function malzemeleriGetir() {
-  const { data, error } = await sb.from('malzemeler').select('id, ad, birim, fiyat, fiyat_haric, kdv_orani, aktif');
-  if (error) throw error;
-  return data.sort(adaGore);
+// Malzemeler. Fiyatlar veritabanında yalnız patrona açık (malzeme_fiyatlari); barista adları ve birimleri görür.
+async function malzemeleriGetir(fiyatli = true) {
+  const [mr, fr] = await Promise.all([
+    sb.from('malzemeler').select('id, ad, birim, aktif'),
+    fiyatli ? sb.rpc('malzeme_fiyatlari') : Promise.resolve({ data: [] }),
+  ]);
+  if (mr.error) throw mr.error;
+  if (fr.error) throw fr.error;
+  const fiyat = new Map(fr.data.map((f) => [f.id, f]));
+  return mr.data.map((m) => ({ fiyat: 0, fiyat_haric: null, kdv_orani: null, ...m, ...fiyat.get(m.id) })).sort(adaGore);
 }
 
 // ---------- KDV ----------
@@ -628,7 +642,17 @@ async function girisSekmesi(icerik, user, patron) {
     if (br.error) throw br.error;
     kalemler.push(...kr.data);
     belgeler.push(...br.data);
+    // "Mal geldi" ile okunan faturaların dosyaları belge_dosyalari'nda
+    const okunan = await sb.from('belgeler').select('id, giris_id').in('giris_id', idler);
+    if (okunan.error) throw okunan.error;
+    if (okunan.data.length) {
+      const dr = await sb.from('belge_dosyalari').select('belge_id, yol, tur').in('belge_id', okunan.data.map((b) => b.id));
+      if (dr.error) throw dr.error;
+      const girisi = new Map(okunan.data.map((b) => [b.id, b.giris_id]));
+      belgeler.push(...dr.data.map((d) => ({ giris_id: girisi.get(d.belge_id), yol: d.yol, tur: d.tur === 'foto' ? 'foto' : 'pdf' })));
+    }
   }
+  const [eksik] = await rpcVeri('eksik_belge_ozeti');
   const malzemeBul = new Map(malzemeler.map((m) => [m.id, m]));
   const urunBul = new Map(ur.data.map((u) => [u.id, u]));
   const ctx = { user, patron, malzemeler, malzemeBul, urunler: ur.data.sort(adaGore), urunBul };
@@ -679,9 +703,21 @@ async function girisSekmesi(icerik, user, patron) {
       </details>`;
   };
 
+  const eksikMetni = [
+    eksik?.bekleyen_fatura ? `${eksik.bekleyen_fatura} faturada eşleştirme bekleniyor` : '',
+    eksik?.bekleyen_satis_raporu ? `${eksik.bekleyen_satis_raporu} satış raporu işlenmeyi bekliyor` : '',
+  ].filter(Boolean).join(', ');
   icerik.innerHTML = `
+    ${eksikMetni ? `<div class="sade-uyari">⚠️ ${eksikMetni}; sonuç eksik olabilir.
+      <small>En eskisi: ${eksik.en_eski ? tarihYaz(eksik.en_eski) : '?'}. Kurulum ekibi çözünce bu uyarı kalkar.</small></div>` : ''}
+    <div class="buyuk-dugmeler yatay">
+      <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
+      <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
+      <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
+    </div>
     <div class="izgara">
-      ${Object.entries(TURLER).map(([k, t]) => `<button data-yeni="${k}">${t.dugme}</button>`).join('')}
+      <button class="ikincil" data-yeni="fatura">🧾 Fatura elle gir</button>
+      <button class="ikincil" data-yeni="satis">💰 Satış gir</button>
     </div>
     <div class="kart">
       <h2>Geçmiş girişler</h2>
@@ -698,6 +734,8 @@ async function girisSekmesi(icerik, user, patron) {
     secilenAy = e.target.value;
     yenile();
   });
+  icerik.querySelectorAll('[data-is]').forEach((b) => b.addEventListener('click', () =>
+    isBaslat(icerik, b.dataset.is, user, yenile)));
   icerik.querySelectorAll('[data-yeni]').forEach((b) => b.addEventListener('click', async () => {
     if (b.dataset.yeni === 'fatura') {
       b.disabled = true;
@@ -1272,6 +1310,621 @@ async function faturaFormu(icerik, ctx, bitti) {
   });
 }
 
+// =====================================================================================
+// BARİSTA: sade ekran — üç büyük düğme. Fiyat, KDV, eşleştirme, tarif, rapor yok.
+// (Patron da aynı akışları Girişler sekmesinden kullanır.)
+// =====================================================================================
+
+const istekKimligi = () => crypto.randomUUID();
+
+function baristaEkrani(user, uye) {
+  app.innerHTML = `
+    <h1 class="ortada">${esc(uye.mekanlar.ad)}</h1>
+    <div class="buyuk-dugmeler">
+      <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
+      <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
+      <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
+    </div>
+    <p class="bilgi ortada">${esc(uye.ad)}</p>`;
+  const ana = () => baristaEkrani(user, uye);
+  app.querySelectorAll('[data-is]').forEach((b) => b.addEventListener('click', () => isBaslat(app, b.dataset.is, user, ana)));
+}
+
+function isBaslat(kutu, is, user, bitti) {
+  const f = { mal: malGeldi, fire: fireVar, sayim: haftalikSayim }[is];
+  window.scrollTo(0, 0);
+  f(kutu, user, bitti).catch((err) => sadeHata(kutu, hataMetni(err), bitti));
+}
+
+// Tek cümlelik hata ekranı
+function sadeHata(kutu, metin, geri, tekrar = null) {
+  kutu.innerHTML = `<div class="sade-ekran ortada">
+      <div class="buyuk-simge">⚠️</div><h2>${esc(metin)}</h2>
+      ${tekrar ? '<button class="dev" id="tekrar">Tekrar dene</button>' : ''}
+      <button class="dev ikincil" id="geri">Ana ekran</button></div>`;
+  kutu.querySelector('#geri').onclick = () => geri();
+  if (tekrar) kutu.querySelector('#tekrar').onclick = () => tekrar();
+}
+
+// "✓ Kaydedildi" + 2 dakika "Geri al"
+function kaydedildi(kutu, { baslik, alt, geriAl, bitti }) {
+  kutu.innerHTML = `<div class="sade-ekran ortada">
+      <div class="buyuk-simge tamam">✓</div><h2>${esc(baslik)}</h2>
+      ${alt ? `<p class="buyuk-yazi">${esc(alt)}</p>` : ''}
+      <button class="dev" id="bitti">Tamam</button>
+      ${geriAl ? '<button class="dev ikincil" id="geri-al">↩ Geri al</button>' : ''}
+      <p class="mesaj"></p></div>`;
+  const zaman = setTimeout(() => kutu.querySelector('#geri-al')?.remove(), 110000);
+  kutu.querySelector('#bitti').onclick = () => { clearTimeout(zaman); bitti(); };
+  kutu.querySelector('#geri-al')?.addEventListener('click', async (e) => {
+    if (!confirm('Bu kayıt geri alınsın mı?')) return;
+    e.target.disabled = true;
+    try {
+      await geriAl();
+      clearTimeout(zaman);
+      kutu.innerHTML = `<div class="sade-ekran ortada"><div class="buyuk-simge">↩</div><h2>Geri alındı</h2>
+        <button class="dev" id="bitti">Tamam</button></div>`;
+      kutu.querySelector('#bitti').onclick = () => bitti();
+    } catch (err) {
+      e.target.disabled = false;
+      kutu.querySelector('.mesaj').className = 'mesaj hata';
+      kutu.querySelector('.mesaj').textContent = hataMetni(err);
+    }
+  });
+}
+
+async function rpcVeri(ad, args) {
+  const { data, error } = await sb.rpc(ad, args);
+  if (error) throw error;
+  return data;
+}
+const geriAlIstegi = (tur, id) => () => rpcVeri('kaydi_geri_al', { p_tur: tur, p_id: id });
+
+// Büyük rakam kutusu ekranı (fire miktarı, sayım). Döner: { input, ileri } kurulduktan sonra.
+function rakamKutusu(birim, deger = '') {
+  return `<div class="rakam-kutu">
+      <input id="rakam" inputmode="decimal" autocomplete="off" value="${esc(deger)}" aria-label="Miktar">
+      <span>${esc(birim)}</span></div>`;
+}
+
+// ---------- 🗑️ Fire var: Ne? → Ne kadar? → Neden? ----------
+
+const FIRE_NEDENLERI = [['Döküldü', '💧'], ['Bozuldu', '🦠'], ['Yanlış yapıldı', '✋']];
+
+async function fireVar(kutu, user, bitti) {
+  const [malzemeler, ur] = await Promise.all([malzemeleriGetir(false), sb.from('urunler').select('id, ad, aktif')]);
+  if (ur.error) throw ur.error;
+  const secenekler = [
+    ...malzemeler.filter((m) => m.aktif).map((m) => ({ tur: 'm', id: m.id, ad: m.ad, birim: BIRIMLER[m.birim].fiyatBirimi, m })),
+    ...ur.data.filter((u) => u.aktif).sort(adaGore).map((u) => ({ tur: 'u', id: u.id, ad: u.ad, birim: 'adet' })),
+  ];
+  if (!secenekler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
+  let secim = null, miktar = null;
+  const istek = istekKimligi();
+
+  const neEkrani = (ara = '') => {
+    const k = anahtar(ara);
+    const liste = secenekler.filter((s) => !k || anahtar(s.ad).includes(k));
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>🗑️ Ne gitti?</h2>
+        ${secenekler.length > 10 ? `<input id="ara" class="buyuk-giris" placeholder="🔍 Ara" value="${esc(ara)}">` : ''}
+        <div class="kartlar">${liste.map((s, i) => `<button class="kart-dugme" data-i="${secenekler.indexOf(s)}">
+          ${s.tur === 'u' ? '☕ ' : ''}${esc(s.ad)}</button>`).join('') || '<p class="bilgi">Bulunamadı.</p>'}</div>
+        <button class="dev ikincil" id="geri">◀ Ana ekran</button></div>`;
+    kutu.querySelector('#geri').onclick = () => bitti();
+    const ar = kutu.querySelector('#ara');
+    if (ar) { ar.oninput = () => { neEkrani(ar.value); }; ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }
+    kutu.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => { secim = secenekler[b.dataset.i]; nekadarEkrani(); });
+  };
+
+  const nekadarEkrani = () => {
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>${esc(secim.ad)}</h2><p class="buyuk-yazi">Ne kadar?</p>
+        ${rakamKutusu(secim.birim, miktar ?? '')}
+        <p class="mesaj"></p>
+        <div class="iki-dugme"><button class="dev ikincil" id="geri">◀</button><button class="dev" id="ileri">Devam ▶</button></div></div>`;
+    const inp = kutu.querySelector('#rakam');
+    inp.focus();
+    const ileri = () => {
+      const n = sayiOku(inp.value);
+      const urun = secim.tur === 'u';
+      if (!(n > 0) || (urun && !Number.isInteger(n)) || n >= 100000) {
+        kutu.querySelector('.mesaj').className = 'mesaj hata';
+        kutu.querySelector('.mesaj').textContent = urun ? 'Kaç tane? Tam sayı yaz.' : 'Rakamı yaz.';
+        return;
+      }
+      miktar = inp.value;
+      nedenEkrani(n);
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') ileri(); };
+    kutu.querySelector('#ileri').onclick = ileri;
+    kutu.querySelector('#geri').onclick = () => neEkrani();
+  };
+
+  const nedenEkrani = (n) => {
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>${esc(secim.ad)} · ${sayiYaz(n)} ${esc(secim.birim)}</h2><p class="buyuk-yazi">Neden?</p>
+        ${FIRE_NEDENLERI.map(([ad, s]) => `<button class="dev neden" data-neden="${ad}">${s} ${ad}</button>`).join('')}
+        <p class="mesaj"></p>
+        <button class="dev ikincil" id="geri">◀</button></div>`;
+    kutu.querySelector('#geri').onclick = () => nekadarEkrani();
+    kutu.querySelectorAll('[data-neden]').forEach((b) => b.onclick = async () => {
+      kutu.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      const kalem = secim.tur === 'u' ? { urun_id: secim.id, miktar: n } : { malzeme_id: secim.id, miktar: kucukMiktar(n, secim.m.birim) };
+      try {
+        const id = await rpcVeri('giris_kaydet_tek', { p_istek: istek, p_tur: 'fire', p_tarih: bugunStr(),
+          p_aciklama: b.dataset.neden, p_kalemler: [kalem] });
+        kaydedildi(kutu, { baslik: 'Fire kaydedildi', alt: `${secim.ad} · ${sayiYaz(n)} ${secim.birim}`,
+          geriAl: geriAlIstegi('giris', id), bitti });
+      } catch (err) {
+        sadeHata(kutu, hataMetni(err), bitti, () => nedenEkrani(n));
+      }
+    });
+  };
+  neEkrani();
+}
+
+// ---------- 📋 Haftalık sayım: her ekranda tek malzeme (alfabetik) → özet → kaydet → satış raporu ----------
+
+async function haftalikSayim(kutu, user, bitti) {
+  const malzemeler = (await malzemeleriGetir(false)).filter((m) => m.aktif);
+  if (!malzemeler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
+  // Yarım kalan sayım telefonda saklanır (kilitlenme, müşteri…); kaldığı yerden devam edilir.
+  const anahtarAd = `kahve-sayim:${mekan.id}:${user.id}`;
+  let t = null;
+  try { t = JSON.parse(localStorage.getItem(anahtarAd) || 'null'); } catch { t = null; }
+  if (!t || t.gun !== bugunStr()) t = { gun: bugunStr(), i: 0, degerler: {}, istek: istekKimligi() };
+  const sakla = () => { try { localStorage.setItem(anahtarAd, JSON.stringify(t)); } catch { /* özel pencere */ } };
+  const sil = () => { try { localStorage.removeItem(anahtarAd); } catch { /* yok say */ } };
+
+  const ekran = () => {
+    if (t.i >= malzemeler.length) return ozet();
+    const m = malzemeler[t.i];
+    const d = t.degerler[m.id];
+    kutu.innerHTML = `<div class="sade-ekran">
+        <p class="ilerleme">${t.i + 1} / ${malzemeler.length}</p>
+        <div class="cubuk"><div style="width:${Math.round((t.i / malzemeler.length) * 100)}%"></div></div>
+        <h2 class="malzeme-adi">${esc(m.ad)}</h2>
+        ${rakamKutusu(BIRIMLER[m.birim].fiyatBirimi, d === 'atla' || d == null ? '' : d)}
+        <p class="mesaj"></p>
+        <div class="iki-dugme"><button class="dev ikincil" id="geri">◀</button><button class="dev" id="ileri">Sonraki ▶</button></div>
+        <button class="dev ikincil kucuk-dev" id="atla">Bilmiyorum, geç</button>
+        <button class="metin-dugme" id="cik">Sonra devam et</button></div>`;
+    const inp = kutu.querySelector('#rakam');
+    inp.focus();
+    const ileri = () => {
+      const n = sayiOku(inp.value);
+      if (!Number.isFinite(n) || n >= 10000000) {
+        kutu.querySelector('.mesaj').className = 'mesaj hata';
+        kutu.querySelector('.mesaj').textContent = inp.value.trim() ? 'Rakamı yaz.' : 'Rakamı yaz ya da "Bilmiyorum, geç" de.';
+        return;
+      }
+      t.degerler[m.id] = inp.value.trim(); t.i++; sakla(); ekran();
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') ileri(); };
+    kutu.querySelector('#ileri').onclick = ileri;
+    kutu.querySelector('#atla').onclick = () => { t.degerler[m.id] = 'atla'; t.i++; sakla(); ekran(); };
+    kutu.querySelector('#geri').onclick = () => { if (t.i === 0) { sakla(); bitti(); } else { t.i--; sakla(); ekran(); } };
+    kutu.querySelector('#cik').onclick = () => { sakla(); bitti(); };
+  };
+
+  const ozet = () => {
+    const sayilan = malzemeler.filter((m) => t.degerler[m.id] != null && t.degerler[m.id] !== 'atla');
+    const atlanan = malzemeler.filter((m) => !sayilan.includes(m));
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>📋 Sayım bitti</h2>
+        <p class="buyuk-yazi">✓ ${sayilan.length} malzeme sayıldı${atlanan.length ? `<br>— ${atlanan.length} atlandı` : ''}</p>
+        ${atlanan.length ? `<p class="bilgi">Atlanan: ${atlanan.map((m) => esc(m.ad)).join(', ')}</p>` : ''}
+        <p class="mesaj"></p>
+        <button class="dev" id="kaydet" ${sayilan.length ? '' : 'disabled'}>Kaydet ✓</button>
+        <button class="dev ikincil" id="geri">◀ Geri dön</button></div>`;
+    kutu.querySelector('#geri').onclick = () => { t.i = malzemeler.length - 1; sakla(); ekran(); };
+    kutu.querySelector('#kaydet').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const id = await rpcVeri('giris_kaydet_tek', { p_istek: t.istek, p_tur: 'sayim', p_tarih: bugunStr(), p_aciklama: null,
+          p_kalemler: sayilan.map((m) => ({ malzeme_id: m.id, miktar: kucukMiktar(sayiOku(t.degerler[m.id]), m.birim) })) });
+        sil();
+        satisRaporu(id);
+      } catch (err) {
+        sadeHata(kutu, hataMetni(err), () => { sakla(); bitti(); }, ozet);
+      }
+    };
+  };
+
+  // Son adım: haftanın satış raporu (fotoğraf ya da dosya) → kurulum işler
+  const satisRaporu = (sayimId) => {
+    kutu.innerHTML = `<div class="sade-ekran">
+        <div class="buyuk-simge tamam">✓</div><h2>Sayım kaydedildi</h2>
+        <p class="buyuk-yazi">Son adım: bu haftanın satış raporu</p>
+        <label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="r-kamera" hidden></label>
+        <label class="dev ikincil">📎 Dosya seç<input type="file" accept="image/*,application/pdf,.csv,.txt,.xml" id="r-dosya" hidden></label>
+        <p class="mesaj"></p>
+        <button class="dev ikincil" id="atla">Şimdi değil</button></div>`;
+    const bitir = (alt) => kaydedildi(kutu, { baslik: 'Haftalık sayım tamam', alt, geriAl: geriAlIstegi('giris', sayimId), bitti });
+    kutu.querySelector('#atla').onclick = () => bitir('Satış raporunu sonra patrona ver.');
+    for (const sec of ['#r-kamera', '#r-dosya']) {
+      const inp = kutu.querySelector(sec);
+      inp.onchange = async () => {
+        const dosya = inp.files[0];
+        if (!dosya) return;
+        const msj = kutu.querySelector('.mesaj');
+        msj.className = 'mesaj'; msj.textContent = 'Gönderiliyor…';
+        kutu.querySelectorAll('button, label').forEach((x) => { x.style.pointerEvents = 'none'; x.style.opacity = '.6'; });
+        try {
+          const istek = istekKimligi();
+          const tur = dosyaTuru(dosya);
+          const blob = tur === 'foto' ? await fotoKucult(dosya) : dosya;
+          if (blob.size > 5 * 1024 * 1024) throw new Error('Dosya çok büyük (en fazla 5 MB).');
+          const uzanti = tur === 'foto' ? 'jpg' : tur === 'pdf' ? 'pdf' : tur === 'xml' ? 'xml' : (dosya.name.split('.').pop() || 'txt').toLowerCase();
+          const yol = `${mekan.id}/${istek}/rapor.${uzanti}`;
+          const tip = tur === 'foto' ? 'image/jpeg' : tur === 'pdf' ? 'application/pdf' : tur === 'xml' ? 'application/xml'
+            : uzanti === 'csv' ? 'text/csv' : 'text/plain';
+          const { error } = await sb.storage.from(BELGE_KOVASI).upload(yol, blob, { contentType: tip, upsert: false });
+          if (error && !/exists|duplicate/i.test(error.message)) throw error;
+          await rpcVeri('belge_kaydet', { p: { istek_id: istek, tur: 'satis_raporu', kaynak: 'dosya', dosyalar: [yol],
+            dosya_ozeti: await dosyaOzeti(dosya) } });
+          bitir('Satış raporu da gönderildi.');
+        } catch (err) {
+          msj.className = 'mesaj hata';
+          msj.textContent = /daha önce yüklenmiş/.test(err.message ?? '') ? 'Bu rapor zaten gönderilmiş.' : hataMetni(err);
+          kutu.querySelectorAll('button, label').forEach((x) => { x.style.pointerEvents = ''; x.style.opacity = ''; });
+        }
+      };
+    }
+  };
+
+  ekran();
+}
+
+// ---------- 📦 Mal geldi: belge → okuma → (gerekirse "Bu ürün süt mü?") → özet → kaydet ----------
+
+const OKUNAMADI = {
+  bulanik: 'Fotoğraf bulanık, bir daha çek.',
+  satir_yok: 'Fatura okunamadı. Daha yakından ve düz çek.',
+};
+
+async function malGeldi(kutu, user, bitti) {
+  const [malzemeler, dr] = await Promise.all([
+    malzemeleriGetir(false),
+    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan'),
+  ]);
+  if (dr.error) throw dr.error;
+  const malzemeBul = new Map(malzemeler.map((m) => [m.id, m]));
+  let dosyalar = [];          // { dosya (asıl), tur: 'foto'|'pdf'|'xml', onizleme, yuklenen: {blob, yol} }
+  let sonuc = null;           // okuma sonucu + satırların sınıfı
+  let istek = null;           // kaydetme kimliği (tekrar denemelerde aynı)
+  let ayniOnay = false;
+
+  const belgeEkrani = () => {
+    const fotolar = dosyalar.filter((d) => d.tur === 'foto');
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>📦 Faturayı göster</h2>
+        ${fotolar.length ? `<div class="belgeler buyuk">${fotolar.map((d) => `<img src="${d.onizleme}" alt="Fatura sayfası">`).join('')}</div>
+          <button class="dev" id="oku">Oku ▶</button>
+          <label class="dev ikincil">📷 Bir sayfa daha<input type="file" accept="image/*" capture="environment" id="kamera" hidden></label>`
+        : `<label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="kamera" hidden></label>
+          <label class="dev ikincil">📎 PDF / e-fatura seç<input type="file" accept="application/pdf,.pdf,.xml,application/xml,text/xml,image/*" id="dosya" hidden></label>`}
+        <p class="mesaj"></p>
+        <button class="dev ikincil" id="geri">◀ Ana ekran</button></div>`;
+    kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
+    kutu.querySelector('#oku')?.addEventListener('click', oku);
+    const ekle = (inp) => inp && (inp.onchange = () => {
+      const yeni = [...inp.files];
+      inp.value = '';
+      for (const f of yeni) {
+        const tur = dosyaTuru(f);
+        if (tur === 'diger') { kutu.querySelector('.mesaj').className = 'mesaj hata'; kutu.querySelector('.mesaj').textContent = 'Bu dosya açılamıyor. Fotoğraf, PDF ya da e-fatura seç.'; return; }
+        if (tur === 'foto') {
+          if (dosyalar.some((d) => d.tur !== 'foto')) dosyalar = [];
+          if (dosyalar.length >= 5) break;
+          dosyalar.push({ dosya: f, tur, onizleme: URL.createObjectURL(f) });
+        } else {
+          temizle();
+          dosyalar = [{ dosya: f, tur }];
+          return oku();
+        }
+      }
+      belgeEkrani();
+    });
+    ekle(kutu.querySelector('#kamera'));
+    ekle(kutu.querySelector('#dosya'));
+  };
+  const temizle = () => { dosyalar.forEach((d) => d.onizleme && URL.revokeObjectURL(d.onizleme)); };
+
+  const oku = async () => {
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="buyuk-simge donen">⏳</div><h2>Okunuyor…</h2>
+        <div class="cubuk"><div id="okuma-cubuk" style="width:5%"></div></div>
+        <p class="bilgi" id="okuma-not">İlk seferde biraz sürebilir.</p></div>`;
+    const cubuk = kutu.querySelector('#okuma-cubuk');
+    const ilerleme = (m) => {
+      if (m.status === 'recognizing text' && cubuk) {
+        const genel = ((m.sayfa - 1) + m.progress) / (m.sayfaSayisi || 1);
+        cubuk.style.width = `${Math.max(5, Math.round(genel * 100))}%`;
+      }
+    };
+    try {
+      const d0 = dosyalar[0];
+      let r;
+      if (d0.tur === 'xml') r = await xmlDosyaOku(d0.dosya);
+      else if (d0.tur === 'pdf') r = await pdfOku(d0.dosya, ilerleme);
+      else r = await fotolariOku(dosyalar.map((d) => d.dosya), ilerleme);
+      sonuc = r;
+    } catch (err) {
+      console.error(err);
+      return sorunEkrani('Fatura okunamadı. Tekrar dene ya da daha net çek.', false);
+    }
+    if (sonuc.notlar?.includes('bulanik')) return sorunEkrani(OKUNAMADI.bulanik, true);
+    if (!sonuc.satirlar.length) return sorunEkrani(OKUNAMADI.satir_yok, true);
+    siniflandirHepsi();
+    soruSirasi();
+  };
+
+  // Okuma sorunu: tekrar çek ya da yine de devam (belge kuruluma gider)
+  const sorunEkrani = (metin, devamEdilebilir) => {
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="buyuk-simge">📷</div><h2>${esc(metin)}</h2>
+        <button class="dev" id="tekrar">📷 Tekrar çek</button>
+        ${devamEdilebilir ? '<button class="dev ikincil" id="devam">Yine de gönder</button>' : ''}
+        <button class="metin-dugme" id="geri">Ana ekran</button></div>`;
+    kutu.querySelector('#tekrar').onclick = () => { temizle(); dosyalar = []; belgeEkrani(); };
+    kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
+    kutu.querySelector('#devam')?.addEventListener('click', () => {
+      if (!sonuc.satirlar.length) sonuc.satirlar = [{ metin: '(fatura okunamadı)', miktar: null, birim: 'diger', tutar_haric: null, kdv_orani: null }];
+      siniflandirHepsi();
+      soruSirasi();
+    });
+  };
+
+  const tedarikciAnahtari = () => sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '';
+  const siniflandirHepsi = () => {
+    const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari() };
+    sonuc.satirlar.forEach((s) => { s.karar = siniflandir(s, ctx); s.cevap = null; });
+  };
+
+  // "Bu ürün süt mü?" — yalnızca benzeyen, defterde olmayan satırlar için, tek tek
+  const soruSirasi = () => {
+    const s = sonuc.satirlar.find((x) => x.karar.sinif === 'soru' && x.cevap == null);
+    if (!s) return ozetEkrani();
+    const m = malzemeBul.get(s.karar.malzeme_id);
+    const stok = Number(s.miktar) * s.karar.carpan;
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>
+        <h2 class="soru">Bu ürün <u>${esc(m.ad)}</u> mü?</h2>
+        <p class="buyuk-yazi">${buyukMiktar(stok, m.birim)} olarak eklenecek</p>
+        <div class="iki-dugme"><button class="dev hayir" id="hayir">✗ Hayır</button><button class="dev evet" id="evet">✓ Evet</button></div></div>`;
+    kutu.querySelector('#evet').onclick = () => { s.cevap = 'evet'; soruSirasi(); };
+    kutu.querySelector('#hayir').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
+  };
+
+  const ozetEkrani = (hata = '') => {
+    const stokta = sonuc.satirlar.filter((s) => s.karar.sinif === 'eslesti' || (s.karar.sinif === 'soru' && s.cevap === 'evet'));
+    const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'belirsiz' || (s.karar.sinif === 'soru' && s.cevap === 'hayir'));
+    const disi = sonuc.satirlar.filter((s) => s.karar.sinif === 'takip_disi');
+    const toplamVar = sonuc.toplamlar.genel != null;
+    const kontrol = toplamVar ? toplamKontrol(sonuc) : { tutuyor: false, sebep: 'toplam_yok' };
+    const tutmuyor = toplamVar && !kontrol.tutuyor;
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>📦 ${esc(sonuc.tedarikci ?? 'Fatura')}</h2>
+        ${tutmuyor ? `<div class="sade-uyari">⚠️ Toplam tutmuyor, faturaya tekrar bak.
+            <button class="dev ikincil" id="tekrar-cek">📷 Tekrar çek</button></div>` : ''}
+        <ul class="sade-liste">
+          ${stokta.map((s) => { const m = malzemeBul.get(s.karar.malzeme_id);
+            return `<li>${tutmuyor ? '⏳' : '✓'} <b>${buyukMiktar(Number(s.miktar) * s.karar.carpan, m.birim)}</b> ${esc(m.ad)}</li>`; }).join('')}
+        </ul>
+        ${bekleyen.length ? `<p class="buyuk-yazi">⏳ ${bekleyen.length} kalem sonra kontrol edilecek</p>` : ''}
+        ${disi.length ? `<p class="bilgi">— ${disi.length} kalem takip dışı (${disi.slice(0, 3).map((s) => esc(s.metin)).join(', ')}${disi.length > 3 ? '…' : ''})</p>` : ''}
+        ${toplamVar ? '' : `<p class="buyuk-yazi">Faturanın en altındaki toplam?</p>${rakamKutusu('TL')}`}
+        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
+        <button class="dev" id="kaydet">Kaydet ✓</button>
+        <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
+    kutu.querySelector('#tekrar-cek')?.addEventListener('click', () => { temizle(); dosyalar = []; sonuc = null; istek = null; belgeEkrani(); });
+    kutu.querySelector('#vazgec').onclick = () => { if (confirm('Fatura kaydedilmeden çıkılsın mı?')) { temizle(); bitti(); } };
+    kutu.querySelector('#kaydet').onclick = () => {
+      if (!toplamVar) {
+        const n = sayiOku(kutu.querySelector('#rakam').value);
+        if (!Number.isFinite(n) || n <= 0) return ozetEkrani('Faturanın en altındaki toplamı yaz.');
+        sonuc.toplamlar.genel = n;
+        return ozetEkrani();          // toplam girildi: kontrolü göster, sonra kaydet
+      }
+      kaydet();
+    };
+  };
+
+  const kaydet = async () => {
+    istek ??= istekKimligi();
+    kutu.innerHTML = `<div class="sade-ekran ortada"><div class="buyuk-simge donen">⏳</div><h2>Kaydediliyor…</h2>
+      <p class="bilgi" id="durum"></p></div>`;
+    const durum = kutu.querySelector('#durum');
+    try {
+      // 1) Dosyaları yükle (tekrar denemede yüklenmiş olanı atla)
+      for (const [i, d] of dosyalar.entries()) {
+        if (d.yuklenen) continue;
+        durum.textContent = `Belge gönderiliyor (${i + 1}/${dosyalar.length})`;
+        const blob = d.tur === 'foto' ? await fotoKucult(d.dosya) : d.dosya;
+        if (blob.size > 5 * 1024 * 1024) throw new Error('Dosya çok büyük (en fazla 5 MB).');
+        const yol = `${mekan.id}/${istek}/${i + 1}.${d.tur === 'foto' ? 'jpg' : d.tur}`;
+        const tip = { foto: 'image/jpeg', pdf: 'application/pdf', xml: 'application/xml' }[d.tur];
+        const { error } = await sb.storage.from(BELGE_KOVASI).upload(yol, blob, { contentType: tip, upsert: false });
+        if (error && !/exists|duplicate/i.test(error.message)) throw error;
+        d.yuklenen = yol;
+      }
+      // 2) Belgeyi kaydet
+      durum.textContent = '';
+      const satirlar = sonuc.satirlar.map((s) => {
+        const evet = s.karar.sinif === 'eslesti' || (s.karar.sinif === 'soru' && s.cevap === 'evet');
+        return {
+          metin: s.metin, miktar: s.miktar, birim: s.birim, birim_fiyat: s.birim_fiyat ?? null,
+          tutar_haric: s.tutar_haric, kdv_orani: s.kdv_orani,
+          sinif: evet ? 'eslesti' : s.karar.sinif === 'takip_disi' ? 'takip_disi' : 'belirsiz',
+          malzeme_id: evet ? s.karar.malzeme_id : null, carpan: evet ? s.karar.carpan : null,
+          barista_onayi: s.karar.sinif === 'soru' && s.cevap === 'evet',
+          aday_malzeme_id: s.karar.aday_malzeme_id ?? null,
+        };
+      });
+      const r = await rpcVeri('belge_kaydet', { p: {
+        istek_id: istek, tur: 'fatura', kaynak: sonuc.kaynak, dosya_ozeti: await dosyaOzeti(dosyalar[0].dosya),
+        ettn: sonuc.ettn, fatura_no: sonuc.fatura_no, tedarikci: sonuc.tedarikci, tedarikci_vkn: sonuc.tedarikci_vkn,
+        tarih: sonuc.tarih, toplamlar: sonuc.toplamlar, ayni_olabilir_onay: ayniOnay,
+        dosyalar: dosyalar.map((d) => d.yuklenen),
+        okunan: { kaynak: sonuc.kaynak, guven: sonuc.guven, netlik: sonuc.netlik ?? null, notlar: sonuc.notlar,
+                  toplamlar: sonuc.toplamlar, satirlar: sonuc.satirlar.map(({ karar, cevap, ...x }) => ({ ...x, karar, cevap })),
+                  ham_metin: sonuc.ham_metin ?? null },
+        satirlar,
+      } });
+      temizle();
+      kaydedildi(kutu, {
+        baslik: 'Kaydedildi',
+        alt: r.durum === 'tamam' ? 'Stoğa eklendi.' : 'Bazı kalemler sonra kontrol edilecek.',
+        geriAl: geriAlIstegi('belge', r.id), bitti,
+      });
+    } catch (err) {
+      const m = err.message ?? '';
+      if (/yüklenmiş olabilir/.test(m)) return ayniMiEkrani(m);
+      if (/daha önce yüklenmiş|belgeler_(ozet|ettn|no)_uniq/.test(m)) {
+        return sadeHata(kutu, /\(/.test(m) ? m : 'Bu fatura daha önce yüklenmiş.', () => { temizle(); bitti(); });
+      }
+      sadeHata(kutu, /fetch|network|internet/i.test(m) ? 'İnternet yok. Tekrar dene.' : hataMetni(err),
+        () => { temizle(); bitti(); }, kaydet);
+    }
+  };
+
+  const ayniMiEkrani = (mesaj) => {
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="buyuk-simge">🔁</div><h2>${esc(mesaj)}</h2><p class="buyuk-yazi">Aynı fatura mı?</p>
+        <button class="dev" id="ayni">Evet, aynı — gönderme</button>
+        <button class="dev ikincil" id="farkli">Hayır, farklı fatura — kaydet</button></div>`;
+    kutu.querySelector('#ayni').onclick = () => { temizle(); bitti(); };
+    kutu.querySelector('#farkli').onclick = () => { ayniOnay = true; kaydet(); };
+  };
+
+  belgeEkrani();
+}
+
+// =====================================================================================
+// KURULUM PANELİ (servis hesabı): tüm mekanların bekleyen satırları
+// =====================================================================================
+
+const BEKLEME_SEBEPLERI = {
+  eslesme: 'Hangi malzeme?', donusum: 'Birim çevrilemedi', toplam: 'Faturanın toplamı tutmuyor',
+  tutar: 'Miktar × fiyat tutmuyor', fiyat: 'Fiyat olağandışı', miktar: 'Miktar olağandışı', eksik: 'Eksik bilgi',
+};
+const BELGE_BIRIM = { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml', diger: '?' };
+
+async function kurulumEkrani(kutu) {
+  kutu.innerHTML = '<p class="bilgi">Yükleniyor…</p>';
+  const kuyruk = await rpcVeri('kurulum_kuyrugu');
+  const yenile = () => kurulumEkrani(kutu).catch(hataGoster);
+  const toplamBelge = kuyruk.reduce((t, k) => t + k.belgeler.length, 0);
+  kutu.innerHTML = `
+    <h1>Kurulum kuyruğu</h1>
+    <p class="bilgi">${toplamBelge ? `${kuyruk.length} mekanda ${toplamBelge} belge bekliyor.` : 'Bekleyen iş yok ✓'}
+      Burada çözülen eşleşmeler deftere yazılır; aynı ürün sonraki faturalarda sorusuz geçer.</p>
+    ${kuyruk.map((k) => `<h2>${esc(k.mekan)}</h2>${k.belgeler.map((b) => belgeKarti(k, b)).join('')}`).join('')}`;
+
+  // Belgeyi aç (geçici bağlantı)
+  kutu.querySelectorAll('[data-belge-ac]').forEach((btn) => btn.addEventListener('click', async () => {
+    const yollar = JSON.parse(btn.dataset.belgeAc);
+    try {
+      const { data, error } = await sb.storage.from(BELGE_KOVASI).createSignedUrls(yollar, 3600);
+      if (error) throw error;
+      btn.outerHTML = `<div class="belgeler">${data.map((d, i) => /\.(jpg|jpeg|png|webp)$/i.test(d.path)
+        ? `<a href="${esc(d.signedUrl)}" target="_blank" rel="noopener"><img src="${esc(d.signedUrl)}" alt="Belge ${i + 1}"></a>`
+        : `<a class="belge-pdf" href="${esc(d.signedUrl)}" target="_blank" rel="noopener">📄 ${esc(d.path.split('/').pop())}</a>`).join('')}</div>`;
+    } catch (err) { hataGoster(err); }
+  }));
+
+  // Satır çözme
+  kutu.querySelectorAll('form[data-satir]').forEach((form) => {
+    const sec = form.querySelector('select[name=malzeme]');
+    const carpanInp = form.querySelector('input[name=carpan]');
+    const etiket = form.querySelector('.carpan-birim');
+    const malzemeler = JSON.parse(form.dataset.malzemeler);
+    const birimYaz = () => {
+      const m = malzemeler.find((x) => x.id === sec.value);
+      etiket.textContent = m ? m.birim : '';
+      if (m && !carpanInp.dataset.elle) carpanInp.value = carpanBul(form.dataset.birim, m.birim, form.dataset.metin) ?? '';
+    };
+    carpanInp.addEventListener('input', () => { carpanInp.dataset.elle = '1'; });
+    sec.addEventListener('change', birimYaz);
+    if (!carpanInp.value) birimYaz(); else etiket.textContent = malzemeler.find((x) => x.id === sec.value)?.birim ?? '';
+    const gonder = async (sonucTur) => {
+      const f = Object.fromEntries(new FormData(form));
+      const sayi = (v) => (String(v ?? '').trim() ? sayiOku(v) : null);
+      try {
+        if (sonucTur === 'malzeme' && !f.malzeme) throw new Error('Malzeme seç.');
+        await rpcVeri('kurulum_satir_coz', {
+          p_satir: Number(form.dataset.satir), p_sonuc: sonucTur, p_malzeme: f.malzeme || null,
+          p_carpan: sayi(f.carpan), p_miktar: sayi(f.miktar), p_tutar_haric: sayi(f.tutar), p_kdv_orani: sayi(f.oran),
+          p_deftere_yaz: f.defter === 'on',
+        });
+        yenile();
+      } catch (err) { hataGoster(err); }
+    };
+    form.querySelector('[data-bagla]').onclick = () => gonder('malzeme');
+    form.querySelector('[data-disi]').onclick = () => gonder('takip_disi');
+  });
+
+  // Belge düzeyi işlemler
+  const belgeIslem = (sec, ad, soru) => kutu.querySelectorAll(sec).forEach((b) => b.addEventListener('click', async () => {
+    if (soru && !confirm(soru)) return;
+    b.disabled = true;
+    try { await rpcVeri(ad, { p_belge: b.dataset.id }); yenile(); } catch (err) { hataGoster(err); b.disabled = false; }
+  }));
+  belgeIslem('[data-kalanlar]', 'kurulum_kalanlar_takip_disi', 'Eşleşme bekleyen kalan satırların hepsi takip dışı sayılsın ve deftere yazılsın mı?');
+  belgeIslem('[data-onayla]', 'kurulum_belge_onayla', 'Faturaya baktın ve rakamlar doğru mu? Eşleşmiş satırlar stoğa eklenecek.');
+  belgeIslem('[data-reddet]', 'kurulum_belge_reddet', 'Belge reddedilsin mi? Stoğa etkisi geri alınır; barista yeniden yükleyebilir.');
+  belgeIslem('[data-rapor-tamam]', 'kurulum_satis_raporu_tamam', 'Satış raporu işlendi olarak işaretlensin mi?');
+}
+
+function belgeKarti(k, b) {
+  const dosyaDugmesi = b.dosyalar.length
+    ? `<button class="ikincil kucuk" data-belge-ac='${esc(JSON.stringify(b.dosyalar.map((d) => d.yol)))}'>📄 Belgeyi aç (${b.dosyalar.length})</button>` : '';
+  if (b.tur === 'satis_raporu') {
+    return `<div class="kart"><b>💰 Satış raporu</b> · ${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}<br>${dosyaDugmesi}
+      <p class="bilgi">Satışlar patron ekranından girilir (Girişler → Satış gir). Girildikten sonra işaretle.</p>
+      <button class="kucuk" data-rapor-tamam data-id="${esc(b.id)}">İşlendi ✓</button></div>`;
+  }
+  const satirToplam = b.satirlar.reduce((t, s) => t + Number(s.tutar_haric ?? 0) * (1 + Number(s.kdv_orani ?? 0) / 100), 0);
+  const bekleyen = b.satirlar.filter((s) => s.durum === 'bekliyor');
+  const eslesmeBekleyen = bekleyen.filter((s) => s.sebep === 'eslesme');
+  const malzemelerJson = esc(JSON.stringify(k.malzemeler));
+  return `<div class="kart kurulum-belge">
+    <b>📦 ${esc(b.tedarikci ?? 'Tedarikçi okunamadı')}</b> · ${b.tarih ? tarihYaz(b.tarih) : 'tarih yok'}
+      ${b.fatura_no ? ` · ${esc(b.fatura_no)}` : ''} · ${esc(b.kaynak.toUpperCase())}
+    <small class="bilgi">${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}</small>
+    <p class="${b.toplam_tutuyor ? 'tamam' : 'hata'}">Genel toplam ${b.genel_toplam != null ? tl.format(b.genel_toplam) : '?'} ·
+      satırlar ${tl.format(satirToplam)}${Number(b.indirim) ? ` · indirim ${tl.format(b.indirim)}` : ''}
+      ${b.toplam_tutuyor ? '✓' : '✗ tutmuyor'}</p>
+    ${dosyaDugmesi}
+    ${b.satirlar.map((s) => s.durum !== 'bekliyor'
+      ? `<div class="kurulum-satir cozuldu">${s.durum === 'stokta' ? '✓' : '—'} ${esc(s.metin)}
+          <small>${s.miktar ?? '?'} ${BELGE_BIRIM[s.birim] ?? ''} · ${s.tutar_haric != null ? tl.format(s.tutar_haric) : '?'}
+          ${s.durum === 'takip_disi' ? ' · takip dışı' : ''}</small></div>`
+      : `<form class="kurulum-satir" data-satir="${s.id}" data-birim="${esc(s.birim ?? 'diger')}" data-metin="${esc(s.metin)}"
+            data-malzemeler="${malzemelerJson}" onsubmit="return false">
+          <b>${esc(s.metin)}</b> <span class="rozet">${esc(BEKLEME_SEBEPLERI[s.sebep] ?? s.sebep)}</span>
+          <div class="kurulum-alanlar">
+            <label>Malzeme<select name="malzeme"><option value="">Seç</option>${k.malzemeler.map((m) =>
+              `<option value="${esc(m.id)}" ${(s.malzeme_id ?? s.aday_malzeme_id) === m.id ? 'selected' : ''}>${esc(m.ad)}</option>`).join('')}</select></label>
+            <label>1 ${BELGE_BIRIM[s.birim] ?? 'birim'} = <span class="yan"><input name="carpan" inputmode="decimal" value="${s.carpan ?? ''}"><span class="carpan-birim"></span></span></label>
+            <label>Miktar (${BELGE_BIRIM[s.birim] ?? '?'})<input name="miktar" inputmode="decimal" value="${s.miktar ?? ''}"></label>
+            <label>Tutar (KDV hariç)<input name="tutar" inputmode="decimal" value="${s.tutar_haric ?? ''}"></label>
+            <label>KDV %<input name="oran" inputmode="decimal" value="${s.kdv_orani ?? ''}"></label>
+          </div>
+          <label class="onay-kutu"><input type="checkbox" name="defter" ${['eslesme', 'donusum'].includes(s.sebep) ? 'checked' : ''}>
+            Deftere yaz (sonraki faturalarda otomatik)</label>
+          <div class="dugmeler"><button class="kucuk" type="button" data-bagla>Bağla ✓</button>
+            <button class="ikincil kucuk" type="button" data-disi>Takip dışı</button></div>
+        </form>`).join('')}
+    <div class="dugmeler belge-dugmeleri">
+      ${eslesmeBekleyen.length ? `<button class="ikincil kucuk" data-kalanlar data-id="${esc(b.id)}">Kalanların hepsi takip dışı (${eslesmeBekleyen.length})</button>` : ''}
+      ${!b.toplam_tutuyor ? `<button class="kucuk" data-onayla data-id="${esc(b.id)}">Rakamlar doğru, onayla</button>` : ''}
+      <button class="ikincil kucuk" data-reddet data-id="${esc(b.id)}">Belgeyi reddet</button>
+    </div></div>`;
+}
+
 // Giriş durumuna göre doğru ekranı açar.
 async function goster() {
   try {
@@ -1279,12 +1932,16 @@ async function goster() {
     if (!session) return girisEkrani();
     ustSag.innerHTML = '<button class="kucuk">Çıkış</button>';
     ustSag.querySelector('button').onclick = cikis;
-    const { data: uye, error } = await sb.from('uyeler')
-      .select('rol, ad, mekan_id, mekanlar(ad, davet_kodu, kdv_gosterim)')
-      .eq('user_id', session.user.id).maybeSingle();
-    if (error) throw error;
-    if (!uye) return mekanSecEkrani(session.user);
-    await anaEkran(session.user, uye);
+    const [ur, kr] = await Promise.all([
+      sb.from('uyeler').select('rol, ad, mekan_id, mekanlar(ad, davet_kodu, kdv_gosterim)')
+        .eq('user_id', session.user.id).maybeSingle(),
+      sb.rpc('kurulumcu_muyum'),
+    ]);
+    if (ur.error) throw ur.error;
+    kurulumcu = kr.data === true;
+    document.body.classList.toggle('sade', ur.data?.rol === 'barista');
+    if (!ur.data) return kurulumcu ? kurulumEkrani(app) : mekanSecEkrani(session.user);
+    await anaEkran(session.user, ur.data);
   } catch (err) {
     app.innerHTML = `<div class="kart"><p class="hata">${esc(hataMetni(err))}</p>
       <button class="tam" id="tekrar">Tekrar dene</button></div>`;

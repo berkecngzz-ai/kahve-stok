@@ -1,0 +1,12 @@
+{
+  "name": "kahve-stok",
+  "private": true,
+  "type": "module",
+  "description": "Kahve dükkanları için stok açığı takibi. Derleme yok; bu dosya yalnızca okuma/eşleştirme testleri içindir.",
+  "scripts": {
+    "test": "node --test test/js/"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "0.8.10"
+  }
+}

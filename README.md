@@ -28,8 +28,28 @@ Kahve dükkanları için stok açığı takibi. Barista gelen malı, satışlar�
   Stoğa eklenmeyen satırlar (deterjan vb.) toplamda sayılır, stoğa girmez. Fiyat (%30) ve miktar (3 kat)
   uyarıları barista onaylamadan geçilmez.
 
+- **Adım 4 / Parça 2** (`sql/05_belge_okuma_kurulum.sql`, `okuma.js`, `eslestirme.js`, `vendor/`): sade barista
+  ekranı (📦 Mal geldi · 🗑️ Fire var · 📋 Haftalık sayım + satış raporu), belge okuma ve kurulum kuyruğu.
+  - Okuma tamamen tarayıcıda: e-fatura XML (UBL-TR), metinli PDF (pdf.js), taranmış PDF/fotoğraf (Tesseract, Türkçe).
+    Kütüphaneler `vendor/` içinde kendi sitemizde; hiçbir belge dışarı gönderilmez.
+  - Eşleştirme: defterdeki doğrulanmış kayıt → otomatik; bir malzemeye benzeyen yeni satır → baristaya
+    "Bu ürün süt mü?"; **ilk kez görülen her satır kurulum kuyruğuna**. "Takip dışı" kararı yalnızca defterden gelir
+    (veritabanı da kontrol eder). Toplam tutmazsa / fiyat ya da miktar olağandışıysa satır stoğa girmez, bekler.
+  - Çift kayıt: aynı dosya (SHA-256), aynı ETTN ya da aynı tedarikçi + fatura no reddedilir; aynı tedarikçi + tarih +
+    toplam için "aynı fatura mı?" sorulur. Her kayıt tek seferlik istek kimliğiyle gider (bağlantı kopup tekrar
+    denenince ikinci stok girişi olmaz).
+  - Fiyat gizliliği: fiyat sütunları, fiyat geçmişi, girişler/tutarlar, belgeler yalnız patrona açık
+    (`malzeme_fiyatlari()`). Barista malzeme adlarını ve eşleştirme defterini görür.
+  - Patron, eşleştirme bekleyen fatura/satış raporu varsa "sonuç eksik olabilir" uyarısını görür.
+  - **Kurulum hesabı** (servis sahibi): uygulamada normal bir hesap aç (mekana katılma), sonra Supabase SQL
+    Editor'da `insert into public.kurulum_hesaplari (user_id) select id from auth.users where email = '…';`
+    Bu hesap tüm mekanların kuyruğunu görür; "Kalanların hepsi takip dışı" ile toplu işaretler.
+
+## Okuma ve eşleştirme testleri
+`npm install` sonra `npm test` (Node 20+).
+
 ## Yerel izolasyon testi
 Postgres 16 ile, boş bir veritabanında tek oturumda sırayla:
 `test/supabase_taklit.sql`, `sql/01_giris_mekan.sql`, `sql/02_malzeme_tarif.sql`, `test/izolasyon_test.sql`,
 `test/malzeme_tarif_test.sql`, `sql/03_girisler.sql`, `test/girisler_test.sql`,
-`sql/04_fatura_belge_kdv.sql`, `test/fatura_kdv_test.sql`.
+`sql/04_fatura_belge_kdv.sql`, `test/fatura_kdv_test.sql`, `sql/05_belge_okuma_kurulum.sql`, `test/belge_kurulum_test.sql`.

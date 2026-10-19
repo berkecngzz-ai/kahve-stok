@@ -1,3 +1,4 @@
 # Gizli bilgiler (veritabanı şifresi vb.) asla GitHub'a gitmez.
 .env
 .env.*
+node_modules/
