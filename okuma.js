@@ -17,14 +17,15 @@ export function trSayi(s) {
 }
 
 // UBL birim kodları ve faturada yazan birim adları → adet / kg / g / lt / ml / diger
-const BIRIM_KODLARI = { C62: 'adet', NIU: 'adet', H87: 'adet', PA: 'adet', BX: 'adet', CT: 'adet', PK: 'adet',
+// Paket/koli/kutu 'diger' sayılır: içinde kaç tane olduğu bilinmeden adede çevrilmez (kurulum çarpanı bir kez girer).
+const BIRIM_KODLARI = { C62: 'adet', NIU: 'adet', H87: 'adet', PA: 'diger', BX: 'diger', CT: 'diger', PK: 'diger',
   KGM: 'kg', GRM: 'g', LTR: 'lt', MLT: 'ml', CLT: 'diger' };
 export function birimNormal(s) {
   if (!s) return 'diger';
   const u = String(s).trim();
   if (BIRIM_KODLARI[u.toUpperCase()]) return BIRIM_KODLARI[u.toUpperCase()];
   const k = u.toLowerCase().replace(/\.$/, '').replace(/İ/g, 'i');
-  if (/^(adet|ad|ade|adt|pk|paket|koli|kutu|şişe|sise|bidon|çuval|cuval|tane|c62|niu)$/.test(k)) return 'adet';
+  if (/^(adet|ad|ade|adt|şişe|sise|bidon|tane|c62|niu)$/.test(k)) return 'adet';
   if (/^(kg|kgm|kilo|kilogram)$/.test(k)) return 'kg';
   if (/^(g|gr|gram|grm)$/.test(k)) return 'g';
   if (/^(lt|l|ltr|litre|lıtre)$/.test(k)) return 'lt';
@@ -127,6 +128,7 @@ const PARA = /(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2,4}(?![\d,])|(?<![\d.,])\d+,\d{
 const MIKTAR_BIRIM = /(?<![\d,.])(\d+(?:[.,]\d+)?)\s*(adet|ad\.?|ade|adt|kgm|kg|gr|grm|g|lt|ltr|l|litre|ml|mlt|pk|paket|koli|kutu|şişe|sise|bidon|c62|niu)(?![a-zçğıöşü])/i;
 const YUZDE = /%\s*(\d{1,2})(?:[.,]0+)?(?!\d)|(?<![\d,.])(\d{1,2})(?:[.,]0+)?\s*%/g;
 const KDV_ORANLARI = new Set([0, 1, 8, 10, 18, 20]);
+const HARF = 'A-Za-zÇĞİÖŞÜçğıöşü';
 
 const TOPLAM_ETIKETLERI = [
   ['genel', /(ödenecek|odenecek)\s*tutar/i, 3],
@@ -134,10 +136,16 @@ const TOPLAM_ETIKETLERI = [
   ['genel', /genel\s*toplam/i, 1],
   ['kdv_haric', /mal\s*(?:\/\s*)?hizmet\s*toplam/i, 2],
   ['kdv_haric', /(ara\s*toplam|kdv\s*matrah)/i, 1],
-  ['kdv', /(hesaplanan\s*kdv|toplam\s*kdv|kdv\s*tutar|katma\s*değer\s*vergisi)/i, 1],
+  ['kdv', /(toplam\s*kdv|kdv\s*tutar|katma\s*değer\s*vergisi|^\s*top\.?\s*kdv)/i, 1],
   ['indirim', /(toplam\s*[iİı]skonto|[iİı]ndirim\s*toplam|toplam\s*[iİı]ndirim)/i, 1],
+  ['genel', /^\s*(toplam|tutar)\s*[:*₺]?\s*\d/i, 0.5],         // fiş: "TOPLAM *609,75"
 ];
-const toplamSatiriMi = (s) => TOPLAM_ETIKETLERI.some(([, re]) => re.test(s)) || /\btoplam\b/i.test(s);
+// Oran başına KDV satırı: "Hesaplanan KDV (%10) 506,00", fişte/OCR'da "KDV 9010 26,50" (oran bozuk okunmuş olabilir)
+const KDV_SATIRI = /^\s*(?:hesaplanan\s*)?k\.?d\.?v\.?(?![a-zçğıöşü])(?!\s*(?:matrah|tutar|toplam|hari|dahil))/i;
+const toplamSatiriMi = (s) => KDV_SATIRI.test(s) || TOPLAM_ETIKETLERI.some(([, re]) => re.test(s)) || /\btoplam\b/i.test(s);
+// Fiş biçimi: "6 x 41,00" satırı, altında ürün adı ve tutar
+const ADET_SATIRI = new RegExp(`^\\s*(\\d+(?:[.,]\\d+)?)\\s*[xX×*]\\s*(${PARA.source})\\s*\\S{0,3}\\s*$`);
+const FIS_IZI = /TOPKDV|TOP\s*KDV|F[İI]Ş\s*(?:NO|\d)|\bZ\s*NO\b|EK[ÜU]\s*NO|KDV\s*DAH[İI]L/i;
 
 // OCR'ın sık karıştırdığı karakterler: birimden önceki "İ/I/l/|" aslında "1" ("SÜT İL" → "SÜT 1L", "İKG" → "1KG").
 export function ocrDuzelt(s) {
@@ -146,28 +154,42 @@ export function ocrDuzelt(s) {
     .replace(/(\d)[İIl|](?=(?:KG|GR|ML|CL|LT)(?![A-Za-zÇĞİÖŞÜçğıöşü]))/g, '$1');   // "1İKG" → "1KG"
 }
 
-// Satırlarda KDV oranı okunamadıysa (OCR "%1"i "Yi" okur), oranları faturanın KDV tutarlarından çıkarır:
-// her satıra 0/1/10/20 denenir; toplam KDV'yi (ve varsa oran başına KDV'yi) TEK bir dağılım tutturuyorsa o kullanılır.
-// Birden fazla dağılım tutuyorsa hiçbir şey yapılmaz (tahmin yok → kurulum).
-export function kdvOranlariniCoz(urunler, toplamlar, oranKdvleri = new Map()) {
+// Satır sonundaki KDV kodu artıklarını atar: fişte "S1", OCR'da "&l1", "“10", "%1"
+const kodArtigi = (s) => s.replace(/\s+(?:[%&“”"'*#]{1,2}[lI]?\d{1,2}|[A-Za-z]\d{1,2})\s*$/, '').trim();
+
+// Satırlarda KDV oranı okunamadıysa (OCR "%10"u "9010" okur), oranları faturanın KDV tutarlarından çıkarır:
+// her satıra 0/1/10/20 denenir; toplam KDV'yi, oranı belli KDV satırlarını ve (oranı okunamamış olsa bile)
+// KDV satırlarının tutarlarını TEK bir dağılım tutturuyorsa o kullanılır. Birden fazla tutuyorsa tahmin yok.
+//   dahil=true: satır tutarları KDV dahil (fiş) → KDV = tutar × oran / (100 + oran)
+export function kdvOranlariniCoz(urunler, toplamlar, oranKdvleri = new Map(), kdvTutarlari = [], dahil = false) {
   const eksik = urunler.filter((u) => u.kdv_orani == null);
-  if (!eksik.length || eksik.length > 8 || eksik.some((u) => u.tutar_haric == null)) return;
-  const hedef = toplamlar.kdv ?? (toplamlar.genel != null && toplamlar.kdv_haric != null
-    ? toplamlar.genel + (toplamlar.indirim ?? 0) - toplamlar.kdv_haric : null);
+  const tutar = (u) => (dahil ? u.tutar_dahil : u.tutar_haric);
+  if (!eksik.length || eksik.length > 8 || urunler.some((u) => tutar(u) == null)) return;
+  let hedef = toplamlar.kdv ?? (kdvTutarlari.length ? kdvTutarlari.reduce((a, b) => a + b, 0) : null);
+  if (hedef == null && !dahil && toplamlar.genel != null && toplamlar.kdv_haric != null) {
+    hedef = toplamlar.genel + (toplamlar.indirim ?? 0) - toplamlar.kdv_haric;
+  }
   if (hedef == null) return;
+  const kdvi = (u, o) => (dahil ? (tutar(u) * o) / (100 + o) : (tutar(u) * o) / 100);
   const bilinen = urunler.filter((u) => u.kdv_orani != null);
   const secenek = [0, 1, 10, 20];
-  const pay = Math.max(1, 0.01 * urunler.length);
+  const pay = Math.max(0.05, 0.02 * urunler.length);          // KDV kuruş yuvarlaması
+  const beklenenTutarlar = [...kdvTutarlari].filter((t) => t > 0).sort((a, b) => a - b);
   const cozumler = [];
   const dene = (i, atanan) => {
     if (cozumler.length > 1) return;
     if (i === eksik.length) {
       const hepsi = [...bilinen.map((u) => [u, u.kdv_orani]), ...eksik.map((u, j) => [u, atanan[j]])];
-      const kdv = hepsi.reduce((t, [u, o]) => t + (u.tutar_haric * o) / 100, 0);
-      if (Math.abs(kdv - hedef) > pay) return;
-      for (const [o, tutar] of oranKdvleri) {
-        const k = hepsi.filter(([, x]) => x === o).reduce((t, [u]) => t + (u.tutar_haric * o) / 100, 0);
-        if (Math.abs(k - tutar) > pay) return;
+      if (Math.abs(hepsi.reduce((t, [u, o]) => t + kdvi(u, o), 0) - hedef) > pay) return;
+      for (const [o, t] of oranKdvleri) {
+        if (Math.abs(hepsi.filter(([, x]) => x === o).reduce((s, [u]) => s + kdvi(u, o), 0) - t) > pay) return;
+      }
+      if (beklenenTutarlar.length) {
+        const gruplar = new Map();
+        for (const [u, o] of hepsi) if (o > 0) gruplar.set(o, (gruplar.get(o) ?? 0) + kdvi(u, o));
+        const bulunan = [...gruplar.values()].sort((a, b) => a - b);
+        if (bulunan.length !== beklenenTutarlar.length
+            || bulunan.some((t, k) => Math.abs(t - beklenenTutarlar[k]) > pay)) return;
       }
       cozumler.push([...atanan]);
       return;
@@ -183,76 +205,124 @@ export function metinCoz(satirlar) {
   const temiz = satirlar.map((s) => ocrDuzelt(String(s).replace(/\s+/g, ' ').trim())).filter(Boolean);
   const hepsi = temiz.join('\n');
   const notlar = [];
+  const fisMi = FIS_IZI.test(hepsi);
 
   const ettn = hepsi.match(/ETTN\s*:?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1] ?? null;
-  const fatura_no = hepsi.match(/Fatura\s*No\s*:?\s*([A-Z0-9]{3}20\d{11}|[A-Z0-9][A-Z0-9-]{4,19})/i)?.[1] ?? null;
+  const fatura_no = hepsi.match(/Fatura\s*No\s*:?\s*([A-Z0-9]{3}20\d{11}|[A-Z0-9][A-Z0-9-]{4,19})/i)?.[1]
+    ?? hepsi.match(/(?:Belge|Fiş|Seri)\s*No\s*:?\s*([A-Z0-9][A-Z0-9-]{3,19})/i)?.[1]
+    ?? hepsi.match(/(?:^|\s)No\s*:\s*((?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{4,19})/)?.[1] ?? null;
   const t = hepsi.match(/(?:Fatura\s*Tarihi|Düzenleme\s*Tarihi|Tarih)\s*:?\s*(\d{2})[./-](\d{2})[./-](\d{4})/i)
          ?? hepsi.match(/(\d{2})[./-](\d{2})[./-](20\d{2})/);
   const tarih = t ? `${t[3]}-${t[2]}-${t[1]}` : null;
   const vkn = hepsi.match(/(?:VKN|TCKN|Vergi\s*(?:Kimlik\s*)?(?:No|Numarası))\s*:?\s*(\d{10,11})(?!\d)/i)?.[1] ?? null;
-  const tedarikci = temiz.slice(0, 12).find((s) => /\b(A\.?\s?Ş|LTD|ŞTİ|STI|TİC|TIC|SAN|GIDA|GDA|PAZARLAMA|DAĞITIM)\b/i.test(s)
-    && !/sayın|alıcı|müşteri/i.test(s)) ?? null;
+  const unvan = new RegExp(`(?<![${HARF}])(A\\.?\\s?Ş|LTD|ŞTİ|STI|TİC|TIC|SAN|GIDA|GDA|PAZARLAMA|DAĞITIM|MARKET|TOPTAN)(?![${HARF}])`, 'i');
+  const tedarikciSatiri = temiz.slice(0, 12).find((s) => unvan.test(s) && !/sayın|alıcı|müşteri/i.test(s));
+  const tedarikci = tedarikciSatiri
+    ? tedarikciSatiri.replace(/\s*\b(e-?\s?fatura|e-?\s?arşiv(\s*fatura)?|fatura)\s*$/i, '').trim() || null : null;
 
   // Toplamlar: her etiket için satırdaki son para tutarı; aynı tür için en yüksek öncelik kazanır.
   const toplamlar = { genel: null, kdv_haric: null, kdv: null, indirim: null };
   const oncelik = {};
-  let kdvToplami = 0, kdvSatiri = 0;
   const belgeOranlari = new Set();
-  const oranKdvleri = new Map();     // "Hesaplanan KDV (%20) 20,00" → 20 → 20,00
-  for (const s of temiz) {
+  const oranKdvleri = new Map();     // oranı okunan KDV satırları: 10 → 506,00
+  const kdvTutarlari = [];           // tüm oran başına KDV satırlarının tutarları (oran okunamasa da)
+  let ilkToplamSatiri = temiz.length;
+  temiz.forEach((s, i) => {
+    const paralar = s.match(PARA);
+    if (!paralar) return;
+    const deger = trSayi(paralar[paralar.length - 1]);
+    if (KDV_SATIRI.test(s)) {
+      kdvTutarlari.push(deger);
+      const oranlar = [...s.matchAll(YUZDE)].map((m) => Number(m[1] ?? m[2])).filter((o) => KDV_ORANLARI.has(o));
+      oranlar.forEach((o) => belgeOranlari.add(o));
+      if (oranlar.length === 1) oranKdvleri.set(oranlar[0], deger);
+      ilkToplamSatiri = Math.min(ilkToplamSatiri, i);
+      return;
+    }
     for (const [tur, re, p] of TOPLAM_ETIKETLERI) {
       if (!re.test(s)) continue;
-      const paralar = s.match(PARA);
-      if (!paralar) continue;
-      const deger = trSayi(paralar[paralar.length - 1]);
-      if (tur === 'kdv' && /hesaplanan/i.test(s)) {           // "Hesaplanan KDV (%1)" satırları toplanır
-        kdvToplami += deger; kdvSatiri++;
-        const oranlar = [...s.matchAll(YUZDE)].map((m) => Number(m[1] ?? m[2])).filter((o) => KDV_ORANLARI.has(o));
-        oranlar.forEach((o) => belgeOranlari.add(o));
-        if (oranlar.length === 1) oranKdvleri.set(oranlar[0], deger);
-        continue;
-      }
       if ((oncelik[tur] ?? 0) < p) { toplamlar[tur] = deger; oncelik[tur] = p; }
+      ilkToplamSatiri = Math.min(ilkToplamSatiri, i);
       break;
     }
-  }
-  if (kdvSatiri) toplamlar.kdv = yuvarla2(kdvToplami);
+  });
+  if (toplamlar.kdv == null && kdvTutarlari.length) toplamlar.kdv = yuvarla2(kdvTutarlari.reduce((a, b) => a + b, 0));
   if (toplamlar.indirim == null) toplamlar.indirim = 0;
 
-  // Ürün satırları: miktar+birim ve en az bir para tutarı olan, toplam satırı olmayan satırlar.
   const urunler = [];
-  for (const s of temiz) {
-    if (toplamSatiriMi(s)) continue;
+  const kullanildi = new Set();
+  // 1) Fiş biçimi: "6 x 41,00" + alttaki "SUT 1L YAGLI S1 246,00"
+  temiz.forEach((s, i) => {
+    const a = s.match(ADET_SATIRI);
+    const alt = temiz[i + 1];
+    if (!a || !alt || toplamSatiriMi(alt) || i + 1 >= ilkToplamSatiri) return;
+    const paralar = alt.match(PARA);
+    if (!paralar) return;
+    const sonPara = [...alt.matchAll(PARA)].pop();
+    const ad = kodArtigi(alt.slice(0, sonPara.index));
+    if (ad.replace(/[^A-Za-zÇĞİÖŞÜçğıöşü]/g, '').length < 2) return;
+    const agirlik = /[.,]/.test(a[1]);
+    urunler.push({ metin: ad, miktar: trSayi(a[1]), birim: agirlik ? 'kg' : 'adet', birim_fiyat: trSayi(a[2]),
+                   tutar: trSayi(sonPara[0]), kdv_orani: null, _fis: true });
+    kullanildi.add(i); kullanildi.add(i + 1);
+  });
+  // 2) Fatura biçimi: miktar+birim ve en az bir para tutarı olan, toplam satırı olmayan satırlar.
+  temiz.forEach((s, i) => {
+    if (kullanildi.has(i) || toplamSatiriMi(s) || ADET_SATIRI.test(s)) return;
     // Miktar: ilk para tutarından hemen önceki miktar+birim ("SÜT 1L  24 Adet  49,50" → 24 Adet; 1L ürün adının parçası)
     const miktarlar = [...s.matchAll(new RegExp(MIKTAR_BIRIM.source, 'gi'))];
-    const icindeMi = (i) => miktarlar.some((m) => i >= m.index && i < m.index + m[0].length);
+    const icindeMi = (k) => miktarlar.some((m) => k >= m.index && k < m.index + m[0].length);
     const ilkPara = [...s.matchAll(PARA)].find((p) => !icindeMi(p.index));
-    if (!miktarlar.length || !ilkPara) continue;
-    const mb = miktarlar.filter((m) => m.index + m[0].length <= ilkPara.index).pop();
-    if (!mb) continue;
-    const once = s.slice(0, mb.index).replace(/^\s*\d{1,3}[.)]?\s+/, '').replace(/\s+\d+(?:,\d+)?\s*$/, '').trim();
-    const sonra = s.slice(mb.index + mb[0].length);
-    const sonrakiParalar = sonra.match(PARA) ?? [];
-    if (!sonrakiParalar.length || once.length < 2) continue;
-    let oran = null;
-    for (const m of sonra.matchAll(YUZDE)) { const o = Number(m[1] ?? m[2]); if (KDV_ORANLARI.has(o)) oran = o; }
-    urunler.push({
-      metin: once,
-      miktar: trSayi(mb[1]),
-      birim: birimNormal(mb[2]),
-      birim_fiyat: sonrakiParalar.length >= 2 ? trSayi(sonrakiParalar[0]) : null,
-      tutar_haric: trSayi(sonrakiParalar[sonrakiParalar.length - 1]),
-      kdv_orani: oran,
-    });
+    const mb = ilkPara ? miktarlar.filter((m) => m.index + m[0].length <= ilkPara.index).pop() : null;
+    if (mb) {
+      const once = s.slice(0, mb.index).replace(/^\s*\d{1,3}[.)]?\s+/, '').replace(/\s+\d+(?:,\d+)?\s*$/, '').trim();
+      const sonra = s.slice(mb.index + mb[0].length);
+      const sonrakiParalar = sonra.match(PARA) ?? [];
+      if (!sonrakiParalar.length || once.length < 2) return;
+      let oran = null;
+      for (const m of sonra.matchAll(YUZDE)) { const o = Number(m[1] ?? m[2]); if (KDV_ORANLARI.has(o)) oran = o; }
+      urunler.push({ metin: once, miktar: trSayi(mb[1]), birim: birimNormal(mb[2]),
+        birim_fiyat: sonrakiParalar.length >= 2 ? trSayi(sonrakiParalar[0]) : null,
+        tutar: trSayi(sonrakiParalar[sonrakiParalar.length - 1]), kdv_orani: oran });
+      return;
+    }
+    // 3) Fişte tek ürün: "SİMİT 15,00" (miktar yazmıyorsa 1 adet) — yalnız fişte ve toplamlardan önce
+    if (fisMi && i < ilkToplamSatiri && i > 0) {
+      const paralar = [...s.matchAll(PARA)];
+      if (paralar.length !== 1) return;
+      const ad = kodArtigi(s.slice(0, paralar[0].index));
+      if (ad.replace(/[^A-Za-zÇĞİÖŞÜçğıöşü]/g, '').length < 3 || /kart|nakit|para üstü|tarih|saat/i.test(ad)) return;
+      urunler.push({ metin: ad, miktar: 1, birim: 'adet', birim_fiyat: null, tutar: trSayi(paralar[0][0]), kdv_orani: null, _fis: true });
+    }
+  });
+
+  // Tutarlar KDV hariç mi dahil mi? Faturada hariç; fişte çoğunlukla dahil. Toplamla hangisi tutuyorsa o.
+  const toplamTutar = urunler.reduce((a, u) => a + (u.tutar ?? 0), 0);
+  const pay = Math.max(1, 0.01 * urunler.length);
+  const dahil = fisMi && toplamlar.genel != null && Math.abs(toplamTutar - (toplamlar.genel + toplamlar.indirim)) <= pay
+    && !(toplamlar.kdv != null && Math.abs(toplamTutar + toplamlar.kdv - toplamlar.genel) <= pay && toplamlar.kdv > pay);
+  for (const u of urunler) {
+    if (dahil) u.tutar_dahil = u.tutar; else u.tutar_haric = u.tutar;
+    delete u.tutar;
   }
-  // Satırda KDV oranı yoksa ve belgede tek oran varsa onu kullan.
+
+  // Satırda KDV oranı yoksa ve belgede tek oran varsa onu kullan; yoksa KDV tutarlarından çöz.
   if (belgeOranlari.size === 1) {
     const [o] = belgeOranlari;
     urunler.forEach((u) => { if (u.kdv_orani == null) u.kdv_orani = o; });
   }
-  kdvOranlariniCoz(urunler, toplamlar, oranKdvleri);
+  kdvOranlariniCoz(urunler, toplamlar, oranKdvleri, kdvTutarlari, dahil);
+  if (dahil) {
+    // KDV dahil tutardan hariç tutar; oran bulunamadıysa tutar bilinmiyor sayılır (satır kuyruğa gider)
+    for (const u of urunler) {
+      u.tutar_haric = u.kdv_orani != null ? yuvarla2(u.tutar_dahil / (1 + u.kdv_orani / 100)) : null;
+      if (u.birim_fiyat != null && u.kdv_orani != null) u.birim_fiyat = Math.round((u.birim_fiyat / (1 + u.kdv_orani / 100)) * 10000) / 10000;
+    }
+  }
+  urunler.forEach((u) => { delete u._fis; });
   if (!urunler.length) notlar.push('satir_yok');
   if (toplamlar.genel == null) notlar.push('toplam_yok');
+  if (fisMi) notlar.push(dahil ? 'fis_kdv_dahil' : 'fis');
   return { ettn, fatura_no, tedarikci, tedarikci_vkn: vkn, tarih, toplamlar, satirlar: urunler, notlar };
 }
 

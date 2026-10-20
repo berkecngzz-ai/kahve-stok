@@ -1810,7 +1810,7 @@ const BEKLEME_SEBEPLERI = {
   eslesme: 'Hangi malzeme?', donusum: 'Birim çevrilemedi', toplam: 'Faturanın toplamı tutmuyor',
   tutar: 'Miktar × fiyat tutmuyor', fiyat: 'Fiyat olağandışı', miktar: 'Miktar olağandışı', eksik: 'Eksik bilgi',
 };
-const BELGE_BIRIM = { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml', diger: '?' };
+const BELGE_BIRIM = { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml', diger: 'paket/diğer' };
 
 async function kurulumEkrani(kutu) {
   kutu.innerHTML = '<p class="bilgi">Yükleniyor…</p>';

@@ -21,7 +21,8 @@ test('birimler', () => {
   assert.equal(birimNormal('KG'), 'kg');
   assert.equal(birimNormal('Lt'), 'lt');
   assert.equal(birimNormal('GR'), 'g');
-  assert.equal(birimNormal('Koli'), 'adet');
+  assert.equal(birimNormal('Koli'), 'diger');   // paket içi bilinmeden adede çevrilmez
+  assert.equal(birimNormal('PK'), 'diger');
   assert.equal(birimNormal('xyz'), 'diger');
 });
 test('e-fatura XML', () => {
@@ -159,4 +160,33 @@ test('KDV oranı: birden fazla dağılım tutarsa tahmin yok', () => {
   const v = [{ tutar_haric: 1000, kdv_orani: null }, { tutar_haric: 3000, kdv_orani: null }];
   kdvOranlariniCoz(v, { kdv: 310, genel: null });         // yalnız %1 (1000) + %10 (3000)
   assert.deepEqual(v.map((x) => x.kdv_orani), [1, 10]);
+});
+
+// ---------- Kullanıcının gerçek denemesinden (2026-10-20) OCR çıktıları ----------
+const toptanOcr = "TEST BELGESİDİR - GEÇERLİ FATURA DEĞİLDİR\nÖRNEK TOPTAN GIDA (TEST) FATURA\nAlanya/ANTALYA VKN: 3333333333 (hayali) No: TST-A-000103\nTarih: 14.10.2026\nSayın: TEST KAFE\nÜrün Mkt Brm B.Fiyat KDV Tutar\nACIFTLIK T.YAG SUT 1LT 12 AD 38,50 1 462,00\nMNN KRML SRP 70CL 1 AD 265,00 9010 265,00\nPECETE 100LU 10 PK 42,00 9020 420,00\nBULASIK DETERJANI 5LT 1 AD 189,90 9020 189,90\nKARTON BARDAK 8OZ SOL! 4 PK 95,00 920 380,00\n—————————İRR\nAra Toplam 1.716,90\nKDV 941 4,62\nKDV 9010 26,50\nKDV 9420 197,98\nGENEL TOPLAM 1.946,00\n";
+test('gerçek OCR: bozuk KDV oranları, KDV satırlarının tutarlarından çözülür; PK paket sayılır', () => {
+  const r = metinCoz(toptanOcr.split('\n'));
+  assert.equal(r.tedarikci, 'ÖRNEK TOPTAN GIDA (TEST)');
+  assert.equal(r.fatura_no, 'TST-A-000103');
+  assert.deepEqual(r.satirlar.map((s) => [s.miktar, s.birim, s.kdv_orani]),
+    [[12, 'adet', 1], [1, 'adet', 10], [10, 'diger', 20], [1, 'adet', 20], [4, 'diger', 20]]);
+  assert.deepEqual(toplamKontrol(r), { tutuyor: true });
+});
+const fisOcr = "** TEST FİŞİ **\nGEÇERLİ BELGE DEĞİLDİR\nDENEME MARKET (TEST)\nALANYA\n15.10.2026 FİŞ 0047\n6 x 41,00\nSUT 1L YAGLI S1 246,00\n1 x 210,00\nKAKAO TOZU 5006 “10 210,00\n2 x 64,50\nSEKER KUP 1KG &l1 129,00\nTOPKDV 24,75\nTOPLAM 609,75\nKREDİ KARTI\n";
+test('gerçek OCR: fiş biçimi ("6 x 41,00" + alt satır)', () => {
+  const r = metinCoz(fisOcr.split('\n'));
+  assert.deepEqual(r.satirlar.map((s) => [s.metin, s.miktar, s.birim, s.tutar_haric, s.kdv_orani]),
+    [['SUT 1L YAGLI', 6, 'adet', 246, 1], ['KAKAO TOZU 5006', 1, 'adet', 210, 10], ['SEKER KUP 1KG', 2, 'adet', 129, 1]]);
+  assert.equal(r.toplamlar.genel, 609.75);
+  assert.deepEqual(toplamKontrol(r), { tutuyor: true });
+});
+test('fiş: tutarlar KDV dahilse hariç tutara çevrilir', () => {
+  const r = metinCoz(['MARKET A.Ş.', 'FİŞ NO: 12', '2 x 50,50', 'SUT 1L %1 101,00', 'SİMİT %10 22,00', 'TOPKDV 3,00', 'TOPLAM 123,00']);
+  assert.deepEqual(r.satirlar.map((s) => [s.metin, s.miktar, s.tutar_haric, s.kdv_orani]), [['SUT 1L', 2, 100, 1], ['SİMİT', 1, 20, 10]]);
+  assert.ok(r.notlar.includes('fis_kdv_dahil'));
+  assert.deepEqual(toplamKontrol(r), { tutuyor: true });
+});
+test('tedarikçi: "A.Ş." ve sondaki "e-FATURA"', () => {
+  const r = metinCoz(['DENEME KAHVE KAVURMA A.Ş.  e-FATURA', 'VKN: 2222222222']);
+  assert.equal(r.tedarikci, 'DENEME KAHVE KAVURMA A.Ş.');
 });
