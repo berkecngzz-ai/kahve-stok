@@ -57,3 +57,25 @@ test('cevap anahtarı + karşılaştırma (02 XML: 4/4 doğru)', () => {
   assert.deepEqual(k.ozet, { satir: 4, okuma_dogru: 4, dogru: 4, yanlis: 0, kuyruk: 0, okunamadi: 0 });
   assert.equal(k.genel.dogru, true);
 });
+
+test('gerçek AI testinden (2026-10-20): fiş öneki ve paket içi', () => {
+  // nano ürün adına "6 x 41,00" önekini koymuştu: "x 41" paket sayılmamalı
+  assert.equal(aiIleSiniflandir({ metin: '6 x 41,00 SUT 1LT YAĞLI', miktar: 6, birim: 'adet', ai: e('malzeme', 'sut', 6000, 0.9) }, ctx).carpan, 1000);
+  // nano yanlış eşleştirme: kakao → kahve çekirdeği, miktar yok → kuyruk
+  assert.equal(aiIleSiniflandir({ metin: '1 x 210,00 KAKAO TOZU 500G', miktar: 1, birim: 'diger', ai: e('malzeme', 'kc', null, 0.8) }, ctx).sinif, 'belirsiz');
+  // mini "emin değilim" ama miktar kuralla doğrulanıyor → baristaya sorulur
+  assert.equal(aiIleSiniflandir({ metin: 'Espresso Blend Çekirdek Kahve 1KG', miktar: 3, birim: 'adet', ai: e('emin_degil', 'kc', 3000, 0.8) }, ctx).sinif, 'soru');
+  // "emin değilim" ve kuralla doğrulanamıyor → kuyruk
+  assert.equal(aiIleSiniflandir({ metin: 'KAHVE', miktar: 3, birim: 'adet', ai: e('emin_degil', 'kc', 3000, 0.8) }, ctx).sinif, 'belirsiz');
+  // paket: ürün adındaki 50'Lİ ile AI'nın 200 adedi uyuşuyor → soru; uyuşmuyorsa kuyruk
+  assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 200, 0.9) }, ctx).carpan, 50);
+  assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 400, 0.9) }, ctx).sinif, 'belirsiz');
+});
+test('AI fişi "KDV dahil" dese de hesap hariç gösteriyorsa hariç sayılır', () => {
+  const f = aiSonucunuCevir({ tutarlar_kdv_dahil: true, genel_toplam: 609.75, kdv_toplam: 24.75, kdv_haric_toplam: null, indirim: null,
+    satirlar: [{ metin: 'SUT 1L', miktar: 6, birim: 'adet', birim_fiyat: 41, tutar: 246, kdv_orani: 1, eslesme: null },
+               { metin: 'KAKAO', miktar: 1, birim: 'adet', birim_fiyat: 210, tutar: 210, kdv_orani: 10, eslesme: null },
+               { metin: 'SEKER', miktar: 2, birim: 'adet', birim_fiyat: 64.5, tutar: 129, kdv_orani: 1, eslesme: null }] });
+  assert.deepEqual(f.satirlar.map((s) => s.tutar_haric), [246, 210, 129]);
+  assert.deepEqual(toplamKontrol(f), { tutuyor: true });
+});

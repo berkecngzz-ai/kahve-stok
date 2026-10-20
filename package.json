@@ -7,6 +7,7 @@
     "test": "node --test test/js/"
   },
   "devDependencies": {
-    "@xmldom/xmldom": "0.8.10"
+    "@xmldom/xmldom": "0.8.10",
+    "supabase": "^2.121.0"
   }
 }

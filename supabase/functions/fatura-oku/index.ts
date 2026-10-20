@@ -87,22 +87,101 @@ EŞLEŞTİRME (takip edilen malzeme listesi verilecek):
 - Ürün listedeki hiçbir malzeme değilse (peçete, deterjan; listede yoksa şeker, kakao…): karar "takip_disi".
 - Emin değilsen: karar "emin_degil". Güveni dürüst ver; yanlış eşleştirme stok hesabını bozar.`;
 
+// OpenAI'a fotoğraf(lar)ı ve malzeme listesini gönderir; yapılandırılmış sonucu döner.
+async function openaiOku(anahtar: string, model: string, liste: unknown[], gorseller: string[],
+                         fiyatlar: Record<string, [number, number]>) {
+  const ai0 = Date.now();
+  const kes = new AbortController();
+  const zaman = setTimeout(() => kes.abort(), 30000);
+  const istek: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: TALIMAT },
+      { role: 'user', content: [
+        { type: 'text', text: `Takip edilen malzemeler (JSON): ${JSON.stringify(liste)}` },
+        ...gorseller.map((g) => ({ type: 'image_url', image_url: { url: g, detail: 'high' } })),
+      ] },
+    ],
+    response_format: { type: 'json_schema', json_schema: { name: 'fatura', strict: true, schema: SEMA } },
+    max_completion_tokens: 6000,
+  };
+  if (model.startsWith('gpt-5')) istek.reasoning_effort = 'minimal';
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST', signal: kes.signal,
+    headers: { Authorization: `Bearer ${anahtar}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(istek),
+  }).finally(() => clearTimeout(zaman));
+  const aiMs = Date.now() - ai0;
+  const veri = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const kod = r.status === 429 ? 'AI_SINIR' : 'AI_HATA';
+    throw Object.assign(new Error(`${kod}: ${veri?.error?.message ?? r.status}`), { kod });
+  }
+  const metin = veri.choices?.[0]?.message?.content;
+  if (!metin) throw Object.assign(new Error('AI_HATA: boş cevap'), { kod: 'AI_HATA' });
+  const sonuc = JSON.parse(metin);
+  const giris = veri.usage?.prompt_tokens ?? null;
+  const cikis = veri.usage?.completion_tokens ?? null;
+  const f = fiyatlar[model];
+  const maliyet = f && giris != null && cikis != null ? (giris * f[0] + cikis * f[1]) / 1_000_000 : null;
+  return { sonuc, giris, cikis, maliyet, aiMs };
+}
+
+// Sabit sürede karşılaştırma (imza tahmin edilemesin)
+function ayniMi(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let fark = 0;
+  for (let i = 0; i < a.length; i++) fark |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return fark === 0;
+}
+
+// TEST MODU: okuma_testleri satırını okur. Yalnızca veritabanındaki gizli imzayla çağrılabilir (bkz. sql/07).
+async function testModu(req: Request, imza: string, anahtar: string, fiyatlar: Record<string, [number, number]>) {
+  const t0 = Date.now();
+  const sunucu = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const ayar = await sunucu.from('ic_ayarlar').select('deger').eq('ad', 'okuma_testi_imza').maybeSingle();
+  if (ayar.error || !ayar.data || !ayniMi(imza, ayar.data.deger)) return cevap({ hata: 'YETKI' }, 403);
+  let govde: { okuma_testi?: string };
+  try { govde = await req.json(); } catch { return cevap({ hata: 'GECERSIZ' }, 400); }
+  const satir = await sunucu.from('okuma_testleri').select('*').eq('id', govde.okuma_testi ?? '').maybeSingle();
+  if (satir.error || !satir.data) return cevap({ hata: 'BULUNAMADI' }, 404);
+  const t = satir.data;
+  try {
+    const dosya = await sunucu.storage.from('fatura-belgeleri').download(t.dosya_yolu);
+    if (dosya.error) throw new Error(dosya.error.message);
+    const bayt = new Uint8Array(await dosya.data.arrayBuffer());
+    let ikili = '';
+    for (let i = 0; i < bayt.length; i += 0x8000) ikili += String.fromCharCode(...bayt.subarray(i, i + 0x8000));
+    const tip = /\.png$/i.test(t.dosya_yolu) ? 'image/png' : 'image/jpeg';
+    const r = await openaiOku(anahtar, t.model, t.malzemeler, [`data:${tip};base64,${btoa(ikili)}`], fiyatlar);
+    await sunucu.from('okuma_testleri').update({ durum: 'tamam', sonuc: r.sonuc, giris_token: r.giris, cikis_token: r.cikis,
+      maliyet_usd: r.maliyet, ai_ms: r.aiMs, toplam_ms: Date.now() - t0, boyut_kb: Math.round(bayt.length / 1024) }).eq('id', t.id);
+    return cevap({ ok: true });
+  } catch (e) {
+    const mesaj = e instanceof Error ? e.message : String(e);
+    await sunucu.from('okuma_testleri').update({ durum: 'hata', hata: mesaj.slice(0, 500), toplam_ms: Date.now() - t0 }).eq('id', t.id);
+    return cevap({ hata: 'AI_HATA', mesaj }, 502);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return cevap({ hata: 'Yalnızca POST' }, 405);
   const t0 = Date.now();
+  const anahtar = Deno.env.get('OPENAI_API_KEY');
+  if (!anahtar) return cevap({ hata: 'AYAR_EKSIK', mesaj: 'Okuma servisi kurulmamış.' }, 503);
+  let fiyatlar = VARSAYILAN_FIYATLAR;
+  try { fiyatlar = { ...VARSAYILAN_FIYATLAR, ...JSON.parse(Deno.env.get('AI_FIYATLAR') ?? '{}') }; } catch { /* varsayılan */ }
+
+  const testImzasi = req.headers.get('x-okuma-testi');
+  if (testImzasi) return testModu(req, testImzasi, anahtar, fiyatlar);
+
   const yetki = req.headers.get('Authorization');
   if (!yetki) return cevap({ hata: 'GIRIS_GEREKLI', mesaj: 'Giriş yapmalısın.' }, 401);
-
   const URL_ = Deno.env.get('SUPABASE_URL')!;
   const kullanici = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: yetki } } });
   const sunucu = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const anahtar = Deno.env.get('OPENAI_API_KEY');
-  if (!anahtar) return cevap({ hata: 'AYAR_EKSIK', mesaj: 'Okuma servisi kurulmamış.' }, 503);
-
   const modeller = (Deno.env.get('AI_MODELLER') ?? 'gpt-4.1-mini,gpt-4.1-nano').split(',').map((m) => m.trim()).filter(Boolean);
-  let fiyatlar = VARSAYILAN_FIYATLAR;
-  try { fiyatlar = { ...VARSAYILAN_FIYATLAR, ...JSON.parse(Deno.env.get('AI_FIYATLAR') ?? '{}') }; } catch { /* varsayılan */ }
 
   let govde: { gorseller?: string[]; model?: string };
   try { govde = await req.json(); } catch { return cevap({ hata: 'GECERSIZ', mesaj: 'Geçersiz istek.' }, 400); }
@@ -131,46 +210,11 @@ Deno.serve(async (req) => {
     const mz = await kullanici.from('malzemeler').select('id, ad, birim, aktif');
     if (mz.error) throw new Error(mz.error.message);
     const liste = mz.data.filter((m) => m.aktif).map((m) => ({ id: m.id, ad: m.ad, birim: m.birim }));
-
-    const ai0 = Date.now();
-    const kes = new AbortController();
-    const zaman = setTimeout(() => kes.abort(), 30000);
-    const istek: Record<string, unknown> = {
-      model,
-      messages: [
-        { role: 'system', content: TALIMAT },
-        { role: 'user', content: [
-          { type: 'text', text: `Takip edilen malzemeler (JSON): ${JSON.stringify(liste)}` },
-          ...gorseller.map((g) => ({ type: 'image_url', image_url: { url: g, detail: 'high' } })),
-        ] },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: 'fatura', strict: true, schema: SEMA } },
-      max_completion_tokens: 6000,
-    };
-    if (model.startsWith('gpt-5')) istek.reasoning_effort = 'minimal';
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST', signal: kes.signal,
-      headers: { Authorization: `Bearer ${anahtar}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(istek),
-    }).finally(() => clearTimeout(zaman));
-    const aiMs = Date.now() - ai0;
-    const veri = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const kod = r.status === 429 ? 'AI_SINIR' : 'AI_HATA';
-      throw Object.assign(new Error(`${kod}: ${veri?.error?.message ?? r.status}`), { kod });
-    }
-    const metin = veri.choices?.[0]?.message?.content;
-    if (!metin) throw Object.assign(new Error('AI_HATA: boş cevap'), { kod: 'AI_HATA' });
-    const sonuc = JSON.parse(metin);
-    const giris = veri.usage?.prompt_tokens ?? null;
-    const cikis = veri.usage?.completion_tokens ?? null;
-    const f = fiyatlar[model];
-    const maliyet = f && giris != null && cikis != null ? (giris * f[0] + cikis * f[1]) / 1_000_000 : null;
-
-    const b = await bitir('tamam', { sonuc, giris, cikis, maliyet });
+    const r = await openaiOku(anahtar, model, liste, gorseller, fiyatlar);
+    const b = await bitir('tamam', { sonuc: r.sonuc, giris: r.giris, cikis: r.cikis, maliyet: r.maliyet });
     if (b.error) throw new Error(b.error.message);
-    return cevap({ okuma_id: okumaId, model, sonuc, token: { giris, cikis }, maliyet_usd: maliyet,
-                   sure: { ai_ms: aiMs, toplam_ms: Date.now() - t0 } });
+    return cevap({ okuma_id: okumaId, model, sonuc: r.sonuc, token: { giris: r.giris, cikis: r.cikis }, maliyet_usd: r.maliyet,
+                   sure: { ai_ms: r.aiMs, toplam_ms: Date.now() - t0 } });
   } catch (e) {
     const mesaj = e instanceof Error ? e.message : String(e);
     await bitir('hata', { hata: mesaj });

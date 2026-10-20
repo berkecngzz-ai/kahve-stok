@@ -492,9 +492,16 @@ export async function pdfOku(blob) {
 // AI satır tutarlarını faturada yazdığı gibi verir; KDV dahilse (fiş) hariç tutara çevrilir. Oran yoksa
 // faturanın KDV tutarlarından çözülmeye çalışılır (OCR'daki gibi); çözülemezse tutar bilinmiyor sayılır.
 export function aiSonucunuCevir(ai) {
-  const dahil = ai.tutarlar_kdv_dahil === true;
   const toplamlar = { genel: ai.genel_toplam ?? null, kdv_haric: ai.kdv_haric_toplam ?? null,
                       kdv: ai.kdv_toplam ?? null, indirim: ai.indirim ?? 0 };
+  // KDV dahil mi? AI'nın etiketine değil hesaba bakılır: satırlar toplamı genel toplamı veriyorsa dahil;
+  // satırlar + KDV genel toplamı veriyorsa hariç. Hesap karar veremezse AI'nın etiketi kullanılır.
+  const toplamTutar = (ai.satirlar ?? []).reduce((t, s) => t + (s.tutar ?? 0), 0);
+  const pay = Math.max(1, 0.01 * (ai.satirlar?.length ?? 0));
+  const genel = toplamlar.genel != null ? toplamlar.genel + (toplamlar.indirim ?? 0) : null;
+  const haricTutar = genel != null && toplamlar.kdv > pay && Math.abs(toplamTutar + toplamlar.kdv - genel) <= pay;
+  const dahilTutar = genel != null && Math.abs(toplamTutar - genel) <= pay;
+  const dahil = haricTutar ? false : dahilTutar ? true : ai.tutarlar_kdv_dahil === true;
   const satirlar = (ai.satirlar ?? []).map((s) => ({
     metin: String(s.metin ?? '').trim() || '(okunamadı)',
     miktar: s.miktar ?? null,

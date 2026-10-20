@@ -62,10 +62,11 @@ export function benzerlik(malzemeAdi, satirMetni) {
 // Belge birimi → malzeme birimi çarpanı (1 belge birimi = kaç g / ml / adet). Bulunamazsa null.
 // Paket boyu ve çoklu paket metinden okunur: "SÜT 1L X 12", "KAHVE 250 GR", "BARDAK 50'Lİ".
 export function carpanBul(belgeBirimi, malzemeBirimi, metin) {
-  const ham = String(metin ?? '').replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
-  // Çoklu paket: "x12", "12x", "12'li", "12 li", "12 adet"
+  const ham = String(metin ?? '').replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase()
+    .replace(/^\s*\d+(?:[.,]\d+)?\s*[x×*]\s*\d[\d.]*(?:,\d+)?\s*/, '');   // fişteki "6 x 41,00 " öneki ürün adı değil
+  // Çoklu paket: "x12", "12x", "12'li", "12 li" (fiyat değil: "x 41,00" sayılmaz)
   let coklu = 1;
-  const c1 = ham.match(/(?:^|\s|\*)x\s*(\d{1,4})\b/) || ham.match(/\b(\d{1,4})\s*x(?:\s|$)/)
+  const c1 = ham.match(/(?:^|\s|\*)x\s*(\d{1,4})(?![\d.,])/) || ham.match(/\b(\d{1,4})\s*x(?:\s|$)/)
           || ham.match(/\b(\d{1,4})\s*['’]?\s*l[iıuü](?![a-zçğıöşü])/);
   if (c1) coklu = Number(c1[1]);
   // Paket boyu
@@ -112,13 +113,19 @@ export function aiIleSiniflandir(satir, ctx) {
   const ai = satir.ai;
   if (!ai) return siniflandir(satir, ctx);
   if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) return { sinif: 'takip_disi', kaynak: 'ai' };
-  const m = ai.karar === 'malzeme' ? malzemeBul.get(ai.malzeme_id) : null;
+  const m = ai.karar !== 'takip_disi' ? malzemeBul.get(ai.malzeme_id) : null;
   if (!m || !(ai.guven >= AI_MALZEME_GUVEN)) return { sinif: 'belirsiz', aday_malzeme_id: m?.id ?? null };
   const miktar = Number(satir.miktar);
   if (!(miktar > 0)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const kural = carpanBul(birim, m.birim, satir.metin);
+  // Belge birimi paket/diğer ise: ürün adında paket içi yazıyorsa ("50'Lİ", "1L") AI'nın hesabıyla karşılaştırılır.
+  const paketYazili = /\d\s*(?:kg|gr|g|lt|l|ml|cl)(?![a-zçğıöşü])|(?:^|\s)x\s*\d|\d\s*x(?:\s|$)|\d\s*['’]?\s*l[iıuü](?![a-zçğıöşü])/i
+    .test(String(satir.metin ?? '').replace(/^\s*\d+(?:[.,]\d+)?\s*[x×*]\s*\d[\d.]*(?:,\d+)?\s*/, ''));
+  const paketIci = kural ?? (paketYazili ? carpanBul('adet', m.birim, satir.metin) : null);
   const aiCarpan = Number(ai.stok_miktari) > 0 ? Number(ai.stok_miktari) / miktar : null;
-  if (kural && aiCarpan && Math.abs(kural - aiCarpan) / kural > 0.01) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  if (paketIci && aiCarpan && Math.abs(paketIci - aiCarpan) / paketIci > 0.01) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  // AI "emin değilim" dediyse yalnızca miktar kuralla da doğrulanıyorsa baristaya sorulur; yoksa kuyruk.
+  if (ai.karar === 'emin_degil' && !(kural && aiCarpan)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const carpan = kural ?? (aiCarpan ? Math.round(aiCarpan * 1e6) / 1e6 : null);
   if (!carpan) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   return { sinif: 'soru', malzeme_id: m.id, carpan, aday_malzeme_id: m.id, kaynak: 'ai' };
