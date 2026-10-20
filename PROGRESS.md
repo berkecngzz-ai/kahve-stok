@@ -21,7 +21,7 @@ Ayrıntı:
   aynı sonuçlar yeniden puanlandı → 15/15. Yani düzeltmeler bu sete göre yapıldı; set artık bağımsız bir ölçüt değildir.
 - nano: 3/15 doğru, 0 yanlış, 12 kuyruk (yanlış eşleştirmeleri kontroller yakaladı).
 
-### Sıradaki ölçüm
+### Okuma testi nasıl çalıştırılır
 
 Gerçek ve **daha önce görülmemiş** fatura fotoğrafları (+ cevap anahtarı) `Desktop\test-faturalar`'a konup tek komutla:
 
@@ -34,6 +34,11 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 (`select public.okuma_testi_ac(true|false);`, bkz. `sql/08_okuma_testi_anahtari.sql`).
 
 ## Açık işler
-- Gerçek fotoğraflarla doğruluk ölçümü (yukarıda) ve telefonda uçtan uca süre.
+- Telefonda uçtan uca okuma süresi ölçülmedi.
 - Satış raporu okuma (şimdilik saklanıyor, kurulum kuyruğuna gidiyor; ikram/0 TL satırlar da tüketim sayılmalı).
 - Açık raporu (Adım 4 ana raporu) ve rapordaki "eksik veri" uyarısı.
+
+## Sıradaki adım
+Kullanıcıdan gerçek ve daha önce görülmemiş fatura fotoğrafları (+ cevap anahtarı) `Desktop\test-faturalar`'a gelince
+`scripts/okuma-testi.sh` ile doğruluğu ölç ve sonucu raporla. Fotoğraflar gelene kadar: satış raporu okuma ya da açık raporu
+(kullanıcıya hangisiyle başlanacağını sor).
