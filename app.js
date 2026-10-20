@@ -1391,12 +1391,37 @@ function rakamKutusu(birim, deger = '') {
 
 const FIRE_NEDENLERI = [['Döküldü', '💧'], ['Bozuldu', '🦠'], ['Yanlış yapıldı', '✋']];
 
+// Fire, tarifteki küçük birimle girilir (kahve gram, süt ml). Hızlı düğmeler tariflerden gelir:
+// Latte'de 18 g kahve varsa kahvede "☕ Latte · 18 g". Büyük dökülme için 1 kg / 1 litre.
+const KUCUK_BIRIM = { g: 'g', ml: 'ml', adet: 'adet' };
+const BUYUK_KISAYOL = { g: ['1 kg', 1000], ml: ['1 litre', 1000] };
+
 async function fireVar(kutu, user, bitti) {
-  const [malzemeler, ur] = await Promise.all([malzemeleriGetir(false), sb.from('urunler').select('id, ad, aktif')]);
+  const [malzemeler, ur, tr] = await Promise.all([
+    malzemeleriGetir(false),
+    sb.from('urunler').select('id, ad, aktif'),
+    sb.from('tarif_kalemleri').select('urun_id, malzeme_id, miktar'),
+  ]);
   if (ur.error) throw ur.error;
+  if (tr.error) throw tr.error;
+  const urunAdi = new Map(ur.data.filter((u) => u.aktif).map((u) => [u.id, u.ad]));
+  const kisayollar = (m) => {
+    const goruldu = new Set();
+    const liste = tr.data
+      .filter((k) => k.malzeme_id === m.id && urunAdi.has(k.urun_id))
+      .map((k) => ({ ad: urunAdi.get(k.urun_id), miktar: Number(k.miktar) }))
+      .sort((a, b) => a.miktar - b.miktar || a.ad.localeCompare(b.ad, 'tr'))
+      .filter((k) => !goruldu.has(k.miktar) && goruldu.add(k.miktar))
+      .slice(0, 4)
+      .map((k) => ({ etiket: `☕ ${k.ad} · ${sayiYaz(k.miktar)} ${KUCUK_BIRIM[m.birim]}`, miktar: k.miktar }));
+    const b = BUYUK_KISAYOL[m.birim];
+    if (b) liste.push({ etiket: `📦 ${b[0]}`, miktar: b[1] });
+    return liste;
+  };
   const secenekler = [
-    ...malzemeler.filter((m) => m.aktif).map((m) => ({ tur: 'm', id: m.id, ad: m.ad, birim: BIRIMLER[m.birim].fiyatBirimi, m })),
-    ...ur.data.filter((u) => u.aktif).sort(adaGore).map((u) => ({ tur: 'u', id: u.id, ad: u.ad, birim: 'adet' })),
+    ...malzemeler.filter((m) => m.aktif).map((m) => ({ tur: 'm', id: m.id, ad: m.ad, birim: KUCUK_BIRIM[m.birim], m,
+      kisayollar: kisayollar(m) })),
+    ...ur.data.filter((u) => u.aktif).sort(adaGore).map((u) => ({ tur: 'u', id: u.id, ad: u.ad, birim: 'adet', kisayollar: [] })),
   ];
   if (!secenekler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
   let secim = null, miktar = null;
@@ -1420,15 +1445,23 @@ async function fireVar(kutu, user, bitti) {
   const nekadarEkrani = () => {
     kutu.innerHTML = `<div class="sade-ekran">
         <h2>${esc(secim.ad)}</h2><p class="buyuk-yazi">Ne kadar?</p>
+        ${secim.kisayollar.length ? `<div class="kisayollar">${secim.kisayollar.map((k, i) =>
+          `<button class="kart-dugme" data-kisayol="${i}">${esc(k.etiket)}</button>`).join('')}</div>
+          <p class="bilgi ortada">Birkaç kez basabilirsin, toplanır. Ya da kendin yaz.</p>` : ''}
         ${rakamKutusu(secim.birim, miktar ?? '')}
         <p class="mesaj"></p>
         <div class="iki-dugme"><button class="dev ikincil" id="geri">◀</button><button class="dev" id="ileri">Devam ▶</button></div></div>`;
     const inp = kutu.querySelector('#rakam');
-    inp.focus();
+    kutu.querySelectorAll('[data-kisayol]').forEach((b) => b.onclick = () => {
+      const simdiki = sayiOku(inp.value);
+      const toplam = (Number.isFinite(simdiki) ? simdiki : 0) + secim.kisayollar[b.dataset.kisayol].miktar;
+      inp.value = sayiYaz(Math.round(toplam * 1000) / 1000).replace(/\./g, '');
+    });
+    if (!secim.kisayollar.length) inp.focus();
     const ileri = () => {
       const n = sayiOku(inp.value);
       const urun = secim.tur === 'u';
-      if (!(n > 0) || (urun && !Number.isInteger(n)) || n >= 100000) {
+      if (!(n > 0) || (urun && !Number.isInteger(n)) || n >= (urun ? 100000 : 10000000)) {
         kutu.querySelector('.mesaj').className = 'mesaj hata';
         kutu.querySelector('.mesaj').textContent = urun ? 'Kaç tane? Tam sayı yaz.' : 'Rakamı yaz.';
         return;
@@ -1450,7 +1483,8 @@ async function fireVar(kutu, user, bitti) {
     kutu.querySelector('#geri').onclick = () => nekadarEkrani();
     kutu.querySelectorAll('[data-neden]').forEach((b) => b.onclick = async () => {
       kutu.querySelectorAll('button').forEach((x) => { x.disabled = true; });
-      const kalem = secim.tur === 'u' ? { urun_id: secim.id, miktar: n } : { malzeme_id: secim.id, miktar: kucukMiktar(n, secim.m.birim) };
+      // Miktar zaten tarif birimiyle (g / ml / adet) girildi; çevirme yok.
+      const kalem = secim.tur === 'u' ? { urun_id: secim.id, miktar: n } : { malzeme_id: secim.id, miktar: Math.round(n * 1000) / 1000 };
       try {
         const id = await rpcVeri('giris_kaydet_tek', { p_istek: istek, p_tur: 'fire', p_tarih: bugunStr(),
           p_aciklama: b.dataset.neden, p_kalemler: [kalem] });

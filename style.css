@@ -199,6 +199,8 @@ label.dev { padding: 0 12px; }
 .cubuk { height: 10px; border-radius: 99px; background: var(--kahve-acik); overflow: hidden; }
 .cubuk > div { height: 100%; background: var(--kahve); transition: width .3s; }
 .kartlar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kisayollar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kisayollar .kart-dugme { min-height: 64px; font-size: 17px; }
 .kart-dugme { min-height: 76px; font-size: 19px; border-radius: 14px; background: var(--kart);
   color: var(--metin); border: 2px solid var(--cizgi); padding: 6px 8px; }
 .buyuk-giris { font-size: 20px; min-height: 56px; }
