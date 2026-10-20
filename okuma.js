@@ -458,11 +458,12 @@ export async function fotolariOku(bloblar, ilerleme) {
   return { ...sonuc, kaynak: 'ocr', guven, netlik, ham_metin: satirlar.join('\n').slice(0, 20000) };
 }
 
-// PDF: metni varsa doğrudan; yoksa (taranmış) sayfaları resme çevirip OCR.
-export async function pdfOku(blob, ilerleme) {
+// PDF: metni varsa doğrudan okunur (AI yok). Taranmışsa (metin yok) sayfalar JPEG'e çevrilip döner:
+// { taranmis: true, sayfalar: [Blob] } → telefon bunları fotoğraf gibi işler (önce AI, olmazsa OCR).
+export async function pdfOku(blob) {
   const lib = await pdfjsYukle();
   const pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
-  const sayfaSayisi = Math.min(pdf.numPages, 5);
+  const sayfaSayisi = Math.min(pdf.numPages, 4);
   const satirlar = [];
   let yaziUzunlugu = 0;
   for (let n = 1; n <= sayfaSayisi; n++) {
@@ -475,22 +476,52 @@ export async function pdfOku(blob, ilerleme) {
   if (yaziUzunlugu >= 40) {
     return { ...metinCoz(satirlar), kaynak: 'pdf', guven: 1, ham_metin: satirlar.join('\n').slice(0, 20000) };
   }
-  // Taranmış PDF
-  const ocrSatirlari = [];
-  let guven = 1;
+  const sayfalar = [];
   for (let n = 1; n <= sayfaSayisi; n++) {
     const sayfa = await pdf.getPage(n);
     const vp = sayfa.getViewport({ scale: 2 });
     const c = document.createElement('canvas');
     c.width = vp.width; c.height = vp.height;
     await sayfa.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-    const r = await canvasOku(c, (m) => ilerleme?.({ ...m, sayfa: n, sayfaSayisi }));
-    ocrSatirlari.push(...r.satirlar);
-    guven = Math.min(guven, r.guven);
+    sayfalar.push(await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)));
   }
-  const sonuc = metinCoz(ocrSatirlari);
-  if (guven < 0.6) sonuc.notlar.push('dusuk_guven');
-  return { ...sonuc, kaynak: 'ocr', guven, ham_metin: ocrSatirlari.join('\n').slice(0, 20000) };
+  return { taranmis: true, sayfalar };
+}
+
+// ---------- AI (fatura-oku işlevi) cevabını uygulamanın biçimine çevirme ----------
+// AI satır tutarlarını faturada yazdığı gibi verir; KDV dahilse (fiş) hariç tutara çevrilir. Oran yoksa
+// faturanın KDV tutarlarından çözülmeye çalışılır (OCR'daki gibi); çözülemezse tutar bilinmiyor sayılır.
+export function aiSonucunuCevir(ai) {
+  const dahil = ai.tutarlar_kdv_dahil === true;
+  const toplamlar = { genel: ai.genel_toplam ?? null, kdv_haric: ai.kdv_haric_toplam ?? null,
+                      kdv: ai.kdv_toplam ?? null, indirim: ai.indirim ?? 0 };
+  const satirlar = (ai.satirlar ?? []).map((s) => ({
+    metin: String(s.metin ?? '').trim() || '(okunamadı)',
+    miktar: s.miktar ?? null,
+    birim: s.birim === 'paket' ? 'diger' : (['adet', 'kg', 'g', 'lt', 'ml'].includes(s.birim) ? s.birim : 'diger'),
+    birim_fiyat: s.birim_fiyat ?? null,
+    tutar_belge: s.tutar ?? null,
+    [dahil ? 'tutar_dahil' : 'tutar_haric']: s.tutar ?? null,
+    kdv_orani: s.kdv_orani ?? null,
+    ai: s.eslesme ?? null,
+  }));
+  if (dahil) {
+    kdvOranlariniCoz(satirlar, toplamlar, new Map(), [], true);
+    for (const u of satirlar) {
+      u.tutar_haric = u.kdv_orani != null && u.tutar_dahil != null ? yuvarla2(u.tutar_dahil / (1 + u.kdv_orani / 100)) : null;
+      if (u.birim_fiyat != null && u.kdv_orani != null) u.birim_fiyat = Math.round((u.birim_fiyat / (1 + u.kdv_orani / 100)) * 10000) / 10000;
+    }
+  } else {
+    kdvOranlariniCoz(satirlar, toplamlar, new Map(), []);
+  }
+  const notlar = [];
+  if (ai.okunabilirlik === 'bulanik') notlar.push('bulanik');
+  if (ai.okunabilirlik === 'eksik') notlar.push('eksik_gorunuyor');
+  if (!satirlar.length) notlar.push('satir_yok');
+  if (toplamlar.genel == null) notlar.push('toplam_yok');
+  const tarih = /^\d{4}-\d{2}-\d{2}$/.test(ai.tarih ?? '') ? ai.tarih : null;
+  return { kaynak: 'ai', ettn: null, fatura_no: ai.fatura_no ?? null, tedarikci: ai.tedarikci ?? null,
+           tedarikci_vkn: (ai.vkn ?? '').replace(/\D/g, '') || null, tarih, toplamlar, satirlar, notlar, guven: 1 };
 }
 
 export async function xmlDosyaOku(blob) {

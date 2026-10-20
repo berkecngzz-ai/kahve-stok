@@ -1,7 +1,8 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol } from './okuma.js';
-import { anahtar, siniflandir, carpanBul } from './eslestirme.js';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
+import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
+import { cevapAnahtariniOku, anahtarBelgesi, karsilastir } from './okuma-testi.js';
 
 const app = document.getElementById('app');
 const ustSag = document.getElementById('ust-sag');
@@ -171,9 +172,12 @@ async function anaEkran(user, uye) {
 }
 
 async function mekanSekmesi(icerik, user, uye, patron) {
-  const { data: uyeler, error } = await sb.from('uyeler')
-    .select('user_id, ad, rol, eposta').order('olusturma');
+  const [{ data: uyeler, error }, okuma] = await Promise.all([
+    sb.from('uyeler').select('user_id, ad, rol, eposta').order('olusturma'),
+    sb.rpc('ai_okuma_durumu'),
+  ]);
   if (error) throw error;
+  const okumaDurumu = okuma.data?.[0];
 
   icerik.innerHTML = `
     ${patron ? `
@@ -185,6 +189,9 @@ async function mekanSekmesi(icerik, user, uye, patron) {
       <p class="bilgi">Kodu yenilersen eski kod çalışmaz. Birini çıkardıktan sonra yenilemen iyi olur.</p>
       <p class="mesaj"></p>
     </div>` : ''}
+    ${okumaDurumu ? `<div class="kart"><h2>Fatura okuma (AI)</h2>
+      <p class="bilgi">Bugün <b>${okumaDurumu.bugun} / ${okumaDurumu.sinir}</b> okuma kullanıldı. Sınır dolarsa telefondaki
+        yedek okuyucu çalışır. XML ve PDF faturalar sınırdan düşmez.</p></div>` : ''}
     <div class="kart">
       <h2>Fiyat gösterimi</h2>
       <p class="bilgi">Ekranlarda ve raporlarda fiyatlar ${kdvHaric() ? '<b>KDV hariç</b>' : '<b>KDV dahil</b>'} gösteriliyor.
@@ -901,18 +908,18 @@ const MAX_BELGE = 5;
 const ESIK = { fiyatFarki: 0.30, miktarKat: 3, minFatura: 3 };
 
 // Fotoğrafı telefonda küçültür (uzun kenar en fazla 2000 piksel, JPEG). Böylece yükleme hızlı, depo küçük kalır.
-async function fotoKucult(dosya) {
+async function fotoKucult(dosya, enUzun = 2000, kalite = 0.8) {
   const url = URL.createObjectURL(dosya);
   try {
     const img = new Image();
     img.src = url;
     try { await img.decode(); } catch { throw new Error('Fotoğraf açılamadı. Başka bir fotoğraf dene.'); }
-    const olcek = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const olcek = Math.min(1, enUzun / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement('canvas');
     c.width = Math.round(img.naturalWidth * olcek);
     c.height = Math.round(img.naturalHeight * olcek);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', kalite));
     if (!blob) throw new Error('Fotoğraf işlenemedi.');
     return blob;
   } finally {
@@ -1618,6 +1625,39 @@ const OKUNAMADI = {
   satir_yok: 'Fatura okunamadı. Daha yakından ve düz çek.',
 };
 
+const blobDataUrl = (blob) => new Promise((ok, hata) => {
+  const r = new FileReader();
+  r.onload = () => ok(r.result);
+  r.onerror = () => hata(r.error);
+  r.readAsDataURL(blob);
+});
+const ms = (a, b) => Math.round(b - a);
+
+// Fotoğrafları AI ile okur (fatura-oku işlevi). Hata olursa fırlatır; çağıran yedek OCR'a düşer.
+// Döner: { sonuc (uygulama biçiminde), olcum: süreler (ms) ve boyut }
+async function aiIleOku(bloblar, model = undefined) {
+  const t0 = performance.now();
+  const kucukler = [];
+  for (const b of bloblar) kucukler.push(await fotoKucult(b, 1600, 0.78));   // gönderilecek boyut
+  const gorseller = await Promise.all(kucukler.map(blobDataUrl));
+  const t1 = performance.now();
+  const { data, error } = await sb.functions.invoke('fatura-oku', { body: { gorseller, model } });
+  const t2 = performance.now();
+  if (error) {
+    let govde = null;
+    try { govde = await error.context?.json?.(); } catch { /* gövde yok */ }
+    throw Object.assign(new Error(govde?.mesaj ?? error.message ?? 'AI okuması başarısız'), { kod: govde?.hata ?? 'AI_HATA' });
+  }
+  const sonuc = aiSonucunuCevir(data.sonuc);
+  const sunucu = data.sure?.toplam_ms ?? 0;
+  return {
+    sonuc: { ...sonuc, ai_okuma_id: data.okuma_id, model: data.model, maliyet_usd: data.maliyet_usd, token: data.token },
+    kucukler,
+    olcum: { kucultme_ms: ms(t0, t1), gonderme_ms: Math.max(0, ms(t1, t2) - sunucu), ai_ms: data.sure?.ai_ms ?? null,
+             sunucu_ms: sunucu, istek_ms: ms(t1, t2), boyut_kb: Math.round(kucukler.reduce((t, b) => t + b.size, 0) / 1024) },
+  };
+}
+
 async function malGeldi(kutu, user, bitti) {
   const [malzemeler, dr] = await Promise.all([
     malzemeleriGetir(false),
@@ -1629,6 +1669,13 @@ async function malGeldi(kutu, user, bitti) {
   let sonuc = null;           // okuma sonucu + satırların sınıfı
   let istek = null;           // kaydetme kimliği (tekrar denemelerde aynı)
   let ayniOnay = false;
+  let onOkuma = null;         // ilk fotoğraf eklenir eklenmez arka planda başlayan AI okuması { dosya, is }
+  let olcum = {};             // süreler (ms): küçültme, gönderme, AI, kayıt
+  const onOkumaBaslat = () => {
+    const fotolar = dosyalar.filter((d) => d.tur === 'foto');
+    if (fotolar.length !== 1 || onOkuma?.dosya === fotolar[0]) return;
+    onOkuma = { dosya: fotolar[0], is: aiIleOku([fotolar[0].dosya]).catch((hata) => ({ hata })) };
+  };
 
   const belgeEkrani = () => {
     const fotolar = dosyalar.filter((d) => d.tur === 'foto');
@@ -1651,7 +1698,7 @@ async function malGeldi(kutu, user, bitti) {
         if (tur === 'diger') { kutu.querySelector('.mesaj').className = 'mesaj hata'; kutu.querySelector('.mesaj').textContent = 'Bu dosya açılamıyor. Fotoğraf, PDF ya da e-fatura seç.'; return; }
         if (tur === 'foto') {
           if (dosyalar.some((d) => d.tur !== 'foto')) dosyalar = [];
-          if (dosyalar.length >= 5) break;
+          if (dosyalar.length >= 4) break;
           dosyalar.push({ dosya: f, tur, onizleme: URL.createObjectURL(f) });
         } else {
           temizle();
@@ -1659,6 +1706,7 @@ async function malGeldi(kutu, user, bitti) {
           return oku();
         }
       }
+      onOkumaBaslat();         // barista "Oku"ya basmadan okuma başlasın
       belgeEkrani();
     });
     ekle(kutu.querySelector('#kamera'));
@@ -1669,26 +1717,57 @@ async function malGeldi(kutu, user, bitti) {
   const oku = async () => {
     kutu.innerHTML = `<div class="sade-ekran ortada">
         <div class="buyuk-simge donen">⏳</div><h2>Okunuyor…</h2>
-        <div class="cubuk"><div id="okuma-cubuk" style="width:5%"></div></div>
-        <p class="bilgi" id="okuma-not">İlk seferde biraz sürebilir.</p></div>`;
+        <div class="cubuk akan"><div id="okuma-cubuk"></div></div>
+        <p class="bilgi" id="okuma-not">Birkaç saniye sürer.</p></div>`;
     const cubuk = kutu.querySelector('#okuma-cubuk');
+    const not = kutu.querySelector('#okuma-not');
+    const uzunSurdu = setTimeout(() => { if (not) not.textContent = 'Biraz uzun sürdü, bekle…'; }, 9000);
+    // Yedek OCR'ın ilerlemesi (AI çalışmazsa)
     const ilerleme = (m) => {
       if (m.status === 'recognizing text' && cubuk) {
+        cubuk.parentElement.classList.remove('akan');
         const genel = ((m.sayfa - 1) + m.progress) / (m.sayfaSayisi || 1);
         cubuk.style.width = `${Math.max(5, Math.round(genel * 100))}%`;
       }
     };
+    // Fotoğraf (ya da taranmış PDF sayfası): önce AI, olmazsa telefondaki OCR
+    const fotoOku = async (bloblar, onceden) => {
+      try {
+        const a = onceden ? await onceden : await aiIleOku(bloblar);
+        if (a.hata) throw a.hata;
+        olcum = { ...olcum, ...a.olcum };
+        return a.sonuc;
+      } catch (e) {
+        console.warn('AI okuması olmadı, yedek OCR:', e);
+        if (not) not.textContent = 'Yedek okuyucu çalışıyor…';
+        const t = performance.now();
+        const r = await fotolariOku(bloblar, ilerleme);
+        olcum = { ...olcum, ocr_ms: ms(t, performance.now()), ai_hata: e.kod ?? 'AI_HATA' };
+        r.notlar.push(`ai_yedek:${e.kod ?? 'AI_HATA'}`);
+        return r;
+      }
+    };
+    const t0 = performance.now();
     try {
       const d0 = dosyalar[0];
       let r;
       if (d0.tur === 'xml') r = await xmlDosyaOku(d0.dosya);
-      else if (d0.tur === 'pdf') r = await pdfOku(d0.dosya, ilerleme);
-      else r = await fotolariOku(dosyalar.map((d) => d.dosya), ilerleme);
+      else if (d0.tur === 'pdf') {
+        r = await pdfOku(d0.dosya);
+        if (r.taranmis) r = await fotoOku(r.sayfalar);
+      } else {
+        const fotolar = dosyalar.map((d) => d.dosya);
+        const hazir = dosyalar.length === 1 && onOkuma?.dosya === dosyalar[0] ? onOkuma.is : null;
+        r = await fotoOku(fotolar, hazir);
+      }
       sonuc = r;
+      olcum.okuma_toplam_ms = ms(t0, performance.now());
     } catch (err) {
       console.error(err);
+      clearTimeout(uzunSurdu);
       return sorunEkrani('Fatura okunamadı. Tekrar dene ya da daha net çek.', false);
     }
+    clearTimeout(uzunSurdu);
     if (sonuc.notlar?.includes('bulanik')) return sorunEkrani(OKUNAMADI.bulanik, true);
     if (!sonuc.satirlar.length) return sorunEkrani(OKUNAMADI.satir_yok, true);
     siniflandirHepsi();
@@ -1702,7 +1781,7 @@ async function malGeldi(kutu, user, bitti) {
         <button class="dev" id="tekrar">📷 Tekrar çek</button>
         ${devamEdilebilir ? '<button class="dev ikincil" id="devam">Yine de gönder</button>' : ''}
         <button class="metin-dugme" id="geri">Ana ekran</button></div>`;
-    kutu.querySelector('#tekrar').onclick = () => { temizle(); dosyalar = []; belgeEkrani(); };
+    kutu.querySelector('#tekrar').onclick = () => { temizle(); dosyalar = []; onOkuma = null; belgeEkrani(); };
     kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
     kutu.querySelector('#devam')?.addEventListener('click', () => {
       if (!sonuc.satirlar.length) sonuc.satirlar = [{ metin: '(fatura okunamadı)', miktar: null, birim: 'diger', tutar_haric: null, kdv_orani: null }];
@@ -1714,7 +1793,8 @@ async function malGeldi(kutu, user, bitti) {
   const tedarikciAnahtari = () => sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '';
   const siniflandirHepsi = () => {
     const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari() };
-    sonuc.satirlar.forEach((s) => { s.karar = siniflandir(s, ctx); s.cevap = null; });
+    const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
+    sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); s.cevap = null; });
   };
 
   // "Bu ürün süt mü?" — yalnızca benzeyen, defterde olmayan satırlar için, tek tek
@@ -1753,7 +1833,7 @@ async function malGeldi(kutu, user, bitti) {
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev" id="kaydet">Kaydet ✓</button>
         <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
-    kutu.querySelector('#tekrar-cek')?.addEventListener('click', () => { temizle(); dosyalar = []; sonuc = null; istek = null; belgeEkrani(); });
+    kutu.querySelector('#tekrar-cek')?.addEventListener('click', () => { temizle(); dosyalar = []; sonuc = null; istek = null; onOkuma = null; belgeEkrani(); });
     kutu.querySelector('#vazgec').onclick = () => { if (confirm('Fatura kaydedilmeden çıkılsın mı?')) { temizle(); bitti(); } };
     kutu.querySelector('#kaydet').onclick = () => {
       if (!toplamVar) {
@@ -1771,6 +1851,7 @@ async function malGeldi(kutu, user, bitti) {
     kutu.innerHTML = `<div class="sade-ekran ortada"><div class="buyuk-simge donen">⏳</div><h2>Kaydediliyor…</h2>
       <p class="bilgi" id="durum"></p></div>`;
     const durum = kutu.querySelector('#durum');
+    const tk = performance.now();
     try {
       // 1) Dosyaları yükle (tekrar denemede yüklenmiş olanı atla)
       for (const [i, d] of dosyalar.entries()) {
@@ -1801,12 +1882,15 @@ async function malGeldi(kutu, user, bitti) {
         istek_id: istek, tur: 'fatura', kaynak: sonuc.kaynak, dosya_ozeti: await dosyaOzeti(dosyalar[0].dosya),
         ettn: sonuc.ettn, fatura_no: sonuc.fatura_no, tedarikci: sonuc.tedarikci, tedarikci_vkn: sonuc.tedarikci_vkn,
         tarih: sonuc.tarih, toplamlar: sonuc.toplamlar, ayni_olabilir_onay: ayniOnay,
+        ai_okuma_id: sonuc.ai_okuma_id ?? null,
         dosyalar: dosyalar.map((d) => d.yuklenen),
         okunan: { kaynak: sonuc.kaynak, guven: sonuc.guven, netlik: sonuc.netlik ?? null, notlar: sonuc.notlar,
-                  toplamlar: sonuc.toplamlar, satirlar: sonuc.satirlar.map(({ karar, cevap, ...x }) => ({ ...x, karar, cevap })),
+                  model: sonuc.model ?? null, maliyet_usd: sonuc.maliyet_usd ?? null, olcum,
+                  toplamlar: sonuc.toplamlar, satirlar: sonuc.satirlar,
                   ham_metin: sonuc.ham_metin ?? null },
         satirlar,
       } });
+      olcum.kayit_ms = ms(tk, performance.now());
       temizle();
       kaydedildi(kutu, {
         baslik: 'Kaydedildi',
@@ -1848,14 +1932,33 @@ const BELGE_BIRIM = { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml', dig
 
 async function kurulumEkrani(kutu) {
   kutu.innerHTML = '<p class="bilgi">Yükleniyor…</p>';
-  const kuyruk = await rpcVeri('kurulum_kuyrugu');
+  const [kuyruk, aiDisi, aiKullanim] = await Promise.all([
+    rpcVeri('kurulum_kuyrugu'), rpcVeri('kurulum_ai_takip_disi'), rpcVeri('kurulum_ai_kullanim')]);
   const yenile = () => kurulumEkrani(kutu).catch(hataGoster);
   const toplamBelge = kuyruk.reduce((t, k) => t + k.belgeler.length, 0);
   kutu.innerHTML = `
+    ${mekan.id ? '<button class="ikincil tam" id="okuma-testi">🧪 Okuma testi (cevap anahtarıyla)</button>' : ''}
+    ${aiKullanim.length ? `<details class="kart"><summary><b>AI kullanımı (son 30 gün)</b></summary>
+      <table class="tablo"><tr><th>Mekan</th><th>Model</th><th>Okuma</th><th>Hata</th><th>Ort. süre</th><th>Maliyet</th></tr>
+      ${aiKullanim.map((x) => `<tr><td>${esc(x.mekan)}</td><td>${esc(x.model)}</td><td>${x.okuma}</td><td>${x.hata}</td>
+        <td>${x.ort_ms != null ? (x.ort_ms / 1000).toFixed(1) + ' sn' : '-'}</td>
+        <td>${x.maliyet_usd != null ? '$' + Number(x.maliyet_usd).toFixed(4) : '-'}</td></tr>`).join('')}</table></details>` : ''}
+    ${aiDisi.length ? `<details class="kart"><summary><b>AI'nın takip dışı saydıkları (${aiDisi.length})</b></summary>
+      <p class="bilgi">Yanlış olanı "Geri al" ile kuyruğa döndür, sonra malzemeye bağla.</p>
+      ${aiDisi.map((s) => `<div class="satir"><div>${esc(s.metin)} <small>${esc(s.mekan)} · ${esc(s.tedarikci ?? '')} ·
+        ${zamanYaz(s.tarih)}</small></div><button class="ikincil kucuk" data-disi-geri="${s.id}">Geri al</button></div>`).join('')}
+      </details>` : ''}
     <h1>Kurulum kuyruğu</h1>
     <p class="bilgi">${toplamBelge ? `${kuyruk.length} mekanda ${toplamBelge} belge bekliyor.` : 'Bekleyen iş yok ✓'}
       Burada çözülen eşleşmeler deftere yazılır; aynı ürün sonraki faturalarda sorusuz geçer.</p>
     ${kuyruk.map((k) => `<h2>${esc(k.mekan)}</h2>${k.belgeler.map((b) => belgeKarti(k, b)).join('')}`).join('')}`;
+
+  kutu.querySelector('#okuma-testi')?.addEventListener('click', () => okumaTestiEkrani(kutu, yenile).catch(hataGoster));
+  kutu.querySelectorAll('[data-disi-geri]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await rpcVeri('kurulum_takip_disi_geri_al', { p_satir: Number(b.dataset.disiGeri) }); yenile(); }
+    catch (err) { hataGoster(err); b.disabled = false; }
+  }));
 
   // Belgeyi aç (geçici bağlantı)
   kutu.querySelectorAll('[data-belge-ac]').forEach((btn) => btn.addEventListener('click', async () => {
@@ -1910,6 +2013,145 @@ async function kurulumEkrani(kutu) {
   belgeIslem('[data-onayla]', 'kurulum_belge_onayla', 'Faturaya baktın ve rakamlar doğru mu? Eşleşmiş satırlar stoğa eklenecek.');
   belgeIslem('[data-reddet]', 'kurulum_belge_reddet', 'Belge reddedilsin mi? Stoğa etkisi geri alınır; barista yeniden yükleyebilir.');
   belgeIslem('[data-rapor-tamam]', 'kurulum_satis_raporu_tamam', 'Satış raporu işlendi olarak işaretlensin mi?');
+}
+
+// ---------- 🧪 Okuma testi: dosyaları cevap anahtarıyla karşılaştırır (hiçbir şey kaydetmez) ----------
+const TEST_MODELLERI = ['gpt-4.1-mini', 'gpt-4.1-nano'];
+
+async function okumaTestiEkrani(kutu, geri) {
+  const [malzemeler, dr, durum] = await Promise.all([
+    malzemeleriGetir(false),
+    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan'),
+    rpcVeri('ai_okuma_durumu'),
+  ]);
+  if (dr.error) throw dr.error;
+  const malzemeAdi = new Map(malzemeler.map((m) => [m.id, m.ad]));
+  const kalan = durum?.[0] ? durum[0].sinir - durum[0].bugun : '?';
+  kutu.innerHTML = `
+    <button class="ikincil kucuk" id="geri">◀ Kurulum</button>
+    <h1>🧪 Okuma testi</h1>
+    <p class="bilgi">Dosyalar okunur ve cevap anahtarıyla karşılaştırılır. <b>Hiçbir şey kaydedilmez.</b>
+      Eşleştirme bu mekanın malzemeleri (${malzemeler.filter((m) => m.aktif).map((m) => esc(m.ad)).join(', ') || 'yok'})
+      ve defteriyle yapılır. Her fotoğraf × model bir AI okuması harcar (bugün kalan: ${kalan}).</p>
+    <div class="kart">
+      <label>Test dosyaları (fotoğraf, PDF, XML)<input type="file" id="t-dosyalar" multiple
+        accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></label>
+      <label>Cevap anahtarı (00_CEVAP_ANAHTARI.md)<input type="file" id="t-anahtar" accept=".md,text/markdown,text/plain"></label>
+      <p class="bilgi">Fotoğraf ve taranmış PDF için yöntemler:</p>
+      ${TEST_MODELLERI.map((m) => `<label class="onay-kutu"><input type="checkbox" data-model="${m}" checked> AI · ${m}</label>`).join('')}
+      <label class="onay-kutu"><input type="checkbox" id="t-ocr"> Telefondaki OCR (AI'sız, karşılaştırma için)</label>
+      <button class="tam" id="t-basla">Testi başlat</button>
+      <p class="mesaj"></p>
+    </div>
+    <div id="t-sonuc"></div>`;
+  kutu.querySelector('#geri').onclick = () => geri();
+  const sonucKutu = kutu.querySelector('#t-sonuc');
+  const mesaj = kutu.querySelector('.mesaj');
+
+  kutu.querySelector('#t-basla').onclick = async (e) => {
+    const dosyalar = [...kutu.querySelector('#t-dosyalar').files].sort((a, b) => a.name.localeCompare(b.name));
+    const anahtarDosya = kutu.querySelector('#t-anahtar').files[0];
+    const modeller = [...kutu.querySelectorAll('[data-model]:checked')].map((x) => x.dataset.model);
+    const ocrDe = kutu.querySelector('#t-ocr').checked;
+    if (!dosyalar.length || !anahtarDosya) { mesaj.className = 'mesaj hata'; mesaj.textContent = 'Dosyaları ve cevap anahtarını seç.'; return; }
+    e.target.disabled = true;
+    const anahtarlar = cevapAnahtariniOku(await anahtarDosya.text());
+    const raporlar = [];
+    sonucKutu.innerHTML = '';
+    const ekle = (r) => { raporlar.push(r); sonucKutu.insertAdjacentHTML('beforeend', testRaporuHtml(r)); };
+
+    for (const dosya of dosyalar) {
+      const beklenen = anahtarBelgesi(anahtarlar, dosya.name);
+      if (!beklenen?.satirlar.length) { ekle({ dosya: dosya.name, yontem: '-', atlandi: 'Cevap anahtarında bu dosya yok' }); continue; }
+      const tur = dosyaTuru(dosya);
+      // Okunacak görseller (fotoğraf / taranmış PDF) ya da doğrudan sonuç (XML / metinli PDF)
+      let gorseller = null;
+      const isler = [];
+      const t0 = performance.now();
+      if (tur === 'xml') isler.push(['XML (doğrudan)', async () => {
+        const t = performance.now(); const s = await xmlDosyaOku(dosya); return { sonuc: s, olcum: { okuma_ms: ms(t, performance.now()) } };
+      }]);
+      else if (tur === 'pdf') {
+        const p = await pdfOku(dosya);
+        const pdfMs = ms(t0, performance.now());
+        if (p.taranmis) gorseller = p.sayfalar;
+        else isler.push(['PDF metni (doğrudan)', async () => ({ sonuc: p, olcum: { okuma_ms: pdfMs } })]);
+      } else if (tur === 'foto') gorseller = [dosya];
+      if (gorseller) {
+        for (const m of modeller) isler.push([`AI · ${m}`, () => aiIleOku(gorseller, m)]);
+        if (ocrDe) isler.push(['OCR (telefon)', async () => { const t = performance.now(); const s = await fotolariOku(gorseller); return { sonuc: s, olcum: { ocr_ms: ms(t, performance.now()) } }; }]);
+      }
+      for (const [yontem, is] of isler) {
+        mesaj.className = 'mesaj'; mesaj.textContent = `${dosya.name} · ${yontem} okunuyor…`;
+        const t = performance.now();
+        try {
+          const { sonuc, olcum } = await is();
+          const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '' };
+          const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
+          sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); });
+          ekle({ dosya: dosya.name, yontem, sure_ms: Math.max(ms(t, performance.now()), olcum.okuma_ms ?? 0), olcum, maliyet: sonuc.maliyet_usd ?? null,
+                 toplamTutuyor: toplamKontrol(sonuc).tutuyor, sonuc, k: karsilastir(beklenen, sonuc, malzemeAdi) });
+        } catch (err) {
+          ekle({ dosya: dosya.name, yontem, hata: `${err.kod ?? ''} ${err.message ?? err}`.trim() });
+        }
+      }
+    }
+    mesaj.textContent = 'Bitti.';
+    sonucKutu.insertAdjacentHTML('afterbegin', `<div class="kart"><h2>Özet</h2>${testOzetiHtml(raporlar)}
+      <button class="ikincil kucuk" id="t-kopyala">📋 Sonucu kopyala (sohbete yapıştırmak için)</button></div>`);
+    sonucKutu.querySelector('#t-kopyala').onclick = async () => {
+      await navigator.clipboard.writeText(testRaporuMetni(raporlar));
+      mesaj.textContent = 'Kopyalandı.';
+    };
+    e.target.disabled = false;
+  };
+}
+
+const SONUC_SIMGE = { dogru: '✓', yanlis: '✗', kuyruk: '⏳', okunamadi: '—', bilinmiyor: '?' };
+const sn = (x) => (x == null ? '-' : `${(x / 1000).toFixed(1)} sn`);
+function olcumYazisi(o = {}) {
+  return [o.okuma_ms != null && `okuma ${sn(o.okuma_ms)}`, o.kucultme_ms != null && `küçültme ${sn(o.kucultme_ms)}`, o.gonderme_ms != null && `gönderme ${sn(o.gonderme_ms)}`,
+    o.ai_ms != null && `AI ${sn(o.ai_ms)}`, o.ocr_ms != null && `OCR ${sn(o.ocr_ms)}`,
+    o.boyut_kb != null && `${o.boyut_kb} KB`].filter(Boolean).join(' · ');
+}
+function testRaporuHtml(r) {
+  if (r.atlandi || r.hata) return `<div class="kart"><b>${esc(r.dosya)}</b> · ${esc(r.yontem)} ·
+    <span class="uyari">${esc(r.atlandi ?? `Hata: ${r.hata}`)}</span></div>`;
+  const o = r.k.ozet;
+  return `<div class="kart"><b>${esc(r.dosya)}</b> · ${esc(r.yontem)}
+    <p class="bilgi">Süre ${sn(r.sure_ms)} (${olcumYazisi(r.olcum)})${r.maliyet != null ? ` · $${r.maliyet.toFixed(5)}` : ''}
+      · Toplam: okunan ${r.k.genel.okunan ?? '?'} / beklenen ${r.k.genel.beklenen ?? '?'} ${r.k.genel.dogru ? '✓' : '✗'}
+      · kontrol ${r.toplamTutuyor ? 'tutuyor ✓' : 'tutmuyor ✗'}</p>
+    <p><b>✓ ${o.dogru}</b> doğru · <b>✗ ${o.yanlis}</b> yanlış · <b>⏳ ${o.kuyruk}</b> kuyruk · — ${o.okunamadi} okunamadı
+      (rakam okuması ${o.okuma_dogru}/${o.satir})</p>
+    <table class="tablo"><tr><th>Satır</th><th>Okuma</th><th>Sonuç</th></tr>
+    ${r.k.satirlar.map((x) => `<tr><td>${esc(x.beklenen.metin)}<br><small>beklenen: ${esc(x.beklenen.beklenen_yazi)}</small></td>
+      <td>${x.okuma === 'dogru' ? '✓' : x.okuma === 'yanlis' ? `✗ <small>${esc(x.okumaNotu)}</small>` : '—'}</td>
+      <td>${SONUC_SIMGE[x.sonuc] ?? ''} <small>${esc(x.aciklama)}</small></td></tr>`).join('')}</table>
+    ${r.k.fazla.length ? `<p class="bilgi">Anahtarda olmayan okunan satırlar: ${r.k.fazla.map(esc).join(', ')}</p>` : ''}</div>`;
+}
+function testOzetiHtml(raporlar) {
+  return `<table class="tablo"><tr><th>Dosya</th><th>Yöntem</th><th>✓</th><th>✗</th><th>⏳</th><th>Süre</th><th>Maliyet</th></tr>
+    ${raporlar.map((r) => `<tr><td>${esc(r.dosya)}</td><td>${esc(r.yontem)}</td>${r.k
+      ? `<td>${r.k.ozet.dogru}</td><td>${r.k.ozet.yanlis}</td><td>${r.k.ozet.kuyruk + r.k.ozet.okunamadi}</td>
+         <td>${sn(r.sure_ms)}</td><td>${r.maliyet != null ? '$' + r.maliyet.toFixed(5) : '-'}</td>`
+      : `<td colspan="5" class="uyari">${esc(r.atlandi ?? r.hata)}</td>`}</tr>`).join('')}</table>`;
+}
+function testRaporuMetni(raporlar) {
+  const satirlar = ['OKUMA TESTİ SONUCU', ''];
+  for (const r of raporlar) {
+    if (!r.k) { satirlar.push(`${r.dosya} | ${r.yontem} | ${r.atlandi ?? `HATA: ${r.hata}`}`); continue; }
+    const o = r.k.ozet;
+    satirlar.push(`## ${r.dosya} | ${r.yontem} | doğru ${o.dogru}, yanlış ${o.yanlis}, kuyruk ${o.kuyruk}, okunamadı ${o.okunamadi}`
+      + ` | süre ${sn(r.sure_ms)} (${olcumYazisi(r.olcum)}) | maliyet ${r.maliyet != null ? '$' + r.maliyet.toFixed(5) : '-'}`
+      + ` | toplam okunan ${r.k.genel.okunan} / beklenen ${r.k.genel.beklenen} | kontrol ${r.toplamTutuyor ? 'tutuyor' : 'TUTMUYOR'}`);
+    for (const x of r.k.satirlar) {
+      satirlar.push(`- ${x.beklenen.metin} → okuma ${x.okuma}${x.okumaNotu ? ` (${x.okumaNotu})` : ''} → ${x.sonuc}: ${x.aciklama}`);
+    }
+    if (r.k.fazla.length) satirlar.push(`- fazladan okunan: ${r.k.fazla.join(', ')}`);
+    satirlar.push(`- okunan ham: ${JSON.stringify(r.sonuc.satirlar.map((s) => [s.metin, s.miktar, s.birim, s.tutar_belge ?? s.tutar_haric, s.kdv_orani, s.ai?.karar, s.ai?.guven]))}`);
+  }
+  return satirlar.join('\n');
 }
 
 function belgeKarti(k, b) {

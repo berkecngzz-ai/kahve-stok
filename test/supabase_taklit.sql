@@ -1,7 +1,7 @@
 -- Yerel test için Supabase'in auth şemasını ve rollerini taklit eder. Supabase'de ÇALIŞTIRMA.
-create role anon nologin; create role authenticated nologin;
+create role anon nologin; create role authenticated nologin; create role service_role nologin;
 create schema auth; create schema extensions;
-grant usage on schema public, auth, extensions to anon, authenticated;
+grant usage on schema public, auth, extensions to anon, authenticated, service_role;
 create table auth.users (id uuid primary key, email text);
 create function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;

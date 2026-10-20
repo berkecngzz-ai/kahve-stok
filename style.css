@@ -198,6 +198,10 @@ label.dev { padding: 0 12px; }
 .ilerleme { text-align: center; color: var(--soluk); margin: 0; font-size: 18px; }
 .cubuk { height: 10px; border-radius: 99px; background: var(--kahve-acik); overflow: hidden; }
 .cubuk > div { height: 100%; background: var(--kahve); transition: width .3s; }
+/* Süresi bilinmeyen bekleme (AI okuması): bant sağa sola akar */
+.cubuk.akan > div { width: 35%; animation: akis 1.2s ease-in-out infinite alternate; }
+@keyframes akis { from { margin-left: 0; } to { margin-left: 65%; } }
+@media (prefers-reduced-motion: reduce) { .cubuk.akan > div { animation: none; width: 100%; opacity: .5; } }
 .kartlar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .kisayollar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .kisayollar .kart-dugme { min-height: 64px; font-size: 17px; }
@@ -213,6 +217,10 @@ label.dev { padding: 0 12px; }
 .sekmeler.bes { gap: 4px; }
 .sekmeler.bes button { padding: 0 2px; font-size: 13px; }
 /* ---------- Kurulum paneli ---------- */
+.tablo { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+.tablo th, .tablo td { border-top: 1px solid var(--cizgi); padding: 6px 4px; text-align: left; vertical-align: top; }
+.tablo small { color: var(--soluk); }
+#t-sonuc .kart { overflow-x: auto; }
 .kurulum-belge small { display: block; }
 .kurulum-satir { padding: 10px 0; border-top: 1px solid var(--cizgi); }
 .kurulum-satir.cozuldu { color: var(--soluk); font-size: 15px; }

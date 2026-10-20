@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEST BELGESİDİR - GEÇERLİ FATURA DEĞİLDİR. UBL-TR yapısına benzeyen sadeleştirilmiş örnek. -->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+ xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ProfileID>TEMELFATURA</cbc:ProfileID>
+  <cbc:ID>TST2026000000102</cbc:ID>
+  <cbc:IssueDate>2026-10-13</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party>
+    <cac:PartyIdentification><cbc:ID schemeID="VKN">2222222222</cbc:ID></cac:PartyIdentification>
+    <cac:PartyName><cbc:Name>DENEME KAHVE KAVURMA A.Ş.</cbc:Name></cac:PartyName>
+  </cac:Party></cac:AccountingSupplierParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="TRY">506.00</cbc:TaxAmount>
+    <cac:TaxSubtotal><cbc:TaxAmount currencyID="TRY">506.00</cbc:TaxAmount><cbc:Percent>10</cbc:Percent></cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="TRY">5060.00</cbc:LineExtensionAmount>
+    <cbc:PayableAmount currencyID="TRY">5566.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">3</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="TRY">2760.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:Percent>10</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item><cbc:Name>Espresso Blend Çekirdek Kahve 1KG</cbc:Name></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="TRY">920.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">4</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="TRY">1240.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:Percent>10</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item><cbc:Name>Kolombiya Filtre Kahve 250G</cbc:Name></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="TRY">310.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>3</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">2</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="TRY">530.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:Percent>10</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item><cbc:Name>Karamel Şurup 70CL</cbc:Name></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="TRY">265.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>4</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">2</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="TRY">530.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:Percent>10</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item><cbc:Name>Vanilya Şurup 70CL</cbc:Name></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="TRY">265.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>

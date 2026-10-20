@@ -93,6 +93,37 @@ function defterBul(defter, tedarikciAnahtar, metinAnahtar, birim) {
       ?? uyan.find((d) => d.tedarikci_anahtar === '') ?? null;
 }
 
+// AI ile okunan satır: önce defter (doğrulanmış kayıt her zaman önce gelir), sonra AI'nın kararı.
+//   AI "takip dışı" (güven ≥ 0,8)  → takip_disi  (sunucu da kendi AI kaydından doğrular)
+//   AI "malzeme"   (güven ≥ 0,6)  → soru: barista "Bu ürün süt mü? 12 litre" onaylar
+//      Çarpan: kuralla bulunabiliyorsa kural; AI'nın stok miktarı kuralla %1'den fazla çelişirse → belirsiz
+//   diğer her durum → belirsiz (kurulum kuyruğu)
+export const AI_TAKIP_DISI_GUVEN = 0.8;
+export const AI_MALZEME_GUVEN = 0.6;
+export function aiIleSiniflandir(satir, ctx) {
+  const metinAnahtar = anahtar(satir.metin) || '-';
+  const birim = satir.birim || 'diger';
+  const malzemeBul = new Map(ctx.malzemeler.filter((m) => m.aktif !== false).map((m) => [m.id, m]));
+  const d = defterBul(ctx.defter, ctx.tedarikciAnahtar, metinAnahtar, birim);
+  if (d?.sonuc === 'takip_disi') return { sinif: 'takip_disi', kaynak: 'defter' };
+  if (d?.sonuc === 'malzeme' && malzemeBul.has(d.malzeme_id)) {
+    return { sinif: 'eslesti', malzeme_id: d.malzeme_id, carpan: Number(d.carpan), kaynak: 'defter' };
+  }
+  const ai = satir.ai;
+  if (!ai) return siniflandir(satir, ctx);
+  if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) return { sinif: 'takip_disi', kaynak: 'ai' };
+  const m = ai.karar === 'malzeme' ? malzemeBul.get(ai.malzeme_id) : null;
+  if (!m || !(ai.guven >= AI_MALZEME_GUVEN)) return { sinif: 'belirsiz', aday_malzeme_id: m?.id ?? null };
+  const miktar = Number(satir.miktar);
+  if (!(miktar > 0)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  const kural = carpanBul(birim, m.birim, satir.metin);
+  const aiCarpan = Number(ai.stok_miktari) > 0 ? Number(ai.stok_miktari) / miktar : null;
+  if (kural && aiCarpan && Math.abs(kural - aiCarpan) / kural > 0.01) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  const carpan = kural ?? (aiCarpan ? Math.round(aiCarpan * 1e6) / 1e6 : null);
+  if (!carpan) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  return { sinif: 'soru', malzeme_id: m.id, carpan, aday_malzeme_id: m.id, kaynak: 'ai' };
+}
+
 // Bir satırı sınıflandırır.
 //   satir: { metin, miktar, birim }
 //   ctx:   { malzemeler: [{id, ad, birim, aktif}], defter: [...], tedarikciAnahtar }
