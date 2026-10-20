@@ -139,8 +139,10 @@ function ayniMi(a: string, b: string) {
 async function testModu(req: Request, imza: string, anahtar: string, fiyatlar: Record<string, [number, number]>) {
   const t0 = Date.now();
   const sunucu = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const ayar = await sunucu.from('ic_ayarlar').select('deger').eq('ad', 'okuma_testi_imza').maybeSingle();
-  if (ayar.error || !ayar.data || !ayniMi(imza, ayar.data.deger)) return cevap({ hata: 'YETKI' }, 403);
+  const ayarlar = await sunucu.from('ic_ayarlar').select('ad, deger').in('ad', ['okuma_testi_imza', 'okuma_testi_acik']);
+  const ayar = new Map((ayarlar.data ?? []).map((a) => [a.ad, a.deger]));
+  if (ayarlar.error || !ayar.get('okuma_testi_imza') || !ayniMi(imza, ayar.get('okuma_testi_imza')!)) return cevap({ hata: 'YETKI' }, 403);
+  if (ayar.get('okuma_testi_acik') !== 'evet') return cevap({ hata: 'TEST_KAPALI' }, 403);   // sql/08: okuma_testi_ac(false)
   let govde: { okuma_testi?: string };
   try { govde = await req.json(); } catch { return cevap({ hata: 'GECERSIZ' }, 400); }
   const satir = await sunucu.from('okuma_testleri').select('*').eq('id', govde.okuma_testi ?? '').maybeSingle();
