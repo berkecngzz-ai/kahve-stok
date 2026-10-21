@@ -5,7 +5,7 @@
 // GİZLİ DEĞİŞKENLER (Supabase → Edge Functions → Secrets). Bu dosyada ANAHTAR YOKTUR.
 //   OPENAI_API_KEY   (zorunlu)  OpenAI API anahtarı
 //   AI_MODELLER      (isteğe bağlı) izin verilen modeller, virgülle; ilk yazılan varsayılan.
-//                    Varsayılan: "gpt-4.1-mini,gpt-4.1-nano"
+//                    Varsayılan: "gpt-4.1-mini,gpt-4.1-nano,gpt-4.1"
 //   AI_FIYATLAR      (isteğe bağlı) JSON, 1 milyon token başına dolar: {"gpt-4.1-mini":[0.40,1.60]}
 // Supabase'in kendi verdiği değişkenler: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 //
@@ -24,7 +24,7 @@ const cevap = (govde: unknown, durum = 200) =>
 
 // Tahmini fiyatlar (1M token başına USD: [girdi, çıktı]). OpenAI fiyat sayfasından doğrulanmalı; AI_FIYATLAR ile değiştirilebilir.
 const VARSAYILAN_FIYATLAR: Record<string, [number, number]> = {
-  'gpt-4.1-mini': [0.40, 1.60], 'gpt-4.1-nano': [0.10, 0.40], 'gpt-4o-mini': [0.15, 0.60],
+  'gpt-4.1': [2.00, 8.00], 'gpt-4.1-mini': [0.40, 1.60], 'gpt-4.1-nano': [0.10, 0.40], 'gpt-4o-mini': [0.15, 0.60],
   'gpt-5-mini': [0.25, 2.00], 'gpt-5-nano': [0.05, 0.40],
 };
 
@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
   const URL_ = Deno.env.get('SUPABASE_URL')!;
   const kullanici = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: yetki } } });
   const sunucu = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const modeller = (Deno.env.get('AI_MODELLER') ?? 'gpt-4.1-mini,gpt-4.1-nano').split(',').map((m) => m.trim()).filter(Boolean);
+  const modeller = (Deno.env.get('AI_MODELLER') ?? 'gpt-4.1-mini,gpt-4.1-nano,gpt-4.1').split(',').map((m) => m.trim()).filter(Boolean);
 
   let govde: { gorseller?: string[]; model?: string };
   try { govde = await req.json(); } catch { return cevap({ hata: 'GECERSIZ', mesaj: 'Geçersiz istek.' }, 400); }

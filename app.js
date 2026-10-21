@@ -1807,11 +1807,48 @@ async function malGeldi(kutu, user, bitti) {
     sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); s.cevap = null; });
   };
 
+  // Fotoğraftan okunan ve bu mekânda daha önce hiçbir faturada doğrulanmamış malzeme: fiyat geçmişi yok, okunan
+  // miktarı kontrol edecek bir şey yok. Barista evet/hayır yerine geleni sayar (paket/birim), sistem çarpar.
+  const ilkKezMi = (m) => !dr.data.some((d) => d.sonuc === 'malzeme' && d.malzeme_id === m.id);
+  const sayimBirimi = (s, m) => {
+    if (s.birim === 'diger' || (s.birim === 'adet' && m.birim === 'adet' && s.karar.carpan > 1)) return 'paket';
+    return { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' }[s.birim] ?? 'paket';
+  };
+  const sayimEkrani = (s, m, hata = '') => {
+    const b = sayimBirimi(s, m);
+    kutu.innerHTML = `<div class="sade-ekran ortada" id="sayim-ekrani"
+          data-metin="${esc(s.metin)}" data-malzeme="${esc(m.ad)}" data-carpan="${s.karar.carpan}">
+        <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>
+        <h2 class="soru">Kaç ${b} <u>${esc(m.ad)}</u> geldi?</h2>
+        <p class="buyuk-yazi">1 ${b} = ${buyukMiktar(s.karar.carpan, m.birim)}</p>
+        <div class="rakam-kutu"><input id="sayim" inputmode="decimal" autocomplete="off" aria-label="Kaç ${b}"><span>${b}</span></div>
+        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
+        <button class="dev evet" id="sayim-tamam">Tamam ✓</button>
+        <button class="dev ikincil" id="sonra">Şimdi sayamıyorum — sonra</button>
+        <button class="metin-dugme" id="hayir">Bu ürün ${esc(m.ad)} değil</button></div>`;
+    kutu.querySelector('#sayim-tamam').onclick = () => {
+      const n = sayiOku(kutu.querySelector('#sayim').value);
+      if (!Number.isFinite(n) || n <= 0) return sayimEkrani(s, m, `Kaç ${b} geldiğini yaz.`);
+      if (n !== Number(s.miktar)) {
+        // Sayılan, okunandan farklı: stok sayılana göre; satır tutarı aynı kalır, birim fiyat ondan çıkar.
+        s.miktar_okunan = s.miktar;
+        s.miktar = n;
+        s.birim_fiyat = s.tutar_haric != null ? Math.round((s.tutar_haric / n) * 10000) / 10000 : null;
+      }
+      s.sayildi = true;
+      s.cevap = 'evet';
+      soruSirasi();
+    };
+    kutu.querySelector('#sonra').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
+    kutu.querySelector('#hayir').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
+  };
+
   // "Bu ürün süt mü?" — yalnızca benzeyen, defterde olmayan satırlar için, tek tek
   const soruSirasi = () => {
     const s = sonuc.satirlar.find((x) => x.karar.sinif === 'soru' && x.cevap == null);
     if (!s) return ozetEkrani();
     const m = malzemeBul.get(s.karar.malzeme_id);
+    if (['ai', 'ocr'].includes(sonuc.kaynak) && ilkKezMi(m)) return sayimEkrani(s, m);
     const stok = Number(s.miktar) * s.karar.carpan;
     kutu.innerHTML = `<div class="sade-ekran ortada">
         <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>

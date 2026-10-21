@@ -48,16 +48,28 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
   iskonto dahil karşılığına çevrilir; eksik görünen belgede AI toplamı kullanılmaz; fatura değil / karışık fiş satırı → hepsi
   kuruluma; kural yolunda yarım eşleşme soru olmaz; ünsüz yumuşaması (şurup/şurubu). SQL 09: miktar "3 kat" kuralı yalnız
   fiyatla doğrulanamayan satırda. Edge function ve SQL 09 Supabase'e yüklendi; ön yüz değişiklikleri commit edildi, **push edilmedi**.
-- **Son ölçüm (bir kez, B dahil):** tümü 17/42; Set A 11/18; Set B 6/24 (**B'de kritik 0**, ama doğruluk düştü: çoğu kuyruğa);
-  PDF/XML 5/10; **kritik 1 (T03, Set A):** AI fişte "2 X 129,00" çarpanını atlayıp bardak paketini 1 okudu (1×258=258 tutarlı,
-  toplam tuttu, bardakta fiyat geçmişi yok) → 50 adet girdi, 100 olmalıydı. Üç geçme kriterinin üçü de geçmedi.
-- **Kök nedeni belirsiz (Set A):** T04, T17, T19'da süt satırı doğru miktar ve çarpanla gönderildi ama sunucuda kuyrukta kaldı;
-  bekleme_sebebi ölçüm düzeneğinde kaydedilmediği için neden bilinmiyor (fiyat/miktar kontrolü şüpheli).
-- **Özellik yok:** iade satırını stoktan düşme (T10 kuyruğa gidiyor; güvenli).
-- Set B bir kez kullanıldı; bundan sonraki ayar için **yeni bir B seti** gerekir (README kuralı).
-- Sonuç dosyaları: C:/Users/berke/Documents/Codex/2026-10-18/cl/work/fatura-v2-son/ (B ayrıntısı içerir, düzeltme yapan açmamalı).
-- Test mekânı, geçici kullanıcı ve 17 test dosyası silindi; test yolu kapalı doğrulandı.
+- **1. son ölçüm (v2 B dahil, bir kez):** tümü 17/42; Set A 11/18; Set B 6/24 (B'de kritik 0); PDF/XML 5/10; **kritik 1 (T03):**
+  AI fişte "2 X 129,00" çarpanını atladı (1×258 tutarlı) → 50 bardak girdi, 100 olmalıydı. v2 Set B artık kullanılmış sayılır.
+- **2. tur (kullanıcı kararı "b"):** (a) **İlk kez görülen malzeme** (bu mekânda defterde hiç doğrulanmamış) fotoğraftan
+  gelirse barista evet/hayır yerine **"Kaç paket geldi? (1 paket = 50 adet)"** sayar; sistem çarpar; okunandan farklıysa
+  sayılan esas alınır (birim fiyat tutardan yeniden çıkar). "Sonra" / "bu ürün X değil" → kurulum. XML/PDF'te sorulmaz (miktar kesin).
+  (b) **SQL 10 — kök neden bulundu:** malzeme oluşturulurken bugün tarihli "elle 0 TL" fiyat kaydı açılıyor; güncel fiyat en yeni
+  tarihli kayıt olduğundan eski tarihli faturalar fiyatı hiç güncelleyemiyordu → fiyat kontrolü çalışmıyor, doğru süt satırları
+  "3 kat" kuralıyla kuyruğa düşüyordu. Artık 0 TL kayıt gerçek fiyatın önüne geçmiyor. (c) gpt-4.1 izinli modellere eklendi
+  (varsayılan mini). Edge function + SQL 10 Supabase'e yüklendi.
+- **Model karşılaştırması (Set A, aynı kod):** mini foto 9/14, ~0,0029 $/fatura; gpt-4.1 foto 6/14, ~0,0096 $/fatura; ikisinde
+  kritik 0. gpt-4.1 belirgin önde olmadığından **varsayılan mini kaldı** (1 TL sınırının altında olsa da şart "belirgin önde").
+- **Yeni B seti (B2):** `Desktop\test-faturalar-v2-B2` — 10 belge (8 foto, 1 iki sayfalı PDF, 1 XML) + cevap_anahtari.json.
+  Kod dondurulduktan sonra ve bu oturumda üretildi (bağımsızlığı sınırlı); fotoğraflar canvas'ta üretilen sentetik çekimler,
+  v2'den daha temiz.
+- **Son ölçüm (A + B2, bir kez, mini):** tümü 28/35; Set A 16/18; Set B2 12/17; **B2 foto 7/12 (%58)**; PDF/XML 9/9;
+  **kritik 0**. Geçme: kritik 0 ✓, PDF/XML %100 ✓, B foto ≥%85 ✗.
+  Beklenen 40 stok satırı: 23 onayla, 8 barista sayımıyla girdi; 7 kuyruğa (%17,5); 2 belge uyarıda (B08 toplam görünmüyor).
+  Ortalama 6,0 sn, en uzun 9,2 sn; foto başı 0,0029 $.
+- **Özellik yok:** iade satırını stoktan düşme (T10 kuruluma gidiyor; güvenli).
+- Sonuçlar: C:/Users/berke/Documents/Codex/2026-10-18/cl/work/fatura-v2-son2/ (B2 ayrıntısı içerir).
+- Tüm test mekânları, kullanıcılar ve yüklenen dosyalar silindi; test yolu kapalı doğrulandı. Ön yüz commit'li, **push yok**.
 
 ## Sıradaki adım
-Kullanıcı kararı bekleniyor: (1) ölçüm düzeneğine bekleme_sebebi kaydı ekleyip süt kuyruğunun nedenini Set A ile bul;
-(2) fiyat geçmişi olmayan malzemede fişten okunan paket satırı için ek güvence (T03 kritik); (3) yeni bir B seti ile ölç.
+B2 fotoğraf doğruluğu %58 (hedef %85). B2 artık kullanılmış sayılır; yeni ayar için A ile çalışılıp yeni bir B seti gerekir.
+Push için kullanıcı onayı bekleniyor (kritik hata 0 şartı sağlandı).
