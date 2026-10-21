@@ -100,7 +100,7 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - CLAUDE.md'ye kural eklendi: yeni tablo aynı dosyada RLS + politika + açık grant (gerekirse service_role) ile gelir.
 - Canlı kontrol (giriş yapmış patron): tüm sekmeler ve REST okumaları 200, permission denied yok.
 
-## Stok güvenilirliği düzeltmeleri — 2026-10-21 (commit'li, push YOK, canlıya UYGULANMADI)
+## Stok güvenilirliği düzeltmeleri — 2026-10-21 (CANLIDA: sql/12 + veri düzeltmesi + ön yüz push d172bf9)
 - Denetim (salt-okuma) bulguları: kurulumda bağlanan satırda fiyat kontrolü yoktu (soda 24 ml / 14.500 ₺/L); fatura
   Girişler'den iptal edilince belge açık kalıyor, aynı fatura yeniden yüklenemiyordu; stok farkı raporu yoktu; satış
   raporu stoğa işlenmiyordu; sayım ekranı şişeli malzemeyi litre soruyordu; defterde yanlış/eskimiş kayıtlar.
@@ -117,7 +117,15 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Veri düzeltme betiği `scripts/veri-duzeltme-2026-10-21.sql` (3 belge iptal; defter: vanilya → Vanilya şurubu 700,
   soda çarpan 200, 5 yanlış kayıt silinir; soda satırı 4.800 ml / 72,50 ₺). Yedeğin yerel kopyasında denendi.
 
+- Canlıya alma (2026-10-21): yedek `kahve-stok-yedek\2026-10-21_canliya-alma-oncesi` (ilk yedekle birebir aynıydı),
+  boş DB'ye geri yükleme gidiş-dönüşü 19/19 tablo aynı. Canlı 12 fonksiyonları yerelle aynı; canlı sonrası dışa aktarma
+  (`2026-10-21_duzeltme-sonrasi`) yalnız beklenen 15 değişikliği gösterdi. Maden suyu 100 / vanilya 50 sayımı TEST verisi,
+  korundu.
+- Geri dönüş: `scripts/veri-duzeltme-geri-al-2026-10-21.sql` → `scripts/geri-al-12.sql` → `git revert` + push.
+  Yedeğin yerel kopyasında provası yapıldı: tablolar + yetkiler birebir, fonksiyon metinleri canlıdaki (CRLF) hâline döner.
+- Açık (eski, bu işte değişmedi): `fatura_kaydet` (Fatura elle gir) sunucuda rol/fiyat kontrolü yapmıyor; ekranda yalnız
+  patronda ama barista API'den doğrudan çağırabilir. Karar kullanıcıda (yalnız patrona kısıtlamak?).
+
 ## Sıradaki adım
-Kullanıcı onayıyla sırayla: (1) `sql/12` canlıya, (2) veri düzeltme betiği, (3) push (ön yüz SQL'den SONRA çıkmalı —
-yeni RPC'ler yoksa Rapor sekmesi ve kurulum bağlama hata verir), (4) canlıda Rapor + kurulum ekranı kontrolü.
-Sorulacak: canlı sayımda maden suyu "100 litre" ve vanilya "50 litre" şişe mi kastedildi?
+Kullanıcı tarayıcıda giriş yapınca ekran testi: Rapor sekmesi, Girişler, kurulum kuyruğu (fiyat önizleme), barista
+sayım ekranı (şişe birimi) — kayıt yapmadan. Sonra `fatura_kaydet` yetki kararı.
