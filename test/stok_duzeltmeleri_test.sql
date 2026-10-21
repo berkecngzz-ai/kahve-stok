@@ -113,10 +113,37 @@ select pg_temp.satir((:'f3')::jsonb) as f3_satir \gset
 set role authenticated;
 select pg_temp.ol('dddddddd-0000-0000-0000-000000000009','kurulumP@x.com');
 select public.kurulum_satir_coz(:f3_satir, 'malzeme', :'pecete', 100, null, null, null, false);
--- Patron ve barista kurulum işlemi yapamaz
+-- FİYAT KONTROLÜNÜ GEÇME YETKİSİ: yalnız kurulum hesabı. Patron ve barista "doğru" onayıyla bile bağlayamaz.
+select pg_temp.ol('dddddddd-0000-0000-0000-000000000002','baristaP@x.com');
+select pg_temp.fatura1('22222222-aaaa-0000-0000-000000000004', repeat('4', 64), 'SODA SADE 200ML', 24, 'ml', 350, :'soda') as f4 \gset
+reset role;
+select pg_temp.satir((:'f4')::jsonb) as f4_satir \gset
+set role authenticated;
+select pg_temp.hata_bekle(format($$select public.kurulum_satir_coz(%s, 'malzeme', %L, 1, null, null, null, false, true)$$,
+  :'f4_satir', :'soda'), 'yalnızca kurulum');
 select pg_temp.ol('dddddddd-0000-0000-0000-000000000001','patronP@x.com');
+select pg_temp.hata_bekle(format($$select public.kurulum_satir_coz(%s, 'malzeme', %L, 1, null, null, null, false, true)$$,
+  :'f4_satir', :'soda'), 'yalnızca kurulum');
 select pg_temp.hata_bekle(format($$select public.kurulum_satir_coz(%s, 'takip_disi', null, null, null, null, null, false)$$,
   :'f2_satir'), 'yalnızca kurulum');
+-- Barista telefondaki "Evet" onayıyla (barista_onayi) fiyatı tutmayan satırı stoğa sokamaz: satır bekler
+select pg_temp.ol('dddddddd-0000-0000-0000-000000000002','baristaP@x.com');
+select public.belge_kaydet(jsonb_build_object(
+    'istek_id', gen_random_uuid(), 'tur', 'fatura', 'kaynak', 'ocr', 'dosya_ozeti', repeat('5', 64), 'tedarikci', 'Başka Tedarikçi',
+    'tarih', public.bugun(), 'toplamlar', jsonb_build_object('genel', 348), 'okunan', jsonb_build_object('not', 'test'),
+    'satirlar', jsonb_build_array(jsonb_build_object('metin', 'SODA SADE 200ML', 'miktar', 24, 'birim', 'ml',
+      'tutar_haric', 348, 'kdv_orani', 0, 'sinif', 'eslesti', 'malzeme_id', :'soda', 'carpan', 1, 'barista_onayi', true)))) as f5 \gset
+select pg_temp.dogrula((:'f5')::jsonb ->> 'durum' = 'bekliyor' and ((:'f5')::jsonb ->> 'stoklanan')::int = 0,
+  'barista onayı fiyat kontrolünü geçti: ' || :'f5');
+reset role;
+-- Giriş yapmamış kişi (anon) yeni işlevlerin hiçbirini çağıramaz
+set role anon;
+select pg_temp.hata_bekle(format($$select public.kurulum_satir_coz(%s, 'malzeme', %L, 1, null, null, null, false, true)$$,
+  :'f4_satir', :'soda'), 'permission denied');
+select pg_temp.hata_bekle($$select public.stok_farki()$$, 'permission denied');
+select pg_temp.hata_bekle($$select public.kurulum_satis_raporu_isle(gen_random_uuid(), current_date, '[]')$$, 'permission denied');
+reset role;
+set role authenticated;
 
 -- ================================================================================================
 -- 2) FATURA İPTALİ → BELGE DE İPTAL → AYNI BELGE YENİDEN YÜKLENEBİLİR
