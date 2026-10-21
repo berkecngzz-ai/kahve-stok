@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anahtar, kelimeler, benzerlik, carpanBul, siniflandir } from '../../eslestirme.js';
+import { anahtar, kelimeler, benzerlik, carpanBul, siniflandir, turevUrunMu, basIsimVarMi } from '../../eslestirme.js';
 
 test('anahtar SQL ile aynı', () => {
   assert.equal(anahtar('SÜTAŞ Süt 1L x12, İÇİM!'), 'sutas sut 1l x12 icim');
@@ -65,6 +65,40 @@ test('defter önceliği', () => {
   assert.equal(siniflandir({ metin: 'SÜTAŞ SÜT 1L', miktar: 24, birim: 'adet' }, { ...ctx, tedarikciAnahtar: '999' }).sinif, 'soru');
   // farklı birim: defter uygulanmaz
   assert.notEqual(siniflandir({ metin: 'SÜTAŞ SÜT 1L', miktar: 24, birim: 'kg' }, ctx).sinif, 'eslesti');
+});
+test('paket/koli birimi: içindeki adet adda yazıyorsa çevrilir', () => {
+  assert.equal(carpanBul('diger', 'adet', "KARTON BARDAK 8 OZ 50'Lİ"), 50);
+  assert.equal(carpanBul('diger', 'ml', "TAM YAĞLI SÜT 1L (12'Lİ KOLİ)"), 12000);
+  assert.equal(carpanBul('diger', 'ml', 'SÜT 1L'), null);          // koli içi yazmıyor
+  assert.equal(carpanBul('diger', 'adet', 'BARDAK KOLİ'), null);
+});
+test('türev ürün malzemeye bağlanmaz', () => {
+  for (const [ad, metin] of [['Süt', 'SÜT KREMASI 1 LT'], ['Süt', 'BADEM SÜTÜ 1LT'], ['Süt', 'VANİLYALI SÜT 200ML'],
+    ['Bardak', 'BARDAK KAPAĞI 12OZ'], ['Süt', 'SÜT TOZU 500G']]) assert.equal(turevUrunMu(ad, metin), true, metin);
+  for (const [ad, metin] of [['Süt', 'YAYLA TAM YAĞLI SÜT 1 LT'], ['Süt', 'SUT YARIM YAGLI 1LT'], ['Karton bardak', 'KARTON BARDAK 8OZ 50LI'],
+    ['Vanilya şurubu', 'VANİLYA ŞURUBU 700 ML'], ['Süt', "TAM YAĞLI SÜT 1L (12'Lİ KOLİ)"], ['Kahve çekirdeği', 'KAHVE ÇEKİRDEĞİ 1KG']])
+    assert.equal(turevUrunMu(ad, metin), false, metin);
+  const ctx = { malzemeler, defter: [], tedarikciAnahtar: '' };
+  assert.equal(siniflandir({ metin: 'SÜT KREMASI 1 LT', miktar: 2, birim: 'adet' }, ctx).sinif, 'belirsiz');
+  assert.equal(siniflandir({ metin: "TAM YAĞLI SÜT 1L (12'Lİ KOLİ)", miktar: 3, birim: 'diger' }, ctx).carpan, 12000);
+  // daha önce onaylanmış "YAYLA TAM YAĞLI SÜT"e benzese de krema süte bağlanmaz
+  const defter = [{ tedarikci_anahtar: '', metin_anahtar: 'yayla tam yagli sut 1 lt', birim: 'adet', sonuc: 'malzeme', malzeme_id: 'sut', carpan: '1000' }];
+  assert.equal(siniflandir({ metin: 'YAYLA SÜT KREMASI 200 ML', miktar: 10, birim: 'adet' }, { ...ctx, defter }).sinif, 'belirsiz');
+});
+test('baş isim / kısaltma', () => {
+  assert.equal(basIsimVarMi('Karamel şurubu', 'MNN KRML SRP 70CL'), true);
+  assert.equal(basIsimVarMi('Vanilya şurubu', 'Vanilya şrp 700ml'), true);
+  assert.equal(basIsimVarMi('Karamel şurubu', 'Karamel şurup 700ml'), true);
+  assert.equal(basIsimVarMi('Karamel şurubu', 'MNN KRML SOS 1,89LT'), false);
+  assert.equal(basIsimVarMi('Kahve çekirdeği', 'ESPRESSO BLEND ÇEKİRDEK 1 KG'), true);
+  assert.equal(basIsimVarMi('Süt', 'SUT TAM YAGLI 1L'), true);
+  assert.equal(basIsimVarMi('Süt', 'SU 0,5LT 24LU'), false);
+  assert.equal(basIsimVarMi('Bardak', 'KARTON BRDK 50LI'), true);
+});
+test('kural yolunda yarım eşleşme soru olmaz', () => {
+  const ctx = { malzemeler: [...malzemeler, { id: 'fk', ad: 'Filtre kahve', birim: 'g', aktif: true }], defter: [], tedarikciAnahtar: '' };
+  assert.equal(siniflandir({ metin: 'TÜRK KAHVESİ 100 GR', miktar: 10, birim: 'adet' }, ctx).sinif, 'belirsiz');
+  assert.equal(siniflandir({ metin: 'ESPRESSO ÇEKİRDEK 1 KG', miktar: 3, birim: 'adet' }, ctx).sinif, 'belirsiz');
 });
 test('iki yakın aday → belirsiz', () => {
   const m2 = [...malzemeler, { id: 'sutk', ad: 'Süt kremalı', birim: 'ml', aktif: true }, { id: 'sutl', ad: 'Süt laktozsuz', birim: 'ml', aktif: true }];

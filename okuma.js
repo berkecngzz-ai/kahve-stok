@@ -488,6 +488,21 @@ export async function pdfOku(blob) {
   return { taranmis: true, sayfalar };
 }
 
+// Fişte "6 X 41,00" çarpanı ALTINDAKİ ürüne aittir. AI bunu yanlış satıra yazarsa (çarpan tek başına bir satır,
+// ürün adından sonra gelmiş ya da adet × fiyat satır tutarını vermiyor) satırların miktarları kaymış olabilir.
+const CARPMA = /(\d+(?:[.,]\d+)?)\s*[xX×*]\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/;
+const HARF_DISI = /[^A-Za-zÇĞİÖŞÜçğıöşü]/g;
+export function carpmaSatiriKarisik(u) {
+  const m = String(u.metin ?? '');
+  const c = m.match(CARPMA);
+  if (!c) return false;
+  if (m.replace(CARPMA, '').replace(HARF_DISI, '').length < 2) return true;        // yalnız çarpan, ürün adı yok
+  if (m.slice(0, c.index).replace(HARF_DISI, '').length >= 2) return true;          // çarpan ürün adından sonra
+  const n = trSayi(c[1]), f = trSayi(c[2]);
+  return u.tutar_belge != null && n != null && f != null
+    && Math.abs(n * f - u.tutar_belge) > Math.max(0.05, Math.abs(u.tutar_belge) * 0.01);
+}
+
 // ---------- AI (fatura-oku işlevi) cevabını uygulamanın biçimine çevirme ----------
 // AI satır tutarlarını faturada yazdığı gibi verir; KDV dahilse (fiş) hariç tutara çevrilir. Oran yoksa
 // faturanın KDV tutarlarından çözülmeye çalışılır (OCR'daki gibi); çözülemezse tutar bilinmiyor sayılır.
@@ -513,6 +528,11 @@ export function aiSonucunuCevir(ai) {
     ai: s.eslesme ?? null,
   }));
   if (dahil) {
+    // Belgede KDV hiç yazmıyorsa (elle yazılmış toptancı fişi gibi) ve satırlar toplamı tutuyorsa tutarlar ödenen
+    // tutardır: KDV ayrıştırılamaz, %0 sayılır (birim maliyet KDV dahil tutardan doğru hesaplanır).
+    const kdvYok = toplamlar.kdv == null && toplamlar.kdv_haric == null && satirlar.length
+      && satirlar.every((u) => u.kdv_orani == null && u.tutar_dahil != null) && dahilTutar;
+    if (kdvYok) satirlar.forEach((u) => { u.kdv_orani = 0; });
     kdvOranlariniCoz(satirlar, toplamlar, new Map(), [], true);
     for (const u of satirlar) {
       u.tutar_haric = u.kdv_orani != null && u.tutar_dahil != null ? yuvarla2(u.tutar_dahil / (1 + u.kdv_orani / 100)) : null;
@@ -520,10 +540,27 @@ export function aiSonucunuCevir(ai) {
     }
   } else {
     kdvOranlariniCoz(satirlar, toplamlar, new Map(), []);
+    // Belge iskontosu KDV hariç yazılmışsa (ara toplam − iskonto = matrah) kontroller KDV dahil karşılığını kullanır:
+    // indirim = satırların KDV dahil toplamı − genel toplam. Matrah artık satır toplamı değildir → kdv_haric kontrol dışı.
+    const ind = toplamlar.indirim ?? 0;
+    const haricTop = satirlar.reduce((t, u) => t + (u.tutar_haric ?? 0), 0);
+    if (ind > 0 && toplamlar.genel != null && satirlar.every((u) => u.tutar_haric != null && u.kdv_orani != null)) {
+      const dahilTop = satirlar.reduce((t, u) => t + u.tutar_haric * (1 + u.kdv_orani / 100), 0);
+      const indDahil = yuvarla2(dahilTop - toplamlar.genel);
+      const haricIndirim = toplamlar.kdv_haric != null && Math.abs(haricTop - ind - toplamlar.kdv_haric) <= pay;
+      const orantili = haricTop > 0 && Math.abs(indDahil - ind * (dahilTop / haricTop)) <= pay;
+      if (haricIndirim && orantili && indDahil > 0) toplamlar.indirim = indDahil;
+    }
+    if ((toplamlar.indirim ?? 0) > 0 && toplamlar.kdv_haric != null && Math.abs(haricTop - toplamlar.kdv_haric) > pay) {
+      toplamlar.kdv_haric = null;
+    }
   }
   const notlar = [];
   if (ai.okunabilirlik === 'bulanik') notlar.push('bulanik');
-  if (ai.okunabilirlik === 'eksik') notlar.push('eksik_gorunuyor');
+  // Belgenin bir kısmı (alt toplam) görünmüyorsa AI'nın verdiği toplam kullanılmaz: barista faturadan yazar.
+  if (ai.okunabilirlik === 'eksik') { notlar.push('eksik_gorunuyor'); toplamlar.genel = null; }
+  if (ai.belge_turu === 'diger') notlar.push('fatura_degil');
+  if (satirlar.some((u) => carpmaSatiriKarisik(u))) notlar.push('satir_karisik');
   if (!satirlar.length) notlar.push('satir_yok');
   if (toplamlar.genel == null) notlar.push('toplam_yok');
   const tarih = /^\d{4}-\d{2}-\d{2}$/.test(ai.tarih ?? '') ? ai.tarih : null;

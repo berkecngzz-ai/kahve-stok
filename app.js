@@ -1623,6 +1623,8 @@ async function haftalikSayim(kutu, user, bitti) {
 const OKUNAMADI = {
   bulanik: 'Fotoğraf bulanık, bir daha çek.',
   satir_yok: 'Fatura okunamadı. Daha yakından ve düz çek.',
+  fatura_degil: 'Bu bir fatura ya da fiş değil gibi görünüyor (sipariş formu, teklif…). Stoğa eklenmedi.',
+  satir_karisik: 'Fişteki adetler satırlara karışık okundu. Fişi düz tutup tekrar çek.',
 };
 
 const blobDataUrl = (blob) => new Promise((ok, hata) => {
@@ -1770,12 +1772,15 @@ async function malGeldi(kutu, user, bitti) {
     clearTimeout(uzunSurdu);
     if (sonuc.notlar?.includes('bulanik')) return sorunEkrani(OKUNAMADI.bulanik, true);
     if (!sonuc.satirlar.length) return sorunEkrani(OKUNAMADI.satir_yok, true);
+    // Fatura değil / satırlar karışık: hiçbir satır kendiliğinden stoğa girmez; gönderilirse tamamı kuruluma
+    if (sonuc.notlar?.includes('fatura_degil')) return sorunEkrani(OKUNAMADI.fatura_degil, true, true);
+    if (sonuc.notlar?.includes('satir_karisik')) return sorunEkrani(OKUNAMADI.satir_karisik, true, true);
     siniflandirHepsi();
     soruSirasi();
   };
 
   // Okuma sorunu: tekrar çek ya da yine de devam (belge kuruluma gider)
-  const sorunEkrani = (metin, devamEdilebilir) => {
+  const sorunEkrani = (metin, devamEdilebilir, hepsiKuruluma = false) => {
     kutu.innerHTML = `<div class="sade-ekran ortada">
         <div class="buyuk-simge">📷</div><h2>${esc(metin)}</h2>
         <button class="dev" id="tekrar">📷 Tekrar çek</button>
@@ -1786,6 +1791,11 @@ async function malGeldi(kutu, user, bitti) {
     kutu.querySelector('#devam')?.addEventListener('click', () => {
       if (!sonuc.satirlar.length) sonuc.satirlar = [{ metin: '(fatura okunamadı)', miktar: null, birim: 'diger', tutar_haric: null, kdv_orani: null }];
       siniflandirHepsi();
+      if (hepsiKuruluma) {
+        sonuc.satirlar.forEach((s) => {
+          s.karar = { sinif: 'belirsiz', aday_malzeme_id: s.karar.aday_malzeme_id ?? s.karar.malzeme_id ?? null };
+        });
+      }
       soruSirasi();
     });
   };

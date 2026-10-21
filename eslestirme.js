@@ -38,8 +38,9 @@ function levenshtein(a, b) {
   return d[a.length][b.length];
 }
 
-// Kaba kök: yaygın ekleri atar, sondaki ğ/g → k (çekirdeği → çekirdek, kahvesi → kahve).
-const kok = (w) => w.replace(/(lari|leri|lar|ler|si|su|i|u)$/, '').replace(/g$/, 'k');
+// Kaba kök: yaygın ekleri atar, ünsüz yumuşamasını geri alır: ğ/g → k, b → p, d → t
+// (çekirdeği → çekirdek, şurubu → şurup, kahvesi → kahve).
+const kok = (w) => w.replace(/(lari|leri|lar|ler|si|su|i|u)$/, '').replace(/g$/, 'k').replace(/b$/, 'p').replace(/d$/, 't');
 
 // İki kelime "aynı" mı: biri ötekinin başı (süt / sütü), aynı kök ya da tek harf farkı (okuma hatası).
 function kelimeUyar(a, b) {
@@ -84,7 +85,61 @@ export function carpanBul(belgeBirimi, malzemeBirimi, metin) {
     if (boyMiktar && kat[boyBirim]?.[0] === malzemeBirimi) return boyMiktar * kat[boyBirim][1] * coklu;
     return null;
   }
+  // Paket / koli / kutu (e-faturada BX, PA…): içindeki adet ürün adında açıkça yazıyorsa çevrilir
+  // ("50'Lİ", "12'Lİ KOLİ", "X 12"); yazmıyorsa bilinmez → null (kurulum).
+  if (belgeBirimi === 'diger' && c1 && coklu > 1) {
+    if (malzemeBirimi === 'adet') return coklu;
+    if (boyMiktar && kat[boyBirim]?.[0] === malzemeBirimi) return boyMiktar * kat[boyBirim][1] * coklu;
+  }
   return null;
+}
+
+// Türkçede ürünün türünü son kelime söyler: "Karamel şurubu" → şurup, "Kahve çekirdeği" → çekirdek, "Süt" → süt.
+// Satırda bu baş isim ya da kısaltması ("SRP", "ŞRP", "BRDK") var mı? "KRML SOS"ta yok → sos, şurup değildir.
+const sessiz = (w) => w.replace(/[aeiou]/g, '');
+function altDizi(k, u) { let i = 0; for (const c of u) if (c === k[i]) i++; return i === k.length; }
+export function basIsimVarMi(malzemeAdi, satirMetni) {
+  const mk = kelimeler(malzemeAdi);
+  if (!mk.length) return false;
+  const bas = mk[mk.length - 1];
+  const iskelet = [sessiz(bas), sessiz(kok(bas))];
+  return kelimeler(satirMetni).some((w) => kelimeUyar(bas, w)
+    || ((w.match(/[aeiou]/g) ?? []).length <= 1 && sessiz(w).length >= 2
+        && iskelet.some((s) => s.startsWith(sessiz(w)) || (sessiz(w)[0] === s[0] && altDizi(sessiz(w), s)))));
+}
+
+// Satır, malzemenin adını içerse bile başka bir ürün mü? (Türkçe tamlama ve sıfat yapısına bakar)
+//   "BADEM SÜTÜ", "TÜRK KAHVESİ"  → malzeme kelimesi iyelik ekiyle, önünde başka bir isim: X'in sütü
+//   "SÜT KREMASI", "BARDAK KAPAĞI" → malzeme kelimesinden sonra iyelik ekli başka bir isim: sütün kreması
+//   "VANİLYALI SÜT", "AROMALI …"   → -lı/-li sıfatı: çeşnili / türev ürün
+// Böyle satır malzemeye otomatik bağlanmaz; karar kurulumda verilir.
+const IYELIK = /^(s?[iu])$/;
+export function turevUrunMu(malzemeAdi, satirMetni) {
+  const mk = kelimeler(malzemeAdi);
+  const sk = kelimeler(satirMetni);
+  if (!mk.length || !sk.length) return false;
+  const eslesen = new Set();
+  for (const m of mk) {
+    const i = sk.findIndex((s, j) => !eslesen.has(j) && kelimeUyar(m, s));
+    if (i < 0) continue;
+    eslesen.add(i);
+    const s = sk[i];
+    // iyelik: satırdaki kelime = malzeme kelimesi + (s)ı/i/u/ü, malzemede ek yok, önünde eşleşmeyen bir kelime var
+    if (s.length > m.length && s.startsWith(m) && IYELIK.test(s.slice(m.length)) && i > 0 && !eslesen.has(i - 1)
+        && !mk.some((x) => x === s)) return true;
+  }
+  if (!eslesen.size) return false;
+  const son = Math.max(...eslesen);
+  // Malzeme adı zaten tamlamaysa ("Kahve çekirdeği", "Karamel şurubu") ardındaki kelime yeni bir tamlama değildir
+  // (menşe, çeşit: "ÇEKİRDEĞİ PERU") → yalnız -lı/-li kuralı uygulanır.
+  const adTamlama = mk.length >= 2 && /[^aeiou](s?[iu])$|[aeiou]s[iu]$/.test(mk[mk.length - 1]);
+  for (const [j, s] of sk.entries()) {
+    if (eslesen.has(j) || mk.some((m) => kelimeUyar(m, s))) continue;
+    if (s.length >= 5 && /l[iu]$/.test(s)) return true;                       // -lı/-li/-lu/-lü sıfatı
+    // tamlama: malzeme kelimesinin HEMEN ardından iyelik ekli isim ("süt kreması", "bardak kapağı", "süt tozu")
+    if (!adTamlama && j === son + 1 && s.length >= 4 && /[^aeiou](s?[iu])$|[aeiou]s[iu]$/.test(s) && /[aeiou]/.test(s.slice(0, -1))) return true;
+  }
+  return false;
 }
 
 // Defterde bu satır için kayıt: önce bu tedarikçiye özel, sonra tedarikçiden bağımsız.
@@ -112,9 +167,19 @@ export function aiIleSiniflandir(satir, ctx) {
   }
   const ai = satir.ai;
   if (!ai) return siniflandir(satir, ctx);
-  if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) return { sinif: 'takip_disi', kaynak: 'ai' };
+  if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) {
+    // Satır bir malzemenin adını tam içeriyor ve türev ürün değilse AI'nın "takip dışı" kararına güvenilmez:
+    // yanlış "takip dışı" malzemeyi sessizce stoktan düşürür. Kurulumda karar verilir.
+    const benzeyen = [...malzemeBul.values()].find((x) => benzerlik(x.ad, satir.metin) === 1 && !turevUrunMu(x.ad, satir.metin));
+    if (benzeyen) return { sinif: 'belirsiz', aday_malzeme_id: benzeyen.id };
+    return { sinif: 'takip_disi', kaynak: 'ai' };
+  }
   const m = ai.karar !== 'takip_disi' ? malzemeBul.get(ai.malzeme_id) : null;
   if (!m || !(ai.guven >= AI_MALZEME_GUVEN)) return { sinif: 'belirsiz', aday_malzeme_id: m?.id ?? null };
+  // Satır malzemenin türevi (krema, bitkisel/aromalı süt, kapak…) görünüyorsa AI'ya rağmen otomatik bağlanmaz.
+  if (turevUrunMu(m.ad, satir.metin) || !basIsimVarMi(m.ad, satir.metin)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  // İade / eksi satır: stoktan düşme henüz desteklenmiyor → kurulum.
+  if (Number(satir.miktar) < 0 || Number(satir.tutar_belge) < 0) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const miktar = Number(satir.miktar);
   if (!(miktar > 0)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const kural = carpanBul(birim, m.birim, satir.metin);
@@ -147,6 +212,7 @@ export function siniflandir(satir, ctx) {
 
   // Benzerlik: malzeme adları + defterde bir malzemeye bağlanmış eski satır metinleri.
   const puan = new Map();
+  const defterden = new Set();     // daha önce doğrulanmış bir satıra benzediği için aday olan malzemeler
   for (const m of ctx.malzemeler) {
     if (m.aktif === false) continue;
     const p = benzerlik(m.ad, satir.metin);
@@ -159,7 +225,7 @@ export function siniflandir(satir, ctx) {
     if (!ek.length || !sk.length) continue;
     const ortak = ek.filter((e) => sk.some((s) => kelimeUyar(e, s))).length;
     const p = ortak / Math.max(ek.length, sk.length);
-    if (p >= 0.6) puan.set(k.malzeme_id, Math.max(puan.get(k.malzeme_id) ?? 0, p * 0.9));
+    if (p >= 0.6) { puan.set(k.malzeme_id, Math.max(puan.get(k.malzeme_id) ?? 0, p * 0.9)); defterden.add(k.malzeme_id); }
   }
   // Hiçbir malzemeye benzemiyor: yine de sessizce atlanmaz. "Takip dışı" kararı yalnızca defterden gelir
   // (kurulum bir kez işaretler, sonra hatırlanır). İlk kez görülen satır kurulum kuyruğuna gider.
@@ -172,6 +238,10 @@ export function siniflandir(satir, ctx) {
   if (sirali.length > 1 && sirali[1][1] >= enIyiPuan - 0.1) {
     return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
   }
+  // Kuralla öneri yalnızca malzeme adının tamamı satırda varsa ve satır türev ürün değilse
+  // ("Kahve çekirdeği" için "ESPRESSO ÇEKİRDEK" yarım eşleşme; "SÜT KREMASI" türev) — yoksa kurulum.
+  const tam = benzerlik(m.ad, satir.metin) === 1 || defterden.has(enIyi);
+  if (!tam || turevUrunMu(m.ad, satir.metin)) return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
   const carpan = carpanBul(birim, m.birim, satir.metin);
   if (!carpan || !(Number(satir.miktar) > 0)) return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
   return { sinif: 'soru', malzeme_id: enIyi, carpan, aday_malzeme_id: enIyi };

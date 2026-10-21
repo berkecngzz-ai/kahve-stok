@@ -71,6 +71,40 @@ test('gerçek AI testinden (2026-10-20): fiş öneki ve paket içi', () => {
   assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 200, 0.9) }, ctx).carpan, 50);
   assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 400, 0.9) }, ctx).sinif, 'belirsiz');
 });
+test('AI takip dışı dese de satır malzemenin adını taşıyorsa kuyruk; türevse takip dışı', () => {
+  assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 2, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'belirsiz');
+  assert.equal(aiIleSiniflandir({ metin: 'BARDAK KAPAĞI 12OZ', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+  assert.equal(aiIleSiniflandir({ metin: 'PECETE 100LU', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+  // AI süt dese de krema / aromalı süt süte bağlanmaz; iade satırı kuyruğa
+  assert.equal(aiIleSiniflandir({ metin: 'YAYLA SÜT KREMASI 200 ML', miktar: 10, birim: 'adet', ai: e('malzeme', 'sut', 2000, 0.9) }, ctx).sinif, 'belirsiz');
+  assert.equal(aiIleSiniflandir({ metin: 'IADE SUT 1L', miktar: -2, birim: 'adet', ai: e('malzeme', 'sut', -2000, 0.9) }, ctx).sinif, 'belirsiz');
+});
+test('KDV yazmayan el yazısı fiş: tutarlar ödenen tutar (%0), toplam tutar', () => {
+  const f = aiSonucunuCevir({ belge_turu: 'fis', okunabilirlik: 'iyi', tutarlar_kdv_dahil: true, genel_toplam: 1280, kdv_toplam: null, kdv_haric_toplam: null, indirim: null,
+    satirlar: [{ metin: 'Süt 1 lt', miktar: 20, birim: 'adet', birim_fiyat: 33, tutar: 660, kdv_orani: null, eslesme: null },
+               { metin: 'Karamel şurup 700ml', miktar: 2, birim: 'adet', birim_fiyat: 310, tutar: 620, kdv_orani: null, eslesme: null }] });
+  assert.deepEqual(f.satirlar.map((s) => [s.tutar_haric, s.kdv_orani]), [[660, 0], [620, 0]]);
+  assert.equal(toplamKontrol(f).tutuyor, true);
+});
+test('KDV hariç yazılmış belge iskontosu KDV dahil karşılığına çevrilir', () => {
+  const f = aiSonucunuCevir({ belge_turu: 'fatura', okunabilirlik: 'iyi', tutarlar_kdv_dahil: false, genel_toplam: 1045, kdv_toplam: 95, kdv_haric_toplam: 950, indirim: 50,
+    satirlar: [{ metin: 'A', miktar: 1, birim: 'adet', birim_fiyat: 600, tutar: 600, kdv_orani: 10, eslesme: null },
+               { metin: 'B', miktar: 1, birim: 'adet', birim_fiyat: 400, tutar: 400, kdv_orani: 10, eslesme: null }] });
+  assert.equal(f.toplamlar.indirim, 55);
+  assert.equal(f.toplamlar.kdv_haric, null);
+  assert.equal(toplamKontrol(f).tutuyor, true);
+});
+test('görünmeyen toplam kullanılmaz; fatura olmayan belge ve karışık fiş satırı işaretlenir', () => {
+  const temel = { belge_turu: 'fatura', okunabilirlik: 'iyi', tutarlar_kdv_dahil: true, genel_toplam: 300, kdv_toplam: null, kdv_haric_toplam: null, indirim: null,
+    satirlar: [{ metin: 'SUT 1L', miktar: 6, birim: 'adet', birim_fiyat: 50, tutar: 300, kdv_orani: 1, eslesme: null }] };
+  assert.equal(aiSonucunuCevir({ ...temel, okunabilirlik: 'eksik' }).toplamlar.genel, null);
+  assert.ok(aiSonucunuCevir({ ...temel, belge_turu: 'diger' }).notlar.includes('fatura_degil'));
+  assert.ok(!aiSonucunuCevir(temel).notlar.includes('satir_karisik'));
+  for (const metin of ['12 X 39,75', 'KAKAO TOZU 200G 2 X 46,50', '3 X 41,00 SUT 1L']) {
+    assert.ok(aiSonucunuCevir({ ...temel, satirlar: [{ ...temel.satirlar[0], metin }] }).notlar.includes('satir_karisik'), metin);
+  }
+  assert.ok(!aiSonucunuCevir({ ...temel, satirlar: [{ ...temel.satirlar[0], metin: '6 X 50,00 SUT 1L' }] }).notlar.includes('satir_karisik'));
+});
 test('AI fişi "KDV dahil" dese de hesap hariç gösteriyorsa hariç sayılır', () => {
   const f = aiSonucunuCevir({ tutarlar_kdv_dahil: true, genel_toplam: 609.75, kdv_toplam: 24.75, kdv_haric_toplam: null, indirim: null,
     satirlar: [{ metin: 'SUT 1L', miktar: 6, birim: 'adet', birim_fiyat: 41, tutar: 246, kdv_orani: 1, eslesme: null },

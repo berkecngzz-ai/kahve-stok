@@ -71,19 +71,35 @@ const SEMA = {
 };
 
 const TALIMAT = `Sen Türkiye'deki tedarikçi faturalarını ve market fişlerini okuyan bir asistansın. Bir kafe için stok kaydı yapılıyor.
+BELGE:
+- belge_turu: "fatura" (fatura, e-arşiv, irsaliyeli fatura), "fis" (yazar kasa fişi, toptancının satış/teslim fişi),
+  "diger" (sipariş formu, teklif, proforma, fiyat listesi, menü, not — malın satılıp teslim edildiğini göstermeyen belge).
+- okunabilirlik "eksik": belgenin bir kısmı (özellikle alt toplamlar) katlanmış, kesilmiş ya da kadraj dışı.
 KURALLAR:
 - Yalnızca görüntüde YAZANI oku; tahmin edip uydurma. Okuyamadığın alanı null bırak.
+- genel_toplam, kdv_toplam, kdv_haric_toplam, indirim: yalnızca belgede etiketiyle (TOPLAM, GENEL TOPLAM, ÖDENECEK, KDV,
+  İSKONTO…) YAZIYORSA. Satırları toplayarak ya da hesaplayarak doldurma; görünmüyorsa null. KDV belgede hiç yazmıyorsa
+  kdv_toplam ve satırların kdv_orani null.
 - Sayıları ondalık sayı olarak ver: "1.234,56" → 1234.56, "49,505" → 49.505.
 - Her ürün satırı için: miktar ve birim MİKTAR sütunundan (ürün adındaki "1L", "1KG", "70CL" paket boyudur, miktar değildir).
-  Fişlerde "6 x 41,00" satırı alttaki ürünün miktarıdır.
   Birim: ADET/AD/ADT → adet; KG → kg; GR/G → g; LT/L → lt; ML → ml; PK/PAKET/KOLİ/KUTU → paket.
+- MARKET FİŞİ: birden fazla alınan ürün İKİ satırda yazılır: ÜSTTE "6 X 41,00" (adet × birim fiyat), hemen ALTINDA ürün adı ve
+  satır tutarı. Bu çarpan satırı ALTINDAKİ ürüne aittir, üstündekine değil. Çarpanı ayrı satır yapma ve metin alanına yazma;
+  o ürünün miktar=6, birim_fiyat=41 olur. Üstünde çarpan satırı olmayan ürünün miktarı 1, birim_fiyat = tutar.
+  Kontrol et: her satırda miktar × birim_fiyat = tutar olmalı; tutmuyorsa çarpanı yanlış satıra vermişsindir, düzelt.
+- Üstü çizilip yanına yenisi yazılmış rakamda yeni (çizilmemiş) rakam geçerlidir.
+- İade satırı (İADE, eksi tutar): miktar ve tutar EKSİ yazılır. İndirim/iskonto satırı ürün satırı değildir.
 - tutar: satırın tutarı, yazdığı gibi. tutarlar_kdv_dahil: satır tutarları KDV dahilse true.
-- Toplam, iskonto, KDV satırlarını ürün satırı sayma.
+- Toplam, iskonto, KDV satırlarını ürün satırı sayma. metin: yalnız ürün adı, faturada yazdığı gibi.
 EŞLEŞTİRME (takip edilen malzeme listesi verilecek):
 - Ürün açıkça listedeki bir malzemeyse (marka, kısaltma, yazım farkı olabilir: "ACIFTLIK T.YAG SUT 1LT" → Süt; "MNN KRML SRP 70CL" → Karamel şurubu):
   karar "malzeme", malzeme_id, ve stok_miktari = malzemenin kendi biriminde (g / ml / adet) TOPLAM miktar.
-  Örnek: 12 AD × 1LT süt → 12000 (ml); 3 AD × 1KG kahve → 3000 (g); 4 PK × 50'Lİ bardak → 200 (adet).
-  Paket içi miktar yazmıyorsa stok_miktari null ve güveni düşür.
+  Örnek: 12 AD × 1LT süt → 12000 (ml); 3 AD × 1KG kahve → 3000 (g); 4 PK × 50'Lİ bardak → 200 (adet); 2 KOLİ × 12'Lİ 1L süt → 24000 (ml).
+  Paket/koli içi miktar yazmıyorsa stok_miktari null ve güveni düşür.
+- Ürünün TÜRÜ malzemeyle birebir aynı olmalı. Aynı kelimeyi taşıyan başka ürünler malzeme DEĞİLDİR: krema ≠ süt,
+  bitkisel (badem, yulaf, soya…) ya da aromalı/çeşnili süt ≠ süt, sos ≠ şurup, başka çeşnide şurup ≠ o şurup,
+  Türk kahvesi / kakao / hazır kahve ≠ çekirdek ya da filtre kahve, kapak / tutucu / altlık / karıştırıcı ≠ bardak,
+  filtre kâğıdı ≠ filtre kahve, ekipman (sürahi, fincan…) ≠ içindeki malzeme.
 - Ürün listedeki hiçbir malzeme değilse (peçete, deterjan; listede yoksa şeker, kakao…): karar "takip_disi".
 - Emin değilsen: karar "emin_degil". Güveni dürüst ver; yanlış eşleştirme stok hesabını bozar.`;
 

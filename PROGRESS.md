@@ -38,7 +38,26 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Satış raporu okuma (şimdilik saklanıyor, kurulum kuyruğuna gidiyor; ikram/0 TL satırlar da tüketim sayılmalı).
 - Açık raporu (Adım 4 ana raporu) ve rapordaki "eksik veri" uyarısı.
 
+## Fatura okuma V2 testi (test-faturalar-v2) — 2026-10-21
+
+- **Temel (2026-10-20, Codex, kod değişmeden):** tümü 18/42; Set A 5/18; Set B 13/24 (foto %55,6); PDF/XML 4/10; **kritik 4** (hepsi B).
+- **Düzeltmeler (yalnız Set A'ya bakılarak, genel kural):** AI talimatı (fiş çarpan satırı alttaki ürüne ait; toplam yalnız
+  yazıyorsa; ürün türü birebir aynı olmalı; belge türü / eksik görünürlük); paket-koli birimi addaki "N'li" ile çevrilir;
+  türev ürün koruması (krema, bitkisel/aromalı süt, kapak… — Türkçe tamlama ve -lı yapısı); AI eşleşmesinde baş isim/kısaltma
+  şartı ("KRML SOS" ≠ şurup); AI "takip dışı" dese de malzeme adını taşıyan satır kuyruğa; KDV yazmayan fişte %0; KDV hariç
+  iskonto dahil karşılığına çevrilir; eksik görünen belgede AI toplamı kullanılmaz; fatura değil / karışık fiş satırı → hepsi
+  kuruluma; kural yolunda yarım eşleşme soru olmaz; ünsüz yumuşaması (şurup/şurubu). SQL 09: miktar "3 kat" kuralı yalnız
+  fiyatla doğrulanamayan satırda. Edge function ve SQL 09 Supabase'e yüklendi; ön yüz değişiklikleri commit edildi, **push edilmedi**.
+- **Son ölçüm (bir kez, B dahil):** tümü 17/42; Set A 11/18; Set B 6/24 (**B'de kritik 0**, ama doğruluk düştü: çoğu kuyruğa);
+  PDF/XML 5/10; **kritik 1 (T03, Set A):** AI fişte "2 X 129,00" çarpanını atlayıp bardak paketini 1 okudu (1×258=258 tutarlı,
+  toplam tuttu, bardakta fiyat geçmişi yok) → 50 adet girdi, 100 olmalıydı. Üç geçme kriterinin üçü de geçmedi.
+- **Kök nedeni belirsiz (Set A):** T04, T17, T19'da süt satırı doğru miktar ve çarpanla gönderildi ama sunucuda kuyrukta kaldı;
+  bekleme_sebebi ölçüm düzeneğinde kaydedilmediği için neden bilinmiyor (fiyat/miktar kontrolü şüpheli).
+- **Özellik yok:** iade satırını stoktan düşme (T10 kuyruğa gidiyor; güvenli).
+- Set B bir kez kullanıldı; bundan sonraki ayar için **yeni bir B seti** gerekir (README kuralı).
+- Sonuç dosyaları: C:/Users/berke/Documents/Codex/2026-10-18/cl/work/fatura-v2-son/ (B ayrıntısı içerir, düzeltme yapan açmamalı).
+- Test mekânı, geçici kullanıcı ve 17 test dosyası silindi; test yolu kapalı doğrulandı.
+
 ## Sıradaki adım
-Kullanıcıdan gerçek ve daha önce görülmemiş fatura fotoğrafları (+ cevap anahtarı) `Desktop\test-faturalar`'a gelince
-`scripts/okuma-testi.sh` ile doğruluğu ölç ve sonucu raporla. Fotoğraflar gelene kadar: satış raporu okuma ya da açık raporu
-(kullanıcıya hangisiyle başlanacağını sor).
+Kullanıcı kararı bekleniyor: (1) ölçüm düzeneğine bekleme_sebebi kaydı ekleyip süt kuyruğunun nedenini Set A ile bul;
+(2) fiyat geçmişi olmayan malzemede fişten okunan paket satırı için ek güvence (T03 kritik); (3) yeni bir B seti ile ölç.
