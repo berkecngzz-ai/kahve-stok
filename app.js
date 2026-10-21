@@ -299,13 +299,6 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
       <input id="m-fiyat" name="fiyat" inputmode="decimal" autocomplete="off" required
         value="${d ? esc(String(d.fiyat).replace('.', ',')) : ''}"
         placeholder="Örn. 42,50">
-      <label for="m-oran">KDV oranı</label>
-      <select id="m-oran" name="oran" required>
-        <option value="">Seç</option>
-        ${KDV_ORANLARI.map((o) => `<option value="${o}" ${d?.kdv_orani != null && Number(d.kdv_orani) === o
-          ? 'selected' : ''}>%${o}</option>`).join('')}
-      </select>
-      ${d && d.kdv_orani == null ? '<p class="bilgi">Bu malzemenin KDV oranı daha önce girilmemiş. Oranı seçip kaydet.</p>' : ''}
       <button class="tam" type="submit">${d ? 'Kaydet' : 'Malzemeyi ekle'}</button>
       ${d ? '<button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>' : ''}
       <p class="mesaj"></p>
@@ -329,13 +322,12 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
   birimSec.addEventListener('change', etiketYaz);
   etiketYaz();
   form.querySelector('#vazgec')?.addEventListener('click', () => malzemeSekmesi(icerik, patron).catch(hataGoster));
-  formBagla(form, async ({ ad, birim, fiyat, oran }) => {
+  formBagla(form, async ({ ad, birim, fiyat }) => {
     const f = sayiOku(fiyat);
     if (!Number.isFinite(f) || f >= 10000000) throw new Error('Fiyatı sayı olarak yaz. Örn. 42,50');
-    if (oran === '') throw new Error('KDV oranını seç.');
-    const o = Number(oran);
-    // Fiyat KDV dahil girilir; KDV hariç fiyat + oran saklanır, KDV dahil fiyatı veritabanı hesaplar.
-    const kayit = { ad: ad.trim(), kdv_orani: o, fiyat_haric: yuvarla(f / (1 + o / 100), 4) };
+    // Fiyat KDV dahil girilir; KDV oranı sorulmaz. Oran biliniyorsa (faturadan gelmiş) veritabanı hariç fiyatı
+    // bu dahil fiyattan yeniden hesaplar; bilinmiyorsa yalnız KDV dahil fiyat saklanır.
+    const kayit = { ad: ad.trim(), fiyat: f };
     if (d) {
       await guncelle('malzemeler', d.id, kayit);
     } else {

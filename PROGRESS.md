@@ -88,6 +88,9 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - KDV + sadeleştirme commit'leri push edildi (018d46e); canlıda Girişler, Malzeme, Mekan ve fatura detayı kayıt yapılmadan
   kontrol edildi, konsol hatası yok.
 
+- Malzeme formunda KDV oranı alanı da kaldırıldı: yalnız ad, birim, KDV dahil fiyat. Oran faturadan gelmişse
+  veritabanı hariç fiyatı yeni dahil fiyattan yeniden hesaplar; yoksa yalnız dahil fiyat saklanır (test mekânında denendi).
+
 ## Açık yetkiler (Supabase 30 Ekim 2026 değişikliği) — 2026-10-21
 - Canlı yetkiler (role_table_grants + column_privileges) dosyalarla karşılaştırıldı: 19 tablonun hepsinde RLS açık; anon'a hiçbir
   tabloda yetki yok; 17 tablo dosyalarla birebir. Tek açık: mekanlar/uyeler için authenticated SELECT eski varsayılandan
