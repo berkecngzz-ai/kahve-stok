@@ -85,5 +85,8 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Doğrulama: geçici patron hesabı + test mekânında malzeme ekleme (42,50 TL KDV dahil), satış girişi, e-fatura ile
   Mal geldi, kısa uyarı ve fatura detayı denendi; test verisi silindi. **Push edilmedi.**
 
+- KDV + sadeleştirme commit'leri push edildi (018d46e); canlıda Girişler, Malzeme, Mekan ve fatura detayı kayıt yapılmadan
+  kontrol edildi, konsol hatası yok.
+
 ## Sıradaki adım
-Push için kullanıcı onayı bekleniyor (KDV + sadeleştirme commit'leri).
+Açık işler listesinden kullanıcının seçeceği iş (satış raporu okuma ya da açık raporu).
