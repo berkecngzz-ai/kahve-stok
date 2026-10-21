@@ -148,7 +148,7 @@ async function anaEkran(user, uye) {
   const patron = uye.rol === 'patron';
   mekan = { id: uye.mekan_id };
   if (!patron) return baristaEkrani(user, uye);
-  const sekmeler = [['giris', 'Girişler'], ['malzeme', 'Malzeme'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
+  const sekmeler = [['giris', 'Girişler'], ['rapor', 'Rapor'], ['malzeme', 'Malzeme'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
   if (kurulumcu) sekmeler.push(['kurulum', 'Kurulum']);
   if (aktifSekme === 'kurulum' && !kurulumcu) aktifSekme = 'giris';
   app.innerHTML = `
@@ -168,7 +168,65 @@ async function anaEkran(user, uye) {
   if (aktifSekme === 'urun') return urunSekmesi(icerik, patron);
   if (aktifSekme === 'mekan') return mekanSekmesi(icerik, user, uye, patron);
   if (aktifSekme === 'kurulum') return kurulumEkrani(icerik);
+  if (aktifSekme === 'rapor') return stokFarkiSekmesi(icerik);
   return girisSekmesi(icerik, user, patron);
+}
+
+// ---------- Stok farkı: iki sayım arasında beklenen ve sayılan stok (yalnız patron) ----------
+let secilenSayim = null;   // Raporda seçili sayım (yoksa en son)
+
+async function stokFarkiSekmesi(icerik) {
+  const r = await rpcVeri('stok_farki', { p_sayim: secilenSayim });
+  if (r.durum === 'sayim_yok') {
+    icerik.innerHTML = `<div class="kart"><h2>Stok farkı</h2>
+      <p class="bilgi">Henüz sayım yok. Fark, iki haftalık sayım arasında hesaplanır: ilk sayım başlangıç olur,
+        ikinci sayımda açık görünür.</p></div>`;
+    return;
+  }
+  const fark = (x) => `${Number(x.fark) > 0 ? '+' : ''}${buyukMiktar(x.fark, x.birim)}`;
+  const tlYaz = (n) => `${Number(n) > 0 ? '+' : ''}${tl.format(Number(n))}`;
+  const tamam = r.satirlar.filter((x) => x.durum === 'tamam');
+  const ilk = r.satirlar.filter((x) => x.durum === 'ilk_sayim');
+  const sayilmadi = r.satirlar.filter((x) => x.durum === 'sayilmadi');
+  const satir = (x) => `
+    <details class="giris">
+      <summary><b>${esc(x.ad)}</b>
+        <span class="${Number(x.fark) < 0 ? 'uyari' : ''}">${fark(x)}</span>
+        <small>${x.fark_tl != null ? tlYaz(x.fark_tl) : 'fiyat yok'}</small></summary>
+      <table class="tablo">
+        <tr><td>Önceki sayım (${tarihYaz(x.baslangic_tarih)})</td><td>${buyukMiktar(x.baslangic, x.birim)}</td></tr>
+        <tr><td>+ Gelen (fatura)</td><td>${buyukMiktar(x.gelen, x.birim)}</td></tr>
+        <tr><td>− Satış (tarifle)</td><td>${buyukMiktar(x.satis, x.birim)}</td></tr>
+        <tr><td>− Fire</td><td>${buyukMiktar(x.fire, x.birim)}</td></tr>
+        <tr><td><b>= Olması gereken</b></td><td><b>${buyukMiktar(x.beklenen, x.birim)}</b></td></tr>
+        <tr><td><b>Sayılan</b></td><td><b>${buyukMiktar(x.sayilan, x.birim)}</b></td></tr>
+      </table>
+    </details>`;
+  icerik.innerHTML = `
+    <div class="kart">
+      <h2>Stok farkı</h2>
+      <label for="sayim-sec">Sayım</label>
+      <select id="sayim-sec">${r.sayimlar.map((s) =>
+        `<option value="${esc(s.id)}" ${s.id === r.sayim_id ? 'selected' : ''}>${tarihYaz(s.tarih)}</option>`).join('')}</select>
+      <p class="bilgi">${r.baslangic ? `${tarihYaz(r.baslangic)} sayımından ${tarihYaz(r.bitis)} sayımına.` : 'Bu, ilk sayım.'}
+        Sayım gün sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayımdan önce sayılır.</p>
+      ${tamam.length ? `<p class="buyuk-yazi">Açık <span class="uyari">${tl.format(Number(r.toplam_acik_tl))}</span>
+        · Fazla ${tlYaz(r.toplam_fazla_tl)}</p>` : ''}
+      ${r.uyarilar.length ? `<div class="sade-uyari">${r.uyarilar.map((u) => `⚠️ ${esc(u)}`).join('<br>')}</div>` : ''}
+    </div>
+    ${tamam.length ? `<div class="kart"><h2>Malzemeler</h2>
+      <p class="bilgi">Eksi: olması gerekenden az (kayıp, ölçüsüz kullanım, girilmemiş fire). Artı: fazla
+        (girilmemiş satış/fatura ya da yanlış sayım). Ayrıntı için malzemeye dokun.</p>
+      ${tamam.map(satir).join('')}</div>` : ''}
+    ${ilk.length ? `<div class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
+      <p class="bilgi">Daha önce sayılmadıkları için fark bir sonraki sayımda çıkar.</p>
+      <p>${ilk.map((x) => `${esc(x.ad)}: ${buyukMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></div>` : ''}
+    ${sayilmadi.length ? `<div class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
+      <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></div>` : ''}`;
+  icerik.querySelector('#sayim-sec').addEventListener('change', (e) => {
+    secilenSayim = e.target.value;
+    stokFarkiSekmesi(icerik).catch(hataGoster);
+  });
 }
 
 async function mekanSekmesi(icerik, user, uye, patron) {
@@ -235,7 +293,7 @@ function sayiOku(s) {
 // Malzemeler. Fiyatlar veritabanında yalnız patrona açık (malzeme_fiyatlari); barista adları ve birimleri görür.
 async function malzemeleriGetir(fiyatli = true) {
   const [mr, fr] = await Promise.all([
-    sb.from('malzemeler').select('id, ad, birim, aktif'),
+    sb.from('malzemeler').select('id, ad, birim, aktif, olusturma'),
     fiyatli ? sb.rpc('malzeme_fiyatlari') : Promise.resolve({ data: [] }),
   ]);
   if (mr.error) throw mr.error;
@@ -1368,8 +1426,18 @@ async function fireVar(kutu, user, bitti) {
 async function haftalikSayim(kutu, user, bitti) {
   const malzemeler = (await malzemeleriGetir(false)).filter((m) => m.aktif);
   if (!malzemeler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
+  // Sayım birimi: adında paket boyu yazan g/ml malzeme ("Vanilya şurubu 700 ml") şişe/paket olarak sayılır
+  // (barista şişe sayar; 3 şişe = 2,1 litre). Diğerleri kg / litre / adet; yarım şişe 0,5 yazılır.
+  const sayimBirimi = (m) => {
+    const paket = m.birim !== 'adet' ? carpanBul('adet', m.birim, m.ad) : null;
+    if (paket > 1) return { ad: 'şişe / paket', ipucu: `1 şişe/paket = ${sayiYaz(paket)} ${m.birim}. Açık olanı yarım (0,5) say.`, kat: paket };
+    const b = BIRIMLER[m.birim];
+    return { ad: b.fiyatBirimi, kat: b.bolen,
+      ipucu: { g: 'Kilogram yaz: 500 g = 0,5 · 250 g = 0,25', ml: 'Litre yaz: 750 ml = 0,75 · 200 ml = 0,2', adet: 'Tane say.' }[m.birim] };
+  };
   // Yarım kalan sayım telefonda saklanır (kilitlenme, müşteri…); kaldığı yerden devam edilir.
-  const anahtarAd = `kahve-sayim:${mekan.id}:${user.id}`;
+  // (Anahtar 2: birim kuralı değişti; eski yarım sayımdaki "litre" değerleri şişe sanılmasın.)
+  const anahtarAd = `kahve-sayim2:${mekan.id}:${user.id}`;
   let t = null;
   try { t = JSON.parse(localStorage.getItem(anahtarAd) || 'null'); } catch { t = null; }
   if (!t || t.gun !== bugunStr()) t = { gun: bugunStr(), i: 0, degerler: {}, istek: istekKimligi() };
@@ -1380,11 +1448,13 @@ async function haftalikSayim(kutu, user, bitti) {
     if (t.i >= malzemeler.length) return ozet();
     const m = malzemeler[t.i];
     const d = t.degerler[m.id];
+    const sayimB = sayimBirimi(m);
     kutu.innerHTML = `<div class="sade-ekran">
         <p class="ilerleme">${t.i + 1} / ${malzemeler.length}</p>
         <div class="cubuk"><div style="width:${Math.round((t.i / malzemeler.length) * 100)}%"></div></div>
         <h2 class="malzeme-adi">${esc(m.ad)}</h2>
-        ${rakamKutusu(BIRIMLER[m.birim].fiyatBirimi, d === 'atla' || d == null ? '' : d)}
+        ${rakamKutusu(sayimB.ad, d === 'atla' || d == null ? '' : d)}
+        <p class="bilgi ortada">${esc(sayimB.ipucu)}</p>
         <p class="mesaj"></p>
         <div class="iki-dugme"><button class="dev ikincil" id="geri">◀</button><button class="dev" id="ileri">Sonraki ▶</button></div>
         <button class="dev ikincil kucuk-dev" id="atla">Bilmiyorum, geç</button>
@@ -1410,9 +1480,17 @@ async function haftalikSayim(kutu, user, bitti) {
   const ozet = () => {
     const sayilan = malzemeler.filter((m) => t.degerler[m.id] != null && t.degerler[m.id] !== 'atla');
     const atlanan = malzemeler.filter((m) => !sayilan.includes(m));
+    // Kaydetmeden önce her değer birimiyle görünür ("Maden suyu: 100 şişe = 20 litre"); yanlış birim göze batar.
+    const ozetSatir = (m) => {
+      const sayimB = sayimBirimi(m);
+      const n = sayiOku(t.degerler[m.id]);
+      const kucuk = Math.round(n * sayimB.kat * 1000) / 1000;
+      return `<tr><td>${esc(m.ad)}</td><td>${sayiYaz(n)} ${esc(sayimB.ad)}${sayimB.ad === 'şişe / paket' ? ` = ${buyukMiktar(kucuk, m.birim)}` : ''}</td></tr>`;
+    };
     kutu.innerHTML = `<div class="sade-ekran">
         <h2>📋 Sayım bitti</h2>
         <p class="buyuk-yazi">✓ ${sayilan.length} malzeme sayıldı${atlanan.length ? `<br>— ${atlanan.length} atlandı` : ''}</p>
+        ${sayilan.length ? `<p class="bilgi">Rakamlara son bir kez bak:</p><table class="tablo">${sayilan.map(ozetSatir).join('')}</table>` : ''}
         ${atlanan.length ? `<p class="bilgi">Atlanan: ${atlanan.map((m) => esc(m.ad)).join(', ')}</p>` : ''}
         <p class="mesaj"></p>
         <button class="dev" id="kaydet" ${sayilan.length ? '' : 'disabled'}>Kaydet ✓</button>
@@ -1422,7 +1500,8 @@ async function haftalikSayim(kutu, user, bitti) {
       e.target.disabled = true;
       try {
         const id = await rpcVeri('giris_kaydet_tek', { p_istek: t.istek, p_tur: 'sayim', p_tarih: bugunStr(), p_aciklama: null,
-          p_kalemler: sayilan.map((m) => ({ malzeme_id: m.id, miktar: kucukMiktar(sayiOku(t.degerler[m.id]), m.birim) })) });
+          p_kalemler: sayilan.map((m) => ({ malzeme_id: m.id,
+            miktar: Math.round(sayiOku(t.degerler[m.id]) * sayimBirimi(m).kat * 1000) / 1000 })) });
         sil();
         satisRaporu(id);
       } catch (err) {
@@ -1521,7 +1600,7 @@ async function aiIleOku(bloblar, model = undefined) {
 async function malGeldi(kutu, user, bitti) {
   const [malzemeler, dr] = await Promise.all([
     malzemeleriGetir(false),
-    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan'),
+    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan, guncelleme'),
   ]);
   if (dr.error) throw dr.error;
   const malzemeBul = new Map(malzemeler.map((m) => [m.id, m]));
@@ -1883,14 +1962,28 @@ async function kurulumEkrani(kutu) {
     const carpanInp = form.querySelector('input[name=carpan]');
     const etiket = form.querySelector('.carpan-birim');
     const malzemeler = JSON.parse(form.dataset.malzemeler);
+    // Bağlamadan önce stoğa girecek miktar ve birim fiyat görünür: "24 ml · 14.500 ₺/litre" gibi yanlış çarpan göze batar.
+    const onizleme = () => {
+      const m = malzemeler.find((x) => x.id === sec.value);
+      const f = Object.fromEntries(new FormData(form));
+      const [carpan, miktar, tutar, oran] = [f.carpan, f.miktar, f.tutar, f.oran].map((v) => sayiOku(String(v ?? '')));
+      const kutu = form.querySelector('.onizleme');
+      if (!m || !(carpan > 0) || !(miktar > 0)) { kutu.textContent = ''; return; }
+      const stok = miktar * carpan;
+      const b = BIRIMLER[m.birim];
+      kutu.textContent = `Stoğa girecek: ${buyukMiktar(stok, m.birim)}`
+        + (tutar >= 0 && oran >= 0 ? ` · birim fiyat ${tl.format((tutar * (1 + oran / 100) / stok) * b.bolen)}/${b.fiyatBirimi} (KDV dahil)` : '');
+    };
     const birimYaz = () => {
       const m = malzemeler.find((x) => x.id === sec.value);
       etiket.textContent = m ? m.birim : '';
       if (m && !carpanInp.dataset.elle) carpanInp.value = carpanBul(form.dataset.birim, m.birim, form.dataset.metin) ?? '';
+      onizleme();
     };
     carpanInp.addEventListener('input', () => { carpanInp.dataset.elle = '1'; });
+    form.addEventListener('input', onizleme);
     sec.addEventListener('change', birimYaz);
-    if (!carpanInp.value) birimYaz(); else etiket.textContent = malzemeler.find((x) => x.id === sec.value)?.birim ?? '';
+    if (!carpanInp.value) birimYaz(); else { etiket.textContent = malzemeler.find((x) => x.id === sec.value)?.birim ?? ''; onizleme(); }
     const gonder = async (sonucTur) => {
       const f = Object.fromEntries(new FormData(form));
       const sayi = (v) => (String(v ?? '').trim() ? sayiOku(v) : null);
@@ -1899,7 +1992,7 @@ async function kurulumEkrani(kutu) {
         await rpcVeri('kurulum_satir_coz', {
           p_satir: Number(form.dataset.satir), p_sonuc: sonucTur, p_malzeme: f.malzeme || null,
           p_carpan: sayi(f.carpan), p_miktar: sayi(f.miktar), p_tutar_haric: sayi(f.tutar), p_kdv_orani: sayi(f.oran),
-          p_deftere_yaz: f.defter === 'on',
+          p_deftere_yaz: f.defter === 'on', p_onay: f.onay === 'on',
         });
         yenile();
       } catch (err) { hataGoster(err); }
@@ -1917,7 +2010,30 @@ async function kurulumEkrani(kutu) {
   belgeIslem('[data-kalanlar]', 'kurulum_kalanlar_takip_disi', 'Eşleşme bekleyen kalan satırların hepsi takip dışı sayılsın ve deftere yazılsın mı?');
   belgeIslem('[data-onayla]', 'kurulum_belge_onayla', 'Faturaya baktın ve rakamlar doğru mu? Eşleşmiş satırlar stoğa eklenecek.');
   belgeIslem('[data-reddet]', 'kurulum_belge_reddet', 'Belge reddedilsin mi? Stoğa etkisi geri alınır; barista yeniden yükleyebilir.');
-  belgeIslem('[data-rapor-tamam]', 'kurulum_satis_raporu_tamam', 'Satış raporu işlendi olarak işaretlensin mi?');
+  belgeIslem('[data-rapor-tamam]', 'kurulum_satis_raporu_tamam',
+    'Satışlar patron tarafından Girişler → Satış gir ile girildi mi? Rapor yalnız işlendi olarak işaretlenir, stoğa ayrıca bir şey eklenmez.');
+
+  // Satış raporu → satış girişi
+  kutu.querySelectorAll('form[data-rapor]').forEach((form) => {
+    form.querySelector('[data-rapor-kaydet]').onclick = async (e) => {
+      try {
+        const kalemler = [];
+        for (const inp of form.querySelectorAll('[data-urun]')) {
+          if (!inp.value.trim()) continue;
+          const n = sayiOku(inp.value);
+          if (!Number.isInteger(n) || n < 0 || n > 100000) throw new Error('Adetleri tam sayı olarak yaz.');
+          if (n > 0) kalemler.push({ urun_id: inp.dataset.urun, miktar: n });
+        }
+        if (!kalemler.length) throw new Error('En az bir ürünün adedini yaz.');
+        const tarih = form.querySelector('[name=tarih]').value;
+        const toplam = kalemler.reduce((t, k) => t + k.miktar, 0);
+        if (!confirm(`${tarihYaz(tarih)} için ${kalemler.length} ürün, toplam ${toplam} adet satış kaydedilsin mi?`)) return;
+        e.target.disabled = true;
+        await rpcVeri('kurulum_satis_raporu_isle', { p_belge: form.dataset.rapor, p_tarih: tarih, p_kalemler: kalemler });
+        yenile();
+      } catch (err) { hataGoster(err); e.target.disabled = false; }
+    };
+  });
 }
 
 // ---------- 🧪 Okuma testi: dosyaları cevap anahtarıyla karşılaştırır (hiçbir şey kaydetmez) ----------
@@ -1926,7 +2042,7 @@ const TEST_MODELLERI = ['gpt-4.1-mini', 'gpt-4.1-nano'];
 async function okumaTestiEkrani(kutu, geri) {
   const [malzemeler, dr, durum] = await Promise.all([
     malzemeleriGetir(false),
-    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan'),
+    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan, guncelleme'),
     rpcVeri('ai_okuma_durumu'),
   ]);
   if (dr.error) throw dr.error;
@@ -2063,9 +2179,20 @@ function belgeKarti(k, b) {
   const dosyaDugmesi = b.dosyalar.length
     ? `<button class="ikincil kucuk" data-belge-ac='${esc(JSON.stringify(b.dosyalar.map((d) => d.yol)))}'>📄 Belgeyi aç (${b.dosyalar.length})</button>` : '';
   if (b.tur === 'satis_raporu') {
-    return `<div class="kart"><b>💰 Satış raporu</b> · ${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}<br>${dosyaDugmesi}
-      <p class="bilgi">Satışlar patron ekranından girilir (Girişler → Satış gir). Girildikten sonra işaretle.</p>
-      <button class="kucuk" data-rapor-tamam data-id="${esc(b.id)}">İşlendi ✓</button></div>`;
+    const bugun = bugunStr();
+    return `<form class="kart" data-rapor="${esc(b.id)}" onsubmit="return false">
+      <b>💰 Satış raporu</b> · ${esc(k.mekan)} · ${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}<br>${dosyaDugmesi}
+      <p class="bilgi">Rapordaki adetleri yaz (ikram / 0 TL satırlar dahil; malzeme yine harcandı). Satılmayanı boş bırak.
+        Tarih: raporun kapsadığı son gün (genelde sayım günü). Kaydedince satışlar tarifle stoktan düşer.</p>
+      <label>Tarih<input type="date" name="tarih" value="${gunu(b.olusturma)}" max="${bugun}" required></label>
+      ${k.urunler.length ? k.urunler.map((u) => `<div class="liste-satir">
+          <label for="r-${esc(b.id)}-${esc(u.id)}">${esc(u.ad)}</label>
+          <input id="r-${esc(b.id)}-${esc(u.id)}" data-urun="${esc(u.id)}" inputmode="numeric" autocomplete="off" placeholder="—">
+          <span class="birim">adet</span></div>`).join('')
+        : '<p class="uyari">Bu mekanda ürün (tarif) yok; satışlar stoğa çevrilemez.</p>'}
+      <div class="dugmeler"><button class="kucuk" type="button" data-rapor-kaydet>Satışları kaydet ✓</button>
+        <button class="ikincil kucuk" type="button" data-rapor-tamam data-id="${esc(b.id)}">Patron girdi, yalnız işaretle</button></div>
+    </form>`;
   }
   const satirToplam = b.satirlar.reduce((t, s) => t + Number(s.tutar_haric ?? 0) * (1 + Number(s.kdv_orani ?? 0) / 100), 0);
   const bekleyen = b.satirlar.filter((s) => s.durum === 'bekliyor');
@@ -2094,8 +2221,11 @@ function belgeKarti(k, b) {
             <label>Tutar (KDV hariç)<input name="tutar" inputmode="decimal" value="${s.tutar_haric ?? ''}"></label>
             <label>KDV %<input name="oran" inputmode="decimal" value="${s.kdv_orani ?? ''}"></label>
           </div>
+          <p class="bilgi onizleme"></p>
           <label class="onay-kutu"><input type="checkbox" name="defter" ${['eslesme', 'donusum'].includes(s.sebep) ? 'checked' : ''}>
             Deftere yaz (sonraki faturalarda otomatik)</label>
+          <label class="onay-kutu"><input type="checkbox" name="onay">
+            Fiyat/miktar doğru (kayıtlı fiyattan çok farklıysa faturaya bakıp işaretle)</label>
           <div class="dugmeler"><button class="kucuk" type="button" data-bagla>Bağla ✓</button>
             <button class="ikincil kucuk" type="button" data-disi>Takip dışı</button></div>
         </form>`).join('')}

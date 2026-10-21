@@ -45,11 +45,17 @@ Kahve dükkanları için stok açığı takibi. Barista gelen malı, satışlar�
     Editor'da `insert into public.kurulum_hesaplari (user_id) select id from auth.users where email = '…';`
     Bu hesap tüm mekanların kuyruğunu görür; "Kalanların hepsi takip dışı" ile toplu işaretler.
 
+- **Adım 5** (`sql/12_stok_duzeltmeleri.sql`): kurulumda bağlanan fatura satırı da fiyat (%30) / miktar (3 kat)
+  kontrolünden geçer ("Fiyat/miktar doğru" onayıyla geçilir); giriş iptal edilince bağlı belge de iptal olur (aynı
+  fatura yeniden yüklenebilir); satış raporu kurulumda ürün adetleriyle satış girişine çevrilir (aynı güne ikinci satış
+  reddedilir); **stok farkı raporu** (`stok_farki`, yalnız patron): her malzeme için önceki sayım + fatura − satış
+  (tarifle) − fire = olması gereken; sayılanla fark, güncel fiyatla TL. Sayım gün sonu kabul edilir.
+
 ## Okuma ve eşleştirme testleri
 `npm install` sonra `npm test` (Node 20+).
 
-## Yerel izolasyon testi
-Postgres 16 ile, boş bir veritabanında tek oturumda sırayla:
-`test/supabase_taklit.sql`, `sql/01_giris_mekan.sql`, `sql/02_malzeme_tarif.sql`, `test/izolasyon_test.sql`,
-`test/malzeme_tarif_test.sql`, `sql/03_girisler.sql`, `test/girisler_test.sql`,
-`sql/04_fatura_belge_kdv.sql`, `test/fatura_kdv_test.sql`, `sql/05_belge_okuma_kurulum.sql`, `test/belge_kurulum_test.sql`.
+## Yerel SQL testleri
+Postgres kurmadan: `npm run test:sql` (PGlite — Node içinde gerçek Postgres; psql'in `gset` / `:'değişken'`
+özellikleri `test/sql-calistir.mjs` ile taklit edilir). Sıra `test/sql-calistir.mjs` içindeki `ZINCIR`'de:
+01 → 12 SQL dosyaları ve her adımın `test/*_test.sql` dosyası, tek veritabanında.
+PGlite'ta pgcrypto yok: `gen_random_bytes` test için taklit edilir. 07/08 (okuma testi, pg_net) zincirde yok.

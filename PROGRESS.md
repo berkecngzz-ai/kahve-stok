@@ -35,8 +35,8 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 
 ## Açık işler
 - Telefonda uçtan uca okuma süresi ölçülmedi.
-- Satış raporu okuma (şimdilik saklanıyor, kurulum kuyruğuna gidiyor; ikram/0 TL satırlar da tüketim sayılmalı).
-- Açık raporu (Adım 4 ana raporu) ve rapordaki "eksik veri" uyarısı.
+- Satış raporu otomatik OKUNMUYOR: kurulum rapora bakıp ürün adetlerini elle yazar (aşağıda). POS formatı belli
+  olunca CSV/AI okuma eklenebilir.
 
 ## Fatura okuma V2 testi (test-faturalar-v2) — 2026-10-21
 
@@ -100,5 +100,24 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - CLAUDE.md'ye kural eklendi: yeni tablo aynı dosyada RLS + politika + açık grant (gerekirse service_role) ile gelir.
 - Canlı kontrol (giriş yapmış patron): tüm sekmeler ve REST okumaları 200, permission denied yok.
 
+## Stok güvenilirliği düzeltmeleri — 2026-10-21 (commit'li, push YOK, canlıya UYGULANMADI)
+- Denetim (salt-okuma) bulguları: kurulumda bağlanan satırda fiyat kontrolü yoktu (soda 24 ml / 14.500 ₺/L); fatura
+  Girişler'den iptal edilince belge açık kalıyor, aynı fatura yeniden yüklenemiyordu; stok farkı raporu yoktu; satış
+  raporu stoğa işlenmiyordu; sayım ekranı şişeli malzemeyi litre soruyordu; defterde yanlış/eskimiş kayıtlar.
+- `sql/12_stok_duzeltmeleri.sql`: kurulum_satir_coz fiyat/miktar kontrolü (+p_onay), giris_iptal belgeyi de iptal eder,
+  kurulum_satis_raporu_isle (aynı güne 2. satış reddedilir), kurulum_kuyrugu ürünleri döndürür, stok_farki raporu.
+  Kural: sayım gün sonu; hareket tarihi girişin tarihi; malzeme başına önceki sayımdan bu sayıma; TL güncel fiyatla.
+- Ön yüz: Rapor sekmesi (patron), kurulumda birim fiyat önizleme + "Fiyat/miktar doğru" kutusu + satış raporu adet
+  formu; sayımda adında paket boyu olan g/ml malzeme şişe olarak sayılır, özet ekranda birimle gösterilir.
+  eslestirme.js: ölçü birimi + adda farklı paket boyu → çarpan bilinmez (kurulum); takip dışı kararından SONRA
+  açılan malzemeye uyan satır yeniden kuruluma gider.
+- Testler: `npm test` (JS 40/40), `npm run test:sql` (PGlite, tüm SQL testleri). Canlı fonksiyonlar repo ile birebir
+  aynı (07/08 hariç), yerel test DB canlıyı temsil ediyor. Ön yüz tarayıcıda tıklanarak denenmedi (canlıya çıkınca).
+- Yedek: Desktop\kahve-stok-yedek\2026-10-21_duzeltme-oncesi (tüm tablolar JSON + fonksiyonlar; gizli imza yazılmadı).
+- Veri düzeltme betiği `scripts/veri-duzeltme-2026-10-21.sql` (3 belge iptal; defter: vanilya → Vanilya şurubu 700,
+  soda çarpan 200, 5 yanlış kayıt silinir; soda satırı 4.800 ml / 72,50 ₺). Yedeğin yerel kopyasında denendi.
+
 ## Sıradaki adım
-Açık işler listesinden kullanıcının seçeceği iş (satış raporu okuma ya da açık raporu).
+Kullanıcı onayıyla sırayla: (1) `sql/12` canlıya, (2) veri düzeltme betiği, (3) push (ön yüz SQL'den SONRA çıkmalı —
+yeni RPC'ler yoksa Rapor sekmesi ve kurulum bağlama hata verir), (4) canlıda Rapor + kurulum ekranı kontrolü.
+Sorulacak: canlı sayımda maden suyu "100 litre" ve vanilya "50 litre" şişe mi kastedildi?

@@ -76,10 +76,15 @@ export function carpanBul(belgeBirimi, malzemeBirimi, metin) {
   const boyBirim = boy?.[2];
   const kat = { kg: ['g', 1000], gr: ['g', 1], g: ['g', 1], lt: ['ml', 1000], l: ['ml', 1000], ml: ['ml', 1], cl: ['ml', 10] };
 
-  if (belgeBirimi === 'kg') return malzemeBirimi === 'g' ? 1000 : null;
-  if (belgeBirimi === 'g') return malzemeBirimi === 'g' ? 1 : null;
-  if (belgeBirimi === 'lt') return malzemeBirimi === 'ml' ? 1000 : null;
-  if (belgeBirimi === 'ml') return malzemeBirimi === 'ml' ? 1 : null;
+  // Ölçü birimi (kg/g/lt/ml): ürün adında başka bir paket boyu yazıyorsa miktarın paket mi ölçü mü olduğu belli değil.
+  // "SODA 200ML" × 24 birim ml okunduysa 24 şişe (4.800 ml) mi 24 ml mi? → bilinmez, kurulum karar verir.
+  // "TOZ ŞEKER 1KG" × 4 birim kg → paket = 1 kg, çelişki yok.
+  const olcu = { kg: ['g', 1000], g: ['g', 1], lt: ['ml', 1000], ml: ['ml', 1] }[belgeBirimi];
+  if (olcu) {
+    if (malzemeBirimi !== olcu[0]) return null;
+    if (boyMiktar && kat[boyBirim]?.[0] === olcu[0] && Math.abs(boyMiktar * kat[boyBirim][1] - olcu[1]) > 1e-9) return null;
+    return olcu[1];
+  }
   if (belgeBirimi === 'adet') {
     if (malzemeBirimi === 'adet') return coklu;
     if (boyMiktar && kat[boyBirim]?.[0] === malzemeBirimi) return boyMiktar * kat[boyBirim][1] * coklu;
@@ -149,6 +154,16 @@ function defterBul(defter, tedarikciAnahtar, metinAnahtar, birim) {
       ?? uyan.find((d) => d.tedarikci_anahtar === '') ?? null;
 }
 
+// Defterdeki "takip dışı" kararı, karar verildikten SONRA eklenen bir malzemeyi kapsıyorsa artık geçerli sayılmaz:
+// "Karton bardak 12 oz / 50'li" takip dışı işaretlendi, sonra "Karton bardak 12 oz" malzemesi açıldı → satır sessizce
+// stok dışı kalmasın, kurulum yeniden karar versin. (Karardan önce var olan malzeme bilerek dışarıda bırakılmıştır.)
+export function takipDisiEskimis(d, satirMetni, malzemeler) {
+  if (d?.sonuc !== 'takip_disi' || !d.guncelleme) return null;
+  const karar = Date.parse(d.guncelleme);
+  return malzemeler.find((m) => m.aktif !== false && m.olusturma && Date.parse(m.olusturma) > karar
+    && benzerlik(m.ad, satirMetni) === 1 && !turevUrunMu(m.ad, satirMetni)) ?? null;
+}
+
 // AI ile okunan satır: önce defter (doğrulanmış kayıt her zaman önce gelir), sonra AI'nın kararı.
 //   AI "takip dışı" (güven ≥ 0,8)  → takip_disi  (sunucu da kendi AI kaydından doğrular)
 //   AI "malzeme"   (güven ≥ 0,6)  → soru: barista "Bu ürün süt mü? 12 litre" onaylar
@@ -161,6 +176,8 @@ export function aiIleSiniflandir(satir, ctx) {
   const birim = satir.birim || 'diger';
   const malzemeBul = new Map(ctx.malzemeler.filter((m) => m.aktif !== false).map((m) => [m.id, m]));
   const d = defterBul(ctx.defter, ctx.tedarikciAnahtar, metinAnahtar, birim);
+  const yeniMalzeme = takipDisiEskimis(d, satir.metin, ctx.malzemeler);
+  if (yeniMalzeme) return { sinif: 'belirsiz', aday_malzeme_id: yeniMalzeme.id };
   if (d?.sonuc === 'takip_disi') return { sinif: 'takip_disi', kaynak: 'defter' };
   if (d?.sonuc === 'malzeme' && malzemeBul.has(d.malzeme_id)) {
     return { sinif: 'eslesti', malzeme_id: d.malzeme_id, carpan: Number(d.carpan), kaynak: 'defter' };
@@ -205,6 +222,8 @@ export function siniflandir(satir, ctx) {
   const malzemeBul = new Map(ctx.malzemeler.map((m) => [m.id, m]));
 
   const d = defterBul(ctx.defter, ctx.tedarikciAnahtar, metinAnahtar, birim);
+  const yeniMalzeme = takipDisiEskimis(d, satir.metin, ctx.malzemeler);
+  if (yeniMalzeme) return { sinif: 'belirsiz', aday_malzeme_id: yeniMalzeme.id };
   if (d?.sonuc === 'takip_disi') return { sinif: 'takip_disi' };
   if (d?.sonuc === 'malzeme' && malzemeBul.get(d.malzeme_id)?.aktif !== false && malzemeBul.has(d.malzeme_id)) {
     return { sinif: 'eslesti', malzeme_id: d.malzeme_id, carpan: Number(d.carpan), kaynak: 'defter' };

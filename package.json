@@ -4,9 +4,11 @@
   "type": "module",
   "description": "Kahve dükkanları için stok açığı takibi. Derleme yok; bu dosya yalnızca okuma/eşleştirme testleri içindir.",
   "scripts": {
-    "test": "node --test test/js/"
+    "test": "node --test test/js/",
+    "test:sql": "node test/sql-calistir.mjs --hepsi"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.2.17",
     "@xmldom/xmldom": "0.8.10",
     "supabase": "^2.121.0"
   }
