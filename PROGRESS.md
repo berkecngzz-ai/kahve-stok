@@ -131,6 +131,8 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
   sekmeler sığıyor; konsol hatası yok; DB sayıları değişmedi. Kurulum fiyat önizleme / satış raporu formu canlıda
   bekleyen belge olmadığı için görülmedi (yalnız SQL testleriyle doğrulandı).
 
+- Kullanıcı kararı (2026-10-21): `fatura_kaydet` yetki açığı şimdilik böyle kalıyor; gerçek kullanıcı testine geçildi.
+
 ## Sıradaki adım
-`fatura_kaydet` yetki kararı (kullanıcı). İlk gerçek fatura/satış raporu kuyruğa düşünce kurulum formunu canlıda gözle.
+Gerçek kullanıcı testi sürüyor. İlk gerçek fatura/satış raporu kuyruğa düşünce kurulum formunu canlıda gözle.
 İkinci haftalık sayımdan sonra Rapor'daki farkları elle kontrol et.
