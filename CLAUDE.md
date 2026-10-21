@@ -21,3 +21,7 @@
 ## Güvenlik
 - Veri ya da tablo silen, geri alınamayan her işlemden önce sor.
 - Anahtar, şifre, token'ı asla sohbete, koda ya da commit'e yazma; sadece secrets/ortam değişkeni.
+- Her yeni tablo AYNI SQL dosyasında şunlarla gelir: `enable row level security`, politikaları ve rollere açık
+  `grant`'ler (anon / authenticated için gereken en az yetki; gerekmeyen `revoke all`). Edge function gibi
+  service_role ile erişilecekse o da açıkça `grant ... to service_role` yazılır. Supabase'in varsayılan yetkilerine
+  güvenilmez (30 Ekim 2026'dan sonra yeni tablolara varsayılan yetki verilmiyor).

@@ -88,5 +88,14 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - KDV + sadeleştirme commit'leri push edildi (018d46e); canlıda Girişler, Malzeme, Mekan ve fatura detayı kayıt yapılmadan
   kontrol edildi, konsol hatası yok.
 
+## Açık yetkiler (Supabase 30 Ekim 2026 değişikliği) — 2026-10-21
+- Canlı yetkiler (role_table_grants + column_privileges) dosyalarla karşılaştırıldı: 19 tablonun hepsinde RLS açık; anon'a hiçbir
+  tabloda yetki yok; 17 tablo dosyalarla birebir. Tek açık: mekanlar/uyeler için authenticated SELECT eski varsayılandan
+  geliyordu → `sql/11_acik_yetkiler.sql` ile açıkça yazıldı ve canlıya uygulandı (davranış değişmedi).
+- Not: service_role'ün tüm tablolardaki tam yetkisi de varsayılandan geliyor; uygulamanın service_role ile eriştiği yerler
+  (ic_ayarlar, okuma_testleri, ai_okuma_bitir) dosyalarda açıkça grant'li.
+- CLAUDE.md'ye kural eklendi: yeni tablo aynı dosyada RLS + politika + açık grant (gerekirse service_role) ile gelir.
+- Canlı kontrol (giriş yapmış patron): tüm sekmeler ve REST okumaları 200, permission denied yok.
+
 ## Sıradaki adım
 Açık işler listesinden kullanıcının seçeceği iş (satış raporu okuma ya da açık raporu).
