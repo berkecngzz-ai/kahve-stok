@@ -126,6 +126,11 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Açık (eski, bu işte değişmedi): `fatura_kaydet` (Fatura elle gir) sunucuda rol/fiyat kontrolü yapmıyor; ekranda yalnız
   patronda ama barista API'den doğrudan çağırabilir. Karar kullanıcıda (yalnız patrona kısıtlamak?).
 
+- Canlı ekran testi (patron oturumu, kayıt yok): Girişler'de soda 4,8 litre; Rapor sekmesi 10 malzemeyi "ilk sayım"
+  gösteriyor; Kurulum açılıyor (kuyruk boş); sayımda soda/vanilya "şişe / paket", özet "3 şişe = 2,1 litre"; 375 px'te
+  sekmeler sığıyor; konsol hatası yok; DB sayıları değişmedi. Kurulum fiyat önizleme / satış raporu formu canlıda
+  bekleyen belge olmadığı için görülmedi (yalnız SQL testleriyle doğrulandı).
+
 ## Sıradaki adım
-Kullanıcı tarayıcıda giriş yapınca ekran testi: Rapor sekmesi, Girişler, kurulum kuyruğu (fiyat önizleme), barista
-sayım ekranı (şişe birimi) — kayıt yapmadan. Sonra `fatura_kaydet` yetki kararı.
+`fatura_kaydet` yetki kararı (kullanıcı). İlk gerçek fatura/satış raporu kuyruğa düşünce kurulum formunu canlıda gözle.
+İkinci haftalık sayımdan sonra Rapor'daki farkları elle kontrol et.
