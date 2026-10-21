@@ -77,7 +77,13 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - KDV dahil/hariç **gösterim ayarı kaldırıldı** (Mekan sekmesindeki kart); her yerde KDV dahil gösteriliyor. Faturanın KDV
   bilgisi (hariç tutar, oran) içeride saklanmaya ve toplam kontrolünde kullanılmaya devam ediyor. Veritabanındaki
   `mekanlar.kdv_gosterim` sütunu ve `kdv_gosterim_ayarla()` dokunulmadan duruyor (ön yüz artık okumuyor). **Push edilmedi.**
-- Kaldırılabilecek ekran/ayar listesi kullanıcıya verildi; kullanıcı seçmeden hiçbir şey silinmeyecek.
+- Kullanıcının listeden seçtikleri uygulandı: Mekan'daki AI okuma sayacı kaldırıldı; malzeme fiyatı her zaman KDV dahil
+  girilir ("Bu fiyat KDV dahil/hariç" seçimi yok, KDV oranı kaldı); malzeme listesinde yalnız fiyat; fatura detayındaki
+  tekrar eden "genel toplam/indirim" satırı kaldırıldı; eksik belge uyarısı tek cümle; kullanılmayan eski fire/sayım
+  formları silindi (form yalnız satış).
+- Seçilmeyenler duruyor: fiyat geçmişi, "Fatura elle gir", okuma testi düğmesi, sayım sonrası satış raporu adımı.
+- Doğrulama: geçici patron hesabı + test mekânında malzeme ekleme (42,50 TL KDV dahil), satış girişi, e-fatura ile
+  Mal geldi, kısa uyarı ve fatura detayı denendi; test verisi silindi. **Push edilmedi.**
 
 ## Sıradaki adım
-Kullanıcının sadeleştirme listesinden seçtikleri uygulanacak; KDV değişikliği onayla push edilecek.
+Push için kullanıcı onayı bekleniyor (KDV + sadeleştirme commit'leri).

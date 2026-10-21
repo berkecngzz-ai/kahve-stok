@@ -172,12 +172,8 @@ async function anaEkran(user, uye) {
 }
 
 async function mekanSekmesi(icerik, user, uye, patron) {
-  const [{ data: uyeler, error }, okuma] = await Promise.all([
-    sb.from('uyeler').select('user_id, ad, rol, eposta').order('olusturma'),
-    sb.rpc('ai_okuma_durumu'),
-  ]);
+  const { data: uyeler, error } = await sb.from('uyeler').select('user_id, ad, rol, eposta').order('olusturma');
   if (error) throw error;
-  const okumaDurumu = okuma.data?.[0];
 
   icerik.innerHTML = `
     ${patron ? `
@@ -189,9 +185,6 @@ async function mekanSekmesi(icerik, user, uye, patron) {
       <p class="bilgi">Kodu yenilersen eski kod çalışmaz. Birini çıkardıktan sonra yenilemen iyi olur.</p>
       <p class="mesaj"></p>
     </div>` : ''}
-    ${okumaDurumu ? `<div class="kart"><h2>Fatura okuma (AI)</h2>
-      <p class="bilgi">Bugün <b>${okumaDurumu.bugun} / ${okumaDurumu.sinir}</b> okuma kullanıldı. Sınır dolarsa telefondaki
-        yedek okuyucu çalışır. XML ve PDF faturalar sınırdan düşmez.</p></div>` : ''}
     <div class="kart">
       <h2>Mekandaki kişiler</h2>
       ${uyeler.map((u) => `
@@ -279,7 +272,7 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
     <div class="satir">
       <div class="genis">${esc(m.ad)}
         <small>${Number(m.fiyat) > 0
-          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${fiyatYazisi(m.fiyat, m.kdv_orani)}`
+          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))}`
           : '<span class="uyari">Fiyat girilmemiş</span>'}</small>
         <details class="gecmis" data-gecmis="${esc(m.id)}"><summary>Fiyat geçmişi</summary>
           <div><p class="bilgi">Yükleniyor…</p></div></details></div>
@@ -306,19 +299,12 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
       <input id="m-fiyat" name="fiyat" inputmode="decimal" autocomplete="off" required
         value="${d ? esc(String(d.fiyat).replace('.', ',')) : ''}"
         placeholder="Örn. 42,50">
-      <div class="iki">
-        <div><label for="m-dahil">Bu fiyat</label>
-          <select id="m-dahil" name="dahil">
-            <option value="1" selected>KDV dahil</option>
-            <option value="0">KDV hariç</option>
-          </select></div>
-        <div><label for="m-oran">KDV oranı</label>
-          <select id="m-oran" name="oran" required>
-            <option value="">Seç</option>
-            ${KDV_ORANLARI.map((o) => `<option value="${o}" ${d?.kdv_orani != null && Number(d.kdv_orani) === o
-              ? 'selected' : ''}>%${o}</option>`).join('')}
-          </select></div>
-      </div>
+      <label for="m-oran">KDV oranı</label>
+      <select id="m-oran" name="oran" required>
+        <option value="">Seç</option>
+        ${KDV_ORANLARI.map((o) => `<option value="${o}" ${d?.kdv_orani != null && Number(d.kdv_orani) === o
+          ? 'selected' : ''}>%${o}</option>`).join('')}
+      </select>
       ${d && d.kdv_orani == null ? '<p class="bilgi">Bu malzemenin KDV oranı daha önce girilmemiş. Oranı seçip kaydet.</p>' : ''}
       <button class="tam" type="submit">${d ? 'Kaydet' : 'Malzemeyi ekle'}</button>
       ${d ? '<button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>' : ''}
@@ -338,18 +324,18 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
   const form = icerik.querySelector('#malzeme-form');
   const birimSec = form.querySelector('#m-birim');
   const etiketYaz = () => {
-    form.querySelector('#m-fiyat-etiket').textContent = `1 ${BIRIMLER[birimSec.value].fiyatBirimi} fiyatı (TL)`;
+    form.querySelector('#m-fiyat-etiket').textContent = `1 ${BIRIMLER[birimSec.value].fiyatBirimi} fiyatı (TL, KDV dahil)`;
   };
   birimSec.addEventListener('change', etiketYaz);
   etiketYaz();
   form.querySelector('#vazgec')?.addEventListener('click', () => malzemeSekmesi(icerik, patron).catch(hataGoster));
-  formBagla(form, async ({ ad, birim, fiyat, dahil, oran }) => {
+  formBagla(form, async ({ ad, birim, fiyat, oran }) => {
     const f = sayiOku(fiyat);
     if (!Number.isFinite(f) || f >= 10000000) throw new Error('Fiyatı sayı olarak yaz. Örn. 42,50');
     if (oran === '') throw new Error('KDV oranını seç.');
     const o = Number(oran);
-    // Her zaman KDV hariç fiyat + oran saklanır; KDV dahil fiyatı veritabanı hesaplar.
-    const kayit = { ad: ad.trim(), kdv_orani: o, fiyat_haric: yuvarla(dahil === '1' ? f / (1 + o / 100) : f, 4) };
+    // Fiyat KDV dahil girilir; KDV hariç fiyat + oran saklanır, KDV dahil fiyatı veritabanı hesaplar.
+    const kayit = { ad: ad.trim(), kdv_orani: o, fiyat_haric: yuvarla(f / (1 + o / 100), 4) };
     if (d) {
       await guncelle('malzemeler', d.id, kayit);
     } else {
@@ -579,13 +565,13 @@ async function fiyatGecmisiAc(det) {
 
 // ---------- Girişler: fatura, satış, fire, sayım ----------
 
+// Geçmiş listesinde giriş türlerinin adı; satış formunun başlığı ve notu.
 const TURLER = {
-  fatura: { ad: 'Fatura', dugme: 'Fatura gir' },
+  fatura: { ad: 'Fatura' },
   satis: { ad: 'Satış', dugme: 'Satış gir', not: 'Gün sonu kasa raporundaki adetleri yaz. Satılmayanı boş bırak.' },
-  fire: { ad: 'Fire', dugme: 'Fire gir', not: 'Dökülen, bozulan ya da yanlış yapılanları gir.' },
-  sayim: { ad: 'Sayım', dugme: 'Sayım gir', not: 'Elde kalan miktarı yaz. Saymadığın malzemeyi boş bırak.' },
+  fire: { ad: 'Fire' },
+  sayim: { ad: 'Sayım' },
 };
-const FIRE_SEBEPLERI = ['Döküldü', 'Bozuldu / tarihi geçti', 'Yanlış yapıldı', 'Deneme / tadım', 'Diğer'];
 
 // Gösterim: g/ml veritabanında, ekranda kg/litre.
 const buyukMiktar = (miktar, birim) =>
@@ -667,8 +653,6 @@ async function girisSekmesi(icerik, user, patron) {
             ${g.iptal_zamani ? ' · <span class="uyari">İPTAL</span>' : ''}</small>
         </summary>
         <ul>${satirlar.map((k) => `<li>${kalemYaz(k)}</li>`).join('')}</ul>
-        ${fatura && g.belge_genel_toplam != null ? `<small>Faturadaki genel toplam: ${tl.format(g.belge_genel_toplam)} (KDV dahil)
-          ${Number(g.belge_indirim) > 0 ? ` · İndirim: ${tl.format(g.belge_indirim)}` : ''}</small>` : ''}
         ${gBelgeler.length ? '<div class="belgeler"><p class="bilgi">Belgeler yükleniyor…</p></div>' : ''}
         <small>Giren: ${esc(g.giren_ad)}, ${zamanYaz(g.olusturma)}</small>
         ${g.iptal_zamani ? `<small class="uyari">İptal eden: ${esc(g.iptal_eden_ad)}, ${zamanYaz(g.iptal_zamani)}</small>` : ''}
@@ -677,12 +661,11 @@ async function girisSekmesi(icerik, user, patron) {
   };
 
   const eksikMetni = [
-    eksik?.bekleyen_fatura ? `${eksik.bekleyen_fatura} faturada eşleştirme bekleniyor` : '',
-    eksik?.bekleyen_satis_raporu ? `${eksik.bekleyen_satis_raporu} satış raporu işlenmeyi bekliyor` : '',
+    eksik?.bekleyen_fatura ? `${eksik.bekleyen_fatura} fatura` : '',
+    eksik?.bekleyen_satis_raporu ? `${eksik.bekleyen_satis_raporu} satış raporu` : '',
   ].filter(Boolean).join(', ');
   icerik.innerHTML = `
-    ${eksikMetni ? `<div class="sade-uyari">⚠️ ${eksikMetni}; sonuç eksik olabilir.
-      <small>En eskisi: ${eksik.en_eski ? tarihYaz(eksik.en_eski) : '?'}. Kurulum ekibi çözünce bu uyarı kalkar.</small></div>` : ''}
+    ${eksikMetni ? `<div class="sade-uyari">⚠️ ${eksikMetni} kontrol bekliyor; raporlar eksik olabilir.</div>` : ''}
     <div class="buyuk-dugmeler yatay">
       <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
       <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
@@ -714,7 +697,7 @@ async function girisSekmesi(icerik, user, patron) {
       b.disabled = true;
       try { await faturaFormu(icerik, ctx, yenile); } catch (err) { hataGoster(err); b.disabled = false; return; }
     } else {
-      girisFormu(icerik, b.dataset.yeni, ctx, yenile);
+      satisFormu(icerik, ctx, yenile);
     }
     window.scrollTo(0, 0);
   }));
@@ -731,21 +714,16 @@ async function girisSekmesi(icerik, user, patron) {
   }));
 }
 
-// Satış, fire ve sayım formu. Fire satır satır; satış ve sayım tam liste halinde girilir. (Fatura: faturaFormu)
-function girisFormu(icerik, tur, ctx, bitti) {
-  const { malzemeler, malzemeBul, urunler, urunBul } = ctx;
-  const aktifMalzemeler = malzemeler.filter((m) => m.aktif);
-  const aktifUrunler = urunler.filter((u) => u.aktif);
-  const liste = tur === 'satis' ? aktifUrunler : tur === 'sayim' ? aktifMalzemeler : null;
+// Satış formu: gün sonu kasa raporundaki ürün adetleri. (Fatura: faturaFormu; fire ve sayım barista akışlarından)
+function satisFormu(icerik, ctx, bitti) {
+  const { urunler, urunBul } = ctx;
+  const liste = urunler.filter((u) => u.aktif);
   const bugun = bugunStr();
   const enEski = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
-  // Fire satırları: { secim: 'm:<id>' | 'u:<id>' | '', miktar }
-  const satirlar = [{ secim: '', miktar: '' }];
 
-  const bos = liste ? !liste.length : !aktifMalzemeler.length && !(tur === 'fire' && aktifUrunler.length);
-  if (bos) {
-    icerik.innerHTML = `<div class="kart"><h2>${TURLER[tur].dugme}</h2>
-      <p class="bilgi">Önce ${tur === 'satis' ? 'Ürünler' : 'Malzeme'} sekmesinden ${tur === 'satis' ? 'ürün' : 'malzeme'} eklenmeli.</p>
+  if (!liste.length) {
+    icerik.innerHTML = `<div class="kart"><h2>${TURLER.satis.dugme}</h2>
+      <p class="bilgi">Önce Ürünler sekmesinden ürün eklenmeli.</p>
       <button class="tam ikincil" id="vazgec">Geri</button></div>`;
     icerik.querySelector('#vazgec').onclick = bitti;
     return;
@@ -753,112 +731,34 @@ function girisFormu(icerik, tur, ctx, bitti) {
 
   icerik.innerHTML = `
     <form class="kart" id="giris-form">
-      <h2>${TURLER[tur].dugme}</h2>
-      <p class="bilgi">${TURLER[tur].not}</p>
+      <h2>${TURLER.satis.dugme}</h2>
+      <p class="bilgi">${TURLER.satis.not}</p>
       <label for="g-tarih">Tarih</label>
       <input id="g-tarih" name="tarih" type="date" value="${bugun}" max="${bugun}" min="${enEski}" required>
-      ${tur === 'fire' ? `<label for="g-aciklama">Sebep</label>
-        <select id="g-aciklama" name="aciklama" required><option value="">Seç</option>
-          ${FIRE_SEBEPLERI.map((s) => `<option>${s}</option>`).join('')}</select>` : ''}
-      <div id="satirlar"></div>
-      ${liste ? '' : '<button class="ikincil kucuk" type="button" id="satir-ekle">+ Satır ekle</button>'}
+      <div id="satirlar">${liste.map((x) => `
+        <div class="liste-satir">
+          <label for="l-${esc(x.id)}">${esc(x.ad)}</label>
+          <input id="l-${esc(x.id)}" data-id="${esc(x.id)}" inputmode="numeric" autocomplete="off" placeholder="—">
+          <span class="birim">adet</span>
+        </div>`).join('')}</div>
       <button class="tam" type="submit">Kaydet</button>
       <button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>
       <p class="mesaj"></p>
     </form>`;
   const form = icerik.querySelector('form');
-  const kutu = form.querySelector('#satirlar');
   form.querySelector('#vazgec').onclick = () => bitti();
 
-  const birimEtiketi = (secim) => {
-    if (secim.startsWith('u:')) return 'adet';
-    const m = malzemeBul.get(secim.slice(2));
-    return m ? BIRIMLER[m.birim].fiyatBirimi : '';
-  };
-
-  if (liste) {
-    // Satış: ürün başına adet. Sayım: malzeme başına kg/litre/adet.
-    kutu.innerHTML = liste.map((x) => `
-      <div class="liste-satir">
-        <label for="l-${esc(x.id)}">${esc(x.ad)}</label>
-        <input id="l-${esc(x.id)}" data-id="${esc(x.id)}" inputmode="${tur === 'satis' ? 'numeric' : 'decimal'}"
-          autocomplete="off" placeholder="—">
-        <span class="birim">${tur === 'satis' ? 'adet' : BIRIMLER[x.birim].fiyatBirimi}</span>
-      </div>`).join('');
-  } else {
-    const secenekler = (secili) => `
-      <option value="">Malzeme ya da ürün seç</option>
-      <optgroup label="Malzemeler">${aktifMalzemeler.map((m) =>
-        `<option value="m:${esc(m.id)}" ${secili === `m:${m.id}` ? 'selected' : ''}>${esc(m.ad)}</option>`).join('')}</optgroup>
-      ${aktifUrunler.length ? `<optgroup label="Ürünler (tarifiyle düşülür)">${aktifUrunler.map((u) =>
-        `<option value="u:${esc(u.id)}" ${secili === `u:${u.id}` ? 'selected' : ''}>${esc(u.ad)}</option>`).join('')}</optgroup>` : ''}`;
-    const ciz = () => {
-      kutu.innerHTML = satirlar.map((s, i) => `
-        <div class="giris-satir">
-          <select data-i="${i}" aria-label="Malzeme">${secenekler(s.secim)}</select>
-          <div class="giris-alt">
-            <input data-i="${i}" data-alan="miktar" inputmode="decimal" autocomplete="off"
-              placeholder="Miktar" aria-label="Miktar" value="${esc(s.miktar)}">
-            <span class="birim">${birimEtiketi(s.secim)}</span>
-            <button class="ikincil kucuk" type="button" data-sil="${i}" aria-label="Satırı sil">✕</button>
-          </div>
-        </div>`).join('');
-      kutu.querySelectorAll('select').forEach((sel) => sel.addEventListener('change', () => {
-        satirlar[sel.dataset.i].secim = sel.value;
-        ciz();
-      }));
-      kutu.querySelectorAll('input').forEach((inp) => inp.addEventListener('input', () => {
-        satirlar[inp.dataset.i][inp.dataset.alan] = inp.value;
-      }));
-      kutu.querySelectorAll('[data-sil]').forEach((b) => b.addEventListener('click', () => {
-        satirlar.splice(Number(b.dataset.sil), 1);
-        if (!satirlar.length) satirlar.push({ secim: '', miktar: '' });
-        ciz();
-      }));
-    };
-    ciz();
-    form.querySelector('#satir-ekle').addEventListener('click', () => {
-      satirlar.push({ secim: '', miktar: '' });
-      ciz();
-    });
-  }
-
-  formBagla(form, async ({ tarih, aciklama }) => {
-    let gonder = [];
-    if (liste) {
-      for (const inp of kutu.querySelectorAll('input')) {
-        if (!inp.value.trim()) continue;
-        const x = (tur === 'satis' ? urunBul : malzemeBul).get(inp.dataset.id);
-        const n = sayiOku(inp.value);
-        if (tur === 'satis') {
-          if (!Number.isInteger(n) || n < 0 || n > 100000) throw new Error(`${x.ad} için adedi tam sayı olarak yaz.`);
-          if (n > 0) gonder.push({ urun_id: x.id, miktar: n });
-        } else {
-          if (!Number.isFinite(n)) throw new Error(`${x.ad} için miktarı sayı olarak yaz. Örn. 2,5`);
-          gonder.push({ malzeme_id: x.id, miktar: kucukMiktar(n, x.birim) });
-        }
-      }
-      if (!gonder.length) throw new Error(tur === 'satis' ? 'En az bir ürünün adedini yaz.' : 'En az bir malzemenin miktarını yaz.');
-    } else {
-      const dolu = satirlar.filter((s) => s.secim || String(s.miktar).trim());
-      if (!dolu.length) throw new Error('En az bir satır gir.');
-      gonder = dolu.map((s) => {
-        if (!s.secim) throw new Error('Her satırda bir seçim yap ya da boş satırı sil.');
-        const id = s.secim.slice(2);
-        const n = sayiOku(s.miktar);
-        if (s.secim.startsWith('u:')) {
-          if (!Number.isInteger(n) || n < 1) throw new Error(`${urunBul.get(id).ad} için adedi tam sayı olarak yaz.`);
-          return { urun_id: id, miktar: n };
-        }
-        const m = malzemeBul.get(id);
-        if (!(n > 0)) throw new Error(`${m.ad} için miktarı sayı olarak yaz. Örn. 2,5`);
-        return { malzeme_id: id, miktar: kucukMiktar(n, m.birim) };
-      });
-      const idler = gonder.map((k) => k.malzeme_id ?? k.urun_id);
-      if (new Set(idler).size !== idler.length) throw new Error('Aynı malzeme ya da ürün iki satırda var. Tek satırda topla.');
+  formBagla(form, async ({ tarih }) => {
+    const gonder = [];
+    for (const inp of form.querySelectorAll('#satirlar input')) {
+      if (!inp.value.trim()) continue;
+      const x = urunBul.get(inp.dataset.id);
+      const n = sayiOku(inp.value);
+      if (!Number.isInteger(n) || n < 0 || n > 100000) throw new Error(`${x.ad} için adedi tam sayı olarak yaz.`);
+      if (n > 0) gonder.push({ urun_id: x.id, miktar: n });
     }
-    const { error } = await sb.rpc('giris_kaydet',
-      { p_tur: tur, p_tarih: tarih, p_aciklama: aciklama ?? null, p_kalemler: gonder });
+    if (!gonder.length) throw new Error('En az bir ürünün adedini yaz.');
+    const { error } = await sb.rpc('giris_kaydet', { p_tur: 'satis', p_tarih: tarih, p_aciklama: null, p_kalemler: gonder });
     if (error) throw error;
     secilenAy = tarih.slice(0, 7);
     await bitti();
