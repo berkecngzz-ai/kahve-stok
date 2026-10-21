@@ -139,14 +139,14 @@ function mekanSecEkrani(user) {
 
 // Açık olan sekme. Ekran yenilense de korunur.
 let aktifSekme = 'giris';
-// Giriş yapan kişinin mekanı: id ve raporlarda KDV gösterimi ('dahil' | 'haric').
-let mekan = { id: null, kdv_gosterim: 'dahil' };
+// Giriş yapan kişinin mekanı.
+let mekan = { id: null };
 // Giriş yapan kişi kurulum (servis) hesabı mı?
 let kurulumcu = false;
 
 async function anaEkran(user, uye) {
   const patron = uye.rol === 'patron';
-  mekan = { id: uye.mekan_id, kdv_gosterim: uye.mekanlar.kdv_gosterim ?? 'dahil' };
+  mekan = { id: uye.mekan_id };
   if (!patron) return baristaEkrani(user, uye);
   const sekmeler = [['giris', 'Girişler'], ['malzeme', 'Malzeme'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
   if (kurulumcu) sekmeler.push(['kurulum', 'Kurulum']);
@@ -193,14 +193,6 @@ async function mekanSekmesi(icerik, user, uye, patron) {
       <p class="bilgi">Bugün <b>${okumaDurumu.bugun} / ${okumaDurumu.sinir}</b> okuma kullanıldı. Sınır dolarsa telefondaki
         yedek okuyucu çalışır. XML ve PDF faturalar sınırdan düşmez.</p></div>` : ''}
     <div class="kart">
-      <h2>Fiyat gösterimi</h2>
-      <p class="bilgi">Ekranlarda ve raporlarda fiyatlar ${kdvHaric() ? '<b>KDV hariç</b>' : '<b>KDV dahil</b>'} gösteriliyor.
-        Kayıtlı veriler değişmez; ikisi de saklanır.</p>
-      ${patron ? `<div class="sekmeler">
-        <button data-kdv="dahil" class="${kdvHaric() ? '' : 'secili'}">KDV dahil</button>
-        <button data-kdv="haric" class="${kdvHaric() ? 'secili' : ''}">KDV hariç</button></div>` : ''}
-    </div>
-    <div class="kart">
       <h2>Mekandaki kişiler</h2>
       ${uyeler.map((u) => `
         <div class="satir">
@@ -211,13 +203,6 @@ async function mekanSekmesi(icerik, user, uye, patron) {
         </div>`).join('')}
     </div>`;
 
-  icerik.querySelectorAll('[data-kdv]').forEach((b) => b.addEventListener('click', async () => {
-    if (b.dataset.kdv === mekan.kdv_gosterim) return;
-    b.disabled = true;
-    const { error } = await sb.rpc('kdv_gosterim_ayarla', { p_deger: b.dataset.kdv });
-    if (error) { hataGoster(error); b.disabled = false; return; }
-    goster();
-  }));
   icerik.querySelector('#yenile')?.addEventListener('click', async (e) => {
     if (!confirm('Davet kodu yenilensin mi? Eski kod artık çalışmayacak.')) return;
     e.target.disabled = true;
@@ -267,22 +252,15 @@ async function malzemeleriGetir(fiyatli = true) {
 }
 
 // ---------- KDV ----------
-// Veritabanında: fiyat = KDV dahil, fiyat_haric + kdv_orani ayrı. Eski kayıtlarda oran yok (yalnız KDV dahil bilinir).
+// Veritabanında: fiyat = KDV dahil, fiyat_haric + kdv_orani ayrı (fatura toplam kontrolü için).
+// Ekranlarda ve raporlarda her yerde KDV dahil tutar gösterilir.
 const KDV_ORANLARI = [0, 1, 10, 20];
-const kdvHaric = () => mekan.kdv_gosterim === 'haric';
-const kdvEtiketi = () => (kdvHaric() ? 'KDV hariç' : 'KDV dahil');
 const oranYaz = (oran) => (oran == null ? 'oran yok' : `%${sayiYaz(Number(oran))}`);
 const yuvarla = (n, basamak = 2) => Math.round(n * 10 ** basamak) / 10 ** basamak;
 
-// Ayara göre gösterilecek tutar. Hariç isteniyor ama bilinmiyorsa KDV dahil tutar döner, bilinmiyor = true.
-function kdvliTutar(dahil, haric) {
-  if (kdvHaric() && haric == null) return { deger: Number(dahil), bilinmiyor: true };
-  return { deger: Number(kdvHaric() ? haric : dahil), bilinmiyor: false };
-}
 // "45,00 ₺ · KDV dahil · %1" gibi tek satırlık fiyat yazısı.
-function fiyatYazisi(dahil, haric, oran) {
-  const t = kdvliTutar(dahil, haric);
-  return `${tl.format(t.deger)} · ${t.bilinmiyor ? 'KDV dahil (hariç bilinmiyor)' : kdvEtiketi()} · ${oranYaz(oran)}`;
+function fiyatYazisi(dahil, oran) {
+  return `${tl.format(Number(dahil))} · KDV dahil · ${oranYaz(oran)}`;
 }
 
 // Satır güncellendi mi kontrol eder (yetki yoksa veritabanı sessizce 0 satır günceller).
@@ -301,7 +279,7 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
     <div class="satir">
       <div class="genis">${esc(m.ad)}
         <small>${Number(m.fiyat) > 0
-          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${fiyatYazisi(m.fiyat, m.fiyat_haric, m.kdv_orani)}`
+          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${fiyatYazisi(m.fiyat, m.kdv_orani)}`
           : '<span class="uyari">Fiyat girilmemiş</span>'}</small>
         <details class="gecmis" data-gecmis="${esc(m.id)}"><summary>Fiyat geçmişi</summary>
           <div><p class="bilgi">Yükleniyor…</p></div></details></div>
@@ -326,13 +304,13 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
       ${d ? '<p class="bilgi">Birim sonradan değiştirilemez.</p>' : ''}
       <label for="m-fiyat" id="m-fiyat-etiket"></label>
       <input id="m-fiyat" name="fiyat" inputmode="decimal" autocomplete="off" required
-        value="${d ? esc(String(d.kdv_orani != null && kdvHaric() ? yuvarla(Number(d.fiyat_haric)) : d.fiyat).replace('.', ',')) : ''}"
+        value="${d ? esc(String(d.fiyat).replace('.', ',')) : ''}"
         placeholder="Örn. 42,50">
       <div class="iki">
         <div><label for="m-dahil">Bu fiyat</label>
           <select id="m-dahil" name="dahil">
-            <option value="1" ${d?.kdv_orani != null && kdvHaric() ? '' : 'selected'}>KDV dahil</option>
-            <option value="0" ${d?.kdv_orani != null && kdvHaric() ? 'selected' : ''}>KDV hariç</option>
+            <option value="1" selected>KDV dahil</option>
+            <option value="0">KDV hariç</option>
           </select></div>
         <div><label for="m-oran">KDV oranı</label>
           <select id="m-oran" name="oran" required>
@@ -399,19 +377,16 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
 
 // Bir tarifin maliyetini ve eksiklerini hesaplar.
 function tarifMaliyeti(kalemler, malzemeBul) {
-  let toplam = 0, fiyatsiz = false, pasif = false, haricBilinmiyor = false;
+  let toplam = 0, fiyatsiz = false, pasif = false;
   for (const k of kalemler) {
     const m = malzemeBul.get(k.malzeme_id);
     const miktar = sayiOku(k.miktar);
     if (!m || !(miktar > 0)) continue;
-    const f = kdvliTutar(m.fiyat, m.fiyat_haric);
-    toplam += (miktar * f.deger) / BIRIMLER[m.birim].bolen;
-    if (f.bilinmiyor) haricBilinmiyor = true;
+    toplam += (miktar * Number(m.fiyat)) / BIRIMLER[m.birim].bolen;
     if (!(Number(m.fiyat) > 0)) fiyatsiz = true;
     if (!m.aktif) pasif = true;
   }
-  return `Maliyet: ${tl.format(toplam)} (${kdvEtiketi()})`
-    + (haricBilinmiyor ? ' <span class="uyari">· bazı malzemelerin KDV oranı yok, KDV dahil fiyatı kullanıldı</span>' : '')
+  return `Maliyet: ${tl.format(toplam)} (KDV dahil)`
     + (fiyatsiz ? ' <span class="uyari">· fiyatı girilmemiş malzeme var</span>' : '')
     + (pasif ? ' <span class="uyari">· pasif malzeme içeriyor</span>' : '');
 }
@@ -594,7 +569,7 @@ async function fiyatGecmisiAc(det) {
     kutu.innerHTML = data.length ? data.map((f) => {
       const iptal = iptaller.has(f.giris_id);
       return `<div class="gecmis-satir${iptal ? ' iptal' : ''}">${tarihYaz(f.tarih)} ·
-        <b>${fiyatYazisi(f.fiyat, f.fiyat_haric, f.kdv_orani)}</b> · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</div>`;
+        <b>${fiyatYazisi(f.fiyat, f.kdv_orani)}</b> · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</div>`;
     }).join('') : '<p class="bilgi">Henüz kayıt yok.</p>';
   } catch (err) {
     delete det.dataset.yuklendi;
@@ -664,9 +639,8 @@ async function girisSekmesi(icerik, user, patron) {
   const urunBul = new Map(ur.data.map((u) => [u.id, u]));
   const ctx = { user, patron, malzemeler, malzemeBul, urunler: ur.data.sort(adaGore), urunBul };
 
-  // Fatura satırında tutar: ayara göre KDV dahil/hariç + oran. Eski satırlarda yalnız KDV dahil bilinir.
-  const tutarYaz = (k) => (k.tutar == null ? ''
-    : ` · ${tl.format(kdvliTutar(k.tutar, k.tutar_kdv_haric).deger)} (${oranYaz(k.kdv_orani)})`);
+  // Fatura satırında tutar: KDV dahil + oran.
+  const tutarYaz = (k) => (k.tutar == null ? '' : ` · ${tl.format(Number(k.tutar))} (${oranYaz(k.kdv_orani)})`);
   const kalemYaz = (k) => {
     if (k.stok_disi) return `${esc(k.satir_metni)} <i>(stoğa eklenmedi)</i>${tutarYaz(k)}`;
     if (k.urun_id) return `${esc(urunBul.get(k.urun_id)?.ad ?? '?')} × ${sayiYaz(Number(k.miktar))}`;
@@ -674,15 +648,9 @@ async function girisSekmesi(icerik, user, patron) {
     if (!m) return '?';
     return `${esc(m.ad)}: ${buyukMiktar(k.miktar, m.birim)}${tutarYaz(k)}`;
   };
-  // Faturanın toplamı ayara göre: faturadaki genel/KDV hariç toplam, yoksa satırların toplamı.
-  const faturaToplami = (g, satirlar) => {
-    const dahil = g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0);
-    const haric = g.belge_kdv_haric_toplam
-      ?? (satirlar.length && satirlar.every((k) => k.tutar_kdv_haric != null)
-        ? satirlar.reduce((t, k) => t + Number(k.tutar_kdv_haric), 0) - Number(g.belge_indirim ?? 0) : null);
-    const t = kdvliTutar(dahil, haric);
-    return `${tl.format(t.deger)} ${t.bilinmiyor ? 'KDV dahil' : kdvEtiketi()}`;
-  };
+  // Faturanın KDV dahil toplamı: faturadaki genel toplam, yoksa satırların toplamı.
+  const faturaToplami = (g, satirlar) =>
+    `${tl.format(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0))} KDV dahil`;
   const bugun = bugunStr();
   const girisYaz = (g) => {
     const satirlar = kalemler.filter((k) => k.giris_id === g.id);
@@ -699,9 +667,7 @@ async function girisSekmesi(icerik, user, patron) {
             ${g.iptal_zamani ? ' · <span class="uyari">İPTAL</span>' : ''}</small>
         </summary>
         <ul>${satirlar.map((k) => `<li>${kalemYaz(k)}</li>`).join('')}</ul>
-        ${fatura && g.belge_genel_toplam != null ? `<small>Faturadaki genel toplam: ${tl.format(g.belge_genel_toplam)}
-          ${g.belge_kdv_haric_toplam != null ? ` · KDV hariç: ${tl.format(g.belge_kdv_haric_toplam)}` : ''}
-          ${g.belge_kdv_toplam != null ? ` · KDV: ${tl.format(g.belge_kdv_toplam)}` : ''}
+        ${fatura && g.belge_genel_toplam != null ? `<small>Faturadaki genel toplam: ${tl.format(g.belge_genel_toplam)} (KDV dahil)
           ${Number(g.belge_indirim) > 0 ? ` · İndirim: ${tl.format(g.belge_indirim)}` : ''}</small>` : ''}
         ${gBelgeler.length ? '<div class="belgeler"><p class="bilgi">Belgeler yükleniyor…</p></div>' : ''}
         <small>Giren: ${esc(g.giren_ad)}, ${zamanYaz(g.olusturma)}</small>
@@ -1215,7 +1181,7 @@ async function faturaFormu(icerik, ctx, bitti) {
       const bekleyen = r.uyarilar.filter((u) => !s.onay[u.kod]).length;
       bekleyenUyari += bekleyen;
       kutu.className = `fatura-satir ${r.uyarilar.length ? (bekleyen ? 'sari' : 'onayli') : 'yesil'}`;
-      durum.innerHTML = `<small>KDV hariç ${tl.format(r.haric)} · KDV dahil ${tl.format(r.dahil)}
+      durum.innerHTML = `<small>${tl.format(r.dahil)} KDV dahil
           ${r.m ? ` · stoğa: ${buyukMiktar(r.miktar, r.m.birim)}` : ' · stoğa eklenmez'}</small>
         ${r.uyarilar.map((u) => `<label class="onay-kutu"><input type="checkbox" data-onay="${i}:${u.kod}"
           ${s.onay[u.kod] ? 'checked' : ''}> ⚠️ ${esc(u.metin)} <b>Kontrol ettim, doğru.</b></label>`).join('')}`;
@@ -2256,7 +2222,7 @@ async function goster() {
     ustSag.innerHTML = '<button class="kucuk">Çıkış</button>';
     ustSag.querySelector('button').onclick = cikis;
     const [ur, kr] = await Promise.all([
-      sb.from('uyeler').select('rol, ad, mekan_id, mekanlar(ad, davet_kodu, kdv_gosterim)')
+      sb.from('uyeler').select('rol, ad, mekan_id, mekanlar(ad, davet_kodu)')
         .eq('user_id', session.user.id).maybeSingle(),
       sb.rpc('kurulumcu_muyum'),
     ]);

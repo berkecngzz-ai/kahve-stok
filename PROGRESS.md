@@ -70,6 +70,14 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Sonuçlar: C:/Users/berke/Documents/Codex/2026-10-18/cl/work/fatura-v2-son2/ (B2 ayrıntısı içerir).
 - Tüm test mekânları, kullanıcılar ve yüklenen dosyalar silindi; test yolu kapalı doğrulandı. Ön yüz commit'li, **push yok**.
 
+- 2026-10-21: iki commit push edildi; canlı duman testi (giriş, Mal geldi, Fire var, Haftalık sayım; kayıt yapılmadan) geçti.
+  Kullanıcı kararı: test faturalarıyla ayar burada bitti.
+
+## Sadeleştirme — 2026-10-21
+- KDV dahil/hariç **gösterim ayarı kaldırıldı** (Mekan sekmesindeki kart); her yerde KDV dahil gösteriliyor. Faturanın KDV
+  bilgisi (hariç tutar, oran) içeride saklanmaya ve toplam kontrolünde kullanılmaya devam ediyor. Veritabanındaki
+  `mekanlar.kdv_gosterim` sütunu ve `kdv_gosterim_ayarla()` dokunulmadan duruyor (ön yüz artık okumuyor). **Push edilmedi.**
+- Kaldırılabilecek ekran/ayar listesi kullanıcıya verildi; kullanıcı seçmeden hiçbir şey silinmeyecek.
+
 ## Sıradaki adım
-B2 fotoğraf doğruluğu %58 (hedef %85). B2 artık kullanılmış sayılır; yeni ayar için A ile çalışılıp yeni bir B seti gerekir.
-Push için kullanıcı onayı bekleniyor (kritik hata 0 şartı sağlandı).
+Kullanıcının sadeleştirme listesinden seçtikleri uygulanacak; KDV değişikliği onayla push edilecek.
