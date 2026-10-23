@@ -150,7 +150,7 @@ sonra `main`'e ileri sarıldı). Çakışma yok; bütün commit'ler `main`'de s�
 | 3. Elle fatura yalnız patron | YAPILDI (Codex) | sql/14: barista/kurulum/mekansız/anon reddedilir, veri değişmez |
 | 4. Satış CSV/Excel + ikram | YAPILDI (Codex), iyileştirildi (Claude) | Örnek CSV/XLSX 537 adet, 6 ikram dahil |
 | 5. Fotoğraf okuma doğruluğu | YAPILDI (genel kurallar) | Görülmemiş D seti, tek ölçüm: 14/16 doğru, 1 kurulum, 1 yanlış |
-| 6. Demo Kafe verisi | YAPILDI (iki betik) | Ekran görüntüleri bununla; 3. hafta süt −17,4 L / −764 TL |
+| 6. Demo Kafe verisi | YAPILDI | Ekran görüntüleri bununla; 3. hafta süt −17,4 L / −764 TL |
 | 7. Veri izni metni | TASLAK (Codex) | `docs/veri-izni-taslak.md`; bölge/saklama/iletişim boş bırakıldı |
 | 8. Diğer iyileştirmeler | YAPILDI | Aşağıda |
 
@@ -200,9 +200,9 @@ kek) için "Tarifi yok, stoktan düşme" seçeneği — eskiden böyle bir satı
 **OpenAI harcaması (bu oturum, tamamı okuma testi): ≈ 0,054 $** (C seti iki kez ≈ 0,038 $ — ilk çalıştırmada betik hatası
 nedeniyle sonuçlar alınamadı —, D seti 0,016 $). Codex OpenAI kullanmadı.
 
-**6. Demo verisi:** iki betik var. `scripts/demo/demo-veri.sql` (Claude; çalışır, ekran görüntüleri bununla: 4 hafta,
-günlük satış, faturalar, fire, haftalık sayım, 3. haftada süt −17,4 L, 1 bekleyen fatura, boş "Yeni Kafe").
-`scripts/demo-kafe.mjs` (Codex; JSON plan üretir, çalıştırılmadı). İkisi de canlıya yazmaz. Biri yeter; demo-veri.sql'i öneririm.
+**6. Demo verisi:** `scripts/demo/demo-veri.sql` (ekran görüntüleri bununla: 4 hafta, günlük satış, faturalar, fire,
+haftalık sayım, 3. haftada süt −17,4 L, 1 bekleyen fatura, boş "Yeni Kafe"). Canlıya yazmaz. Codex'in
+`scripts/demo-kafe.mjs` + `demo-plan.mjs` betiği kullanıcı kararıyla kaldırıldı (tek demo betiği kalsın).
 
 **8. Diğer:** rapordaki "fatura bekliyor" uyarısı yalnız o haftaya düşen faturada çıkar (eskiden bütün eski haftalarda);
 sunucu güncellenmeden ön yüz açılırsa İngilizce hata yerine Türkçe uyarı; çıkışta seçili hafta/ay sıfırlanır (aynı
