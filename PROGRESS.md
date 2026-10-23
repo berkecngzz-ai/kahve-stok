@@ -1,5 +1,30 @@
 # İlerleme notları
 
+## ÜRÜN YOL HARİTASI — 2026-10-23 (kullanıcıyla kararlaştırıldı; sıradaki işler buradan)
+
+İlkeler: barista için kolaylık · patron için şeffaflık · hesaplarda güvenilirlik. Uygulama günde birkaç dakikada
+işletmenin durumunu anlatır; patrona yalnız dikkat etmesi gerekeni gösterir (sorun yoksa yeşil). AI faturayı okur,
+eşleştirme önerir, raporu açıklar — stok ve para hesaplarını doğrulanabilir yazılım kuralları yapar.
+Ana belge: tedarikçinin getirdiği e-faturanın imzalı kâğıt hâli (teslim formu gibi); e-posta PDF/XML de olur.
+Küçük market/toptancı fişi nadir → son çare barista elle girer (bunlar için yeni okuma yaması YAPILMAZ).
+
+| Faz | İçerik |
+|---|---|
+| 1 | Fatura okuma doğrulaması (miktar×fiyat=tutar, toplam, KDV, indirim satırı; tutmazsa güçlü modelle 2. okuma; yine tutmazsa yalnız şüpheli satır sorulur) + tedarikçi hafızası + **teslimat doğrulaması** + düzeltmeler silinmeden kayıt |
+| 2 | Güvenilir stok hesabı + malzeme başına güven etiketi: Doğrulandı / Eksik veri / Kontrol gerekli |
+| 3 | Patron günlük denetim ekranı (istisna yönetimi) + barista görev ekranı (Mal kabul · Fire · Sayım; sistem ne yapılacağını söyler) |
+| 4 | Fiyat geçmişi + akıllı fiyat uyarısı + stok farkını araştırma (malzemeye dokununca satış/fire/kabul/sayım dökümü) |
+| Sonra | Akıllı sipariş, AI asistanı, tahmin |
+
+Görsel ilke: uzun yazı listesi yok — ikonlu kartlar, dolu çubuklar, grafikler; sayımda ilerleme çubuğu, +/− düğmeleri.
+
+Kararlar (2026-10-23):
+- Teslimat: **kör sayma** — barista faturadaki miktarı görmez, gelen koliyi/adeti sayar; sistem faturayla karşılaştırır.
+  Stok **kabul edilen** miktar kadar artar (fatura 24 L, gelen 22 L → +22 L, 2 L eksik teslimat).
+- Eksik teslimat → patronun günlük ekranına **görev** ("Süt 2 L eksik · ~80 TL"); patron "Çözüldü" işaretleyene kadar açık.
+- Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
+- Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
+
 ## Fatura okuma (AI) — durum 2026-10-20
 
 - **Model:** `gpt-4.1-mini` (uygulamanın varsayılanı). `gpt-4.1-nano` yalnızca testlerde karşılaştırma için seçilebilir.
