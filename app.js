@@ -4,6 +4,8 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
 import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
 import { cevapAnahtariniOku, anahtarBelgesi, karsilastir } from './okuma-testi.js';
+import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg,
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
 
 const app = document.getElementById('app');
 const ustSag = document.getElementById('ust-sag');
@@ -29,6 +31,7 @@ function hataMetni(err) {
     ['Bucket not found', 'Belge deposu henüz kurulmamış. Patrona haber ver.'],
     ['row-level security', 'Bu işlemi yapma yetkin yok.'],
     ['permission denied', 'Bu işlemi yapma yetkin yok.'],
+    ['Could not find the function', 'Bu ekran için sunucu güncellemesi henüz yapılmamış. Lütfen destek ekibine haber ver.'],
   ];
   const bulunan = tablo.find(([en]) => m.toLowerCase().includes(en.toLowerCase()));
   return bulunan ? bulunan[1] : m;
@@ -61,7 +64,8 @@ function formBagla(form, isle) {
 }
 
 async function cikis() {
-  aktifSekme = 'giris';
+  aktifSekme = 'ozet';
+  document.body.classList.remove('patron');
   await sb.auth.signOut();
   goster();
 }
@@ -139,7 +143,9 @@ function mekanSecEkrani(user) {
 }
 
 // Açık olan sekme. Ekran yenilense de korunur.
-let aktifSekme = 'giris';
+let aktifSekme = 'ozet';
+// Ayarlar içindeki alt sekme (malzeme, urun, mekan, kurulum).
+let ayarSekme = 'malzeme';
 // Giriş yapan kişinin mekanı.
 let mekan = { id: null };
 // Giriş yapan kişi kurulum (servis) hesabı mı?
@@ -149,81 +155,249 @@ async function anaEkran(user, uye) {
   const patron = uye.rol === 'patron';
   mekan = { id: uye.mekan_id };
   if (!patron) return baristaEkrani(user, uye);
-  const sekmeler = [['giris', 'Girişler'], ['rapor', 'Rapor'], ['malzeme', 'Malzeme'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
-  if (kurulumcu) sekmeler.push(['kurulum', 'Kurulum']);
-  if (aktifSekme === 'kurulum' && !kurulumcu) aktifSekme = 'giris';
+  if (!PATRON_SEKMELER.some(([k]) => k === aktifSekme)) aktifSekme = 'ozet';
+  if (ayarSekme === 'kurulum' && !kurulumcu) ayarSekme = 'malzeme';
   app.innerHTML = `
-    <h1>${esc(uye.mekanlar.ad)}</h1>
-    <p><span class="rozet">Patron</span> ${esc(uye.ad)}</p>
-    <div class="sekmeler ${sekmeler.length > 4 ? 'bes' : 'dort'}">
-      ${sekmeler.map(([k, ad]) =>
-        `<button data-sekme="${k}" class="${aktifSekme === k ? 'secili' : ''}">${ad}</button>`).join('')}
-    </div>
-    <div id="icerik"><p class="bilgi">Yükleniyor…</p></div>`;
+    <div class="baslik-satir"><h1>${esc(uye.mekanlar.ad)}</h1><span class="rozet">Patron · ${esc(uye.ad)}</span></div>
+    <div id="icerik"><div class="iskelet"></div><div class="iskelet kisa"></div></div>
+    <nav class="alt-menu" aria-label="Bölümler">
+      ${PATRON_SEKMELER.map(([k, ad, ikon]) => `<button data-sekme="${k}" class="${aktifSekme === k ? 'secili' : ''}"
+        ${aktifSekme === k ? 'aria-current="page"' : ''}>${ikon}<span>${ad}</span></button>`).join('')}
+    </nav>`;
   app.querySelectorAll('[data-sekme]').forEach((b) => b.addEventListener('click', () => {
     aktifSekme = b.dataset.sekme;
+    window.scrollTo(0, 0);
     goster();
   }));
   const icerik = app.querySelector('#icerik');
-  if (aktifSekme === 'malzeme') return malzemeSekmesi(icerik, patron);
-  if (aktifSekme === 'urun') return urunSekmesi(icerik, patron);
-  if (aktifSekme === 'mekan') return mekanSekmesi(icerik, user, uye, patron);
-  if (aktifSekme === 'kurulum') return kurulumEkrani(icerik);
+  if (aktifSekme === 'stok') return stokSekmesi(icerik);
   if (aktifSekme === 'rapor') return stokFarkiSekmesi(icerik);
-  return girisSekmesi(icerik, user, patron);
+  if (aktifSekme === 'giris') return girisSekmesi(icerik, user, patron);
+  if (aktifSekme === 'ayar') return ayarlarSekmesi(icerik, user, uye, patron);
+  return ozetSekmesi(icerik);
+}
+
+// Alt menü simgeleri (ince çizgi, yazı rengini alır).
+const ikon = (yol) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9"
+  stroke-linecap="round" stroke-linejoin="round">${yol}</svg>`;
+const PATRON_SEKMELER = [
+  ['ozet', 'Özet', ikon('<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/>')],
+  ['stok', 'Stok', ikon('<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9"/>')],
+  ['rapor', 'Rapor', ikon('<path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/>')],
+  ['giris', 'Girişler', ikon('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>')],
+  ['ayar', 'Ayarlar', ikon('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>')],
+];
+
+// Ayarlar: malzemeler, ürünler (tarifler), mekan ve (servis hesabıysa) kurulum.
+function ayarlarSekmesi(icerik, user, uye, patron) {
+  const alt = [['malzeme', 'Malzemeler'], ['urun', 'Ürünler'], ['mekan', 'Mekan']];
+  if (kurulumcu) alt.push(['kurulum', 'Kurulum']);
+  icerik.innerHTML = `
+    <div class="sekmeler ${alt.length > 3 ? 'dort' : ''}">
+      ${alt.map(([k, ad]) => `<button data-ayar="${k}" class="${ayarSekme === k ? 'secili' : ''}">${ad}</button>`).join('')}
+    </div>
+    <div id="ayar-icerik"><div class="iskelet"></div></div>`;
+  icerik.querySelectorAll('[data-ayar]').forEach((b) => b.addEventListener('click', () => {
+    ayarSekme = b.dataset.ayar;
+    ayarlarSekmesi(icerik, user, uye, patron).catch(hataGoster);
+  }));
+  const kutu = icerik.querySelector('#ayar-icerik');
+  if (ayarSekme === 'urun') return urunSekmesi(kutu, patron);
+  if (ayarSekme === 'mekan') return mekanSekmesi(kutu, user, uye, patron);
+  if (ayarSekme === 'kurulum') return kurulumEkrani(kutu);
+  return malzemeSekmesi(kutu, patron);
+}
+
+// ---------- Özet: patron telefonu açınca 10 saniyede durumu görür ----------
+
+// Bir dönemde açık "büyük" mü: en çok açık veren malzemelerden biri eşiği geçiyorsa (Rapor'la aynı kural).
+const donemBuyukMu = (d) => (d.en_cok_acik || []).some((x) => acikDurumu(x) === 'buyuk');
+const kisaTarih = (t) => new Date(`${t}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+
+// Kurulumda bekleyen (okunamamış) fatura / satış raporu uyarısı.
+function bekleyenUyarisi(eksik) {
+  const parca = [];
+  if (eksik?.bekleyen_fatura) parca.push(`${eksik.bekleyen_fatura} fatura`);
+  if (eksik?.bekleyen_satis_raporu) parca.push(`${eksik.bekleyen_satis_raporu} satış raporu`);
+  if (!parca.length) return '';
+  return `<div class="durum-kart sari" role="status"><b>${parca.join(' ve ')} kontrol bekliyor</b>
+    <span>Fotoğraftan okunamadı, ekibimiz işliyor. İşlenince rakamlar değişebilir${eksik.en_eski
+      ? ` (en eskisi ${esc(kisaTarih(eksik.en_eski))})` : ''}.</span></div>`;
+}
+
+async function ozetSekmesi(icerik) {
+  const [trend, eksikler, stok] = await Promise.all([
+    rpcVeri('acik_trendi', { p_adet: 8 }), rpcVeri('eksik_belge_ozeti'), rpcVeri('stok_durumu')]);
+  trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
+  const [son, onceki] = trend;
+  const azalan = stok.malzemeler.filter((m) => ['az', 'dikkat'].includes(yeterDurumu(m.yeter_gun)));
+  const sayilmis = stok.malzemeler.some((m) => m.sayim_tarih);
+  const sonSayimGun = son ? Math.round((new Date(`${stok.tarih}T12:00:00`) - new Date(`${son.bitis}T12:00:00`)) / 864e5) : 0;
+
+  let kahraman;
+  if (son) {
+    const fark = onceki ? Number(son.acik_tl) - Number(onceki.acik_tl) : 0;   // açık eksi sayı: artı fark = azaldı
+    kahraman = `
+      <section class="kart kahraman ${son.buyuk ? 'kirmizi' : 'yesil'}">
+        <div class="etiket">Son haftanın açığı · ${esc(donemYaz(son.baslangic, son.bitis))}</div>
+        <div class="dev-rakam">${tlYaz(son.acik_tl)}</div>
+        <div class="durum-yazi">${son.buyuk ? 'Normalden yüksek açık var' : 'Açık normal sınırda'}</div>
+        ${onceki ? `<div class="alt-yazi">Önceki hafta ${tlYaz(onceki.acik_tl)}${Math.abs(fark) >= 1
+          ? ` · ${fark > 0 ? `${tlYaz(fark)} daha az` : `${tlYaz(-fark)} daha fazla`}` : ''}</div>` : ''}
+        ${sonSayimGun > 8 ? `<div class="alt-yazi">Son sayım ${sonSayimGun} gün önce. Bu haftanın sayımı bekleniyor.</div>` : ''}
+      </section>`;
+  } else {
+    kahraman = `<section class="kart kahraman">
+      <div class="etiket">Haftalık açık</div>
+      <p class="buyuk-yazi">${sayilmis ? 'İlk sayım yapıldı. Açık, bir sonraki haftalık sayımdan sonra burada görünür.'
+        : 'Henüz sayım yok. Barista ilk haftalık sayımı yapınca takip başlar.'}</p></section>`;
+  }
+
+  icerik.innerHTML = `
+    ${kahraman}
+    ${bekleyenUyarisi(eksikler?.[0])}
+    ${son ? `<section class="kart">
+      <h2>En çok açık veren malzemeler</h2>
+      ${son.en_cok_acik.length ? `<ol class="sirali">${son.en_cok_acik.map((x) => `
+        <li class="${acikDurumu(x) === 'buyuk' ? 'kirmizi' : ''}"><span class="ad">${esc(x.ad)}</span>
+          <span class="miktar">${okunurMiktar(x.fark, x.birim)}</span><b class="tutar">${tlYaz(x.fark_tl)}</b></li>`).join('')}</ol>`
+        : '<p class="bilgi">Bu hafta açık veren malzeme yok.</p>'}
+      <button class="ikincil tam" data-git="rapor" data-sayim="${esc(son.sayim_id)}">Haftanın raporunu aç</button>
+    </section>` : ''}
+    ${trend.length > 1 ? `<section class="kart">
+      <h2>Haftalara göre açık (TL)</h2>
+      ${trendSvg(trend)}
+      <p class="bilgi kucuk-yazi">Kırmızı çubuk: o hafta normalden yüksek açık var.</p>
+    </section>` : ''}
+    ${azalan.length ? `<section class="kart">
+      <h2>Azalan malzemeler</h2>
+      ${azalan.slice(0, 5).map((m) => `<div class="cizgili-satir"><span>${esc(m.ad)}</span>
+        <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
+      <button class="ikincil tam" data-git="stok">Tüm stok</button>
+    </section>` : ''}`;
+  icerik.querySelectorAll('[data-git]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.sayim) secilenSayim = b.dataset.sayim;
+    aktifSekme = b.dataset.git;
+    window.scrollTo(0, 0);
+    goster();
+  }));
+}
+
+// ---------- Stok: şu an elde ne var (son sayım + sonraki hareketler) ----------
+
+async function stokSekmesi(icerik) {
+  const r = await rpcVeri('stok_durumu');
+  const sayilan = r.malzemeler.filter((m) => m.simdi != null);
+  const sayilmayan = r.malzemeler.filter((m) => m.simdi == null);
+  const deger = sayilan.reduce((t, m) => t + Number(m.deger_tl || 0), 0);
+  const azSayi = sayilan.filter((m) => yeterDurumu(m.yeter_gun) === 'az').length;
+  const satir = (m) => {
+    const durum = yeterDurumu(m.yeter_gun);
+    const kullanilan = Number(m.satis) + Number(m.fire);
+    const hareket = [Number(m.gelen) ? `${okunurMiktar(m.gelen, m.birim)} geldi` : '',
+      kullanilan ? `${okunurMiktar(kullanilan, m.birim)} kullanıldı` : ''].filter(Boolean).join(', ');
+    return `<div class="stok-satir ${durum || ''}">
+      <div class="sol"><b>${esc(m.ad)}</b>
+        <small>${hareket ? `${esc(kisaTarih(m.sayim_tarih))} sayımı ${okunurMiktar(m.sayilan, m.birim)}; sonra ${hareket}`
+          : `${m.sayim_tarih === r.tarih ? 'Bugün' : esc(kisaTarih(m.sayim_tarih))} sayıldı`}</small></div>
+      <div class="sag"><span class="orta-rakam">${okunurMiktar(Math.max(0, m.simdi), m.birim)}</span>
+        ${m.yeter_gun != null ? `<span class="etiket-kutu ${durum}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün`}</span>` : ''}
+        ${Number(m.simdi) < 0 ? '<small class="uyari">Kayıt eksik olabilir</small>' : ''}</div>
+    </div>`;
+  };
+  icerik.innerHTML = `
+    <section class="kart">
+      <div class="etiket">Elde olan malın değeri</div>
+      <div class="buyuk-rakam">${sayilan.length ? tlYaz(deger) : '—'}</div>
+      <p class="bilgi kucuk-yazi">${sayilan.length ? `${sayilan.length} malzeme${azSayi
+        ? ` · <span class="uyari">${azSayi} tanesi 2 gün yetmeyebilir</span>` : ''}. ` : ''}Son sayım + sonra gelen − satılan − fire.
+        Bir sonraki sayımda kesinleşir. "Gün", son ${r.kullanim_gun || 28} günün ortalama kullanımına göre tahmindir.</p>
+    </section>
+    ${sayilan.length ? `<section class="kart liste-kart">${sayilan.map(satir).join('')}</section>` : ''}
+    ${sayilmayan.length ? `<section class="kart"><h2>Henüz sayılmayanlar (${sayilmayan.length})</h2>
+      <p class="bilgi">Elde ne kadar olduğu ilk sayımdan sonra görünür: ${sayilmayan.map((m) => esc(m.ad)).join(', ')}.</p></section>` : ''}`;
 }
 
 // ---------- Stok farkı: iki sayım arasında beklenen ve sayılan stok (yalnız patron) ----------
 let secilenSayim = null;   // Raporda seçili sayım (yoksa en son)
 
 async function stokFarkiSekmesi(icerik) {
-  const r = await rpcVeri('stok_farki', { p_sayim: secilenSayim });
+  const [r, trend] = await Promise.all([rpcVeri('stok_farki', { p_sayim: secilenSayim }), rpcVeri('acik_trendi', { p_adet: 8 })]);
   if (r.durum === 'sayim_yok') {
-    icerik.innerHTML = `<div class="kart"><h2>Stok farkı</h2>
-      <p class="bilgi">Henüz sayım yok. Fark, iki haftalık sayım arasında hesaplanır: ilk sayım başlangıç olur,
-        ikinci sayımda açık görünür.</p></div>`;
+    icerik.innerHTML = `<div class="kart"><h2>Haftalık rapor</h2>
+      <p class="bilgi">Henüz sayım yok. Rapor iki haftalık sayım arasında hesaplanır: ilk sayım başlangıç olur,
+        ikinci sayımda her malzemenin açığı görünür.</p></div>`;
     return;
   }
-  const fark = (x) => `${Number(x.fark) > 0 ? '+' : ''}${buyukMiktar(x.fark, x.birim)}`;
-  const tlYaz = (n) => `${Number(n) > 0 ? '+' : ''}${tl.format(Number(n))}`;
+  trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
   const tamam = r.satirlar.filter((x) => x.durum === 'tamam');
   const ilk = r.satirlar.filter((x) => x.durum === 'ilk_sayim');
   const sayilmadi = r.satirlar.filter((x) => x.durum === 'sayilmadi');
-  const satir = (x) => `
-    <details class="giris">
-      <summary><b>${esc(x.ad)}</b>
-        <span class="${Number(x.fark) < 0 ? 'uyari' : ''}">${fark(x)}</span>
-        <small>${x.fark_tl != null ? tlYaz(x.fark_tl) : 'fiyat yok'}</small></summary>
-      <table class="tablo">
-        <tr><td>Önceki sayım (${tarihYaz(x.baslangic_tarih)})</td><td>${buyukMiktar(x.baslangic, x.birim)}</td></tr>
-        <tr><td>+ Gelen (fatura)</td><td>${buyukMiktar(x.gelen, x.birim)}</td></tr>
-        <tr><td>− Satış (tarifle)</td><td>${buyukMiktar(x.satis, x.birim)}</td></tr>
-        <tr><td>− Fire</td><td>${buyukMiktar(x.fire, x.birim)}</td></tr>
-        <tr><td><b>= Olması gereken</b></td><td><b>${buyukMiktar(x.beklenen, x.birim)}</b></td></tr>
-        <tr><td><b>Sayılan</b></td><td><b>${buyukMiktar(x.sayilan, x.birim)}</b></td></tr>
+  tamam.forEach((x) => { x.renk = acikDurumu(x); });
+  const buyukSayi = tamam.filter((x) => x.renk === 'buyuk').length;
+  const tlHucre = (miktar, x) => {
+    const t = miktarTl(miktar, x.birim, x.fiyat);
+    return t == null ? '—' : tlYaz(t);
+  };
+  const DURUM_YAZI = { buyuk: 'Yüksek açık', normal: 'Normal', fazla: 'Fazla çıktı' };
+  const satir = (x) => {
+    const kullanilan = Number(x.satis) + Number(x.fire);
+    return `
+    <details class="rapor-satir ${x.renk}" ${x.renk === 'buyuk' ? 'open' : ''}>
+      <summary>
+        <span class="ad"><b>${esc(x.ad)}</b><small><span class="nokta"></span>${DURUM_YAZI[x.renk]}${x.renk !== 'normal' && acikOrani(x)
+          ? ` · kullanılanın ${acikOrani(x)} kadarı` : ''}</small></span>
+        <span class="deger"><b>${x.fark_tl != null ? tlYaz(x.fark_tl, { isaret: true }) : 'fiyat yok'}</b>
+          <small>${okunurMiktar(x.fark, x.birim, { isaret: true })}</small></span>
+      </summary>
+      <table class="tablo rapor-tablo">
+        <thead><tr><th></th><th>Miktar</th><th>TL</th></tr></thead>
+        <tbody>
+        <tr><td>Önceki sayım <small>${esc(kisaTarih(x.baslangic_tarih))}</small></td><td>${okunurMiktar(x.baslangic, x.birim)}</td><td>${tlHucre(x.baslangic, x)}</td></tr>
+        <tr><td>+ Gelen <small>faturalar</small></td><td>${okunurMiktar(x.gelen, x.birim)}</td><td>${tlHucre(x.gelen, x)}</td></tr>
+        <tr><td>− Kullanılan <small>satışlar, tarifle</small></td><td>${okunurMiktar(x.satis, x.birim)}</td><td>${tlHucre(x.satis, x)}</td></tr>
+        <tr><td>− Fire</td><td>${okunurMiktar(x.fire, x.birim)}</td><td>${tlHucre(x.fire, x)}</td></tr>
+        <tr class="ara"><td>= Olması gereken</td><td>${okunurMiktar(x.beklenen, x.birim)}</td><td>${tlHucre(x.beklenen, x)}</td></tr>
+        <tr><td>Sayılan</td><td>${okunurMiktar(x.sayilan, x.birim)}</td><td>${tlHucre(x.sayilan, x)}</td></tr>
+        <tr class="sonuc"><td>${Number(x.fark) < 0 ? 'Açık' : 'Fark'}</td><td>${okunurMiktar(x.fark, x.birim, { isaret: true })}</td>
+          <td>${x.fark_tl != null ? tlYaz(x.fark_tl, { isaret: true }) : '—'}</td></tr>
+        </tbody>
       </table>
+      ${!kullanilan && Number(x.fark) < 0 ? '<p class="bilgi kucuk-yazi">Bu dönemde satış ya da fire girilmemiş; açığın tamamı kayıp görünüyor.</p>' : ''}
     </details>`;
+  };
   icerik.innerHTML = `
-    <div class="kart">
-      <h2>Stok farkı</h2>
-      <label for="sayim-sec">Sayım</label>
-      <select id="sayim-sec">${r.sayimlar.map((s) =>
-        `<option value="${esc(s.id)}" ${s.id === r.sayim_id ? 'selected' : ''}>${tarihYaz(s.tarih)}</option>`).join('')}</select>
-      <p class="bilgi">${r.baslangic ? `${tarihYaz(r.baslangic)} sayımından ${tarihYaz(r.bitis)} sayımına.` : 'Bu, ilk sayım.'}
-        Sayım gün sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayımdan önce sayılır.</p>
-      ${tamam.length ? `<p class="buyuk-yazi">Açık <span class="uyari">${tl.format(Number(r.toplam_acik_tl))}</span>
-        · Fazla ${tlYaz(r.toplam_fazla_tl)}</p>` : ''}
-      ${r.uyarilar.length ? `<div class="sade-uyari">${r.uyarilar.map((u) => `⚠️ ${esc(u)}`).join('<br>')}</div>` : ''}
-    </div>
-    ${tamam.length ? `<div class="kart"><h2>Malzemeler</h2>
-      <p class="bilgi">Eksi: olması gerekenden az (kayıp, ölçüsüz kullanım, girilmemiş fire). Artı: fazla
-        (girilmemiş satış/fatura ya da yanlış sayım). Ayrıntı için malzemeye dokun.</p>
-      ${tamam.map(satir).join('')}</div>` : ''}
-    ${ilk.length ? `<div class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
-      <p class="bilgi">Daha önce sayılmadıkları için fark bir sonraki sayımda çıkar.</p>
-      <p>${ilk.map((x) => `${esc(x.ad)}: ${buyukMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></div>` : ''}
-    ${sayilmadi.length ? `<div class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
-      <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></div>` : ''}`;
+    <section class="kart">
+      <div class="donem-sec">
+        <label for="sayim-sec">Hafta</label>
+        <select id="sayim-sec">${r.sayimlar.map((s) => {
+          const d = trend.find((t) => t.sayim_id === s.id);
+          return `<option value="${esc(s.id)}" ${s.id === r.sayim_id ? 'selected' : ''}>${d ? esc(donemYaz(d.baslangic, d.bitis)) : `${esc(kisaTarih(s.tarih))} (ilk sayım)`}</option>`;
+        }).join('')}</select>
+      </div>
+      ${tamam.length ? `
+      <div class="iki-rakam">
+        <div><div class="etiket">Açık</div><div class="buyuk-rakam ${buyukSayi ? 'uyari' : 'iyi'}">${tlYaz(r.toplam_acik_tl)}</div></div>
+        <div><div class="etiket">Fazla</div><div class="buyuk-rakam soluk">${tlYaz(r.toplam_fazla_tl, { isaret: true })}</div></div>
+      </div>
+      <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek açık var.` : 'Tüm malzemeler normal sınırda.'}</p>`
+      : '<p class="bilgi">Bu, ilk sayım. Açık bir sonraki haftalık sayımda görünür.</p>'}
+      ${r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u)}</span>`).join('')}</div>` : ''}
+    </section>
+    ${trend.length > 1 ? `<section class="kart"><h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}</section>` : ''}
+    ${tamam.length ? `<section class="kart liste-kart">
+      <h2>Malzemeler</h2>
+      <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: kayıp, kullanılanın %${ACIK_ORAN_ESIGI * 100}'ünden fazla ve
+        ${ACIK_TL_ESIGI} TL'den büyük. <span class="nokta fazla"></span>Sarı: sayılan fazla çıktı (satış ya da fire eksik girilmiş,
+        fatura iki kez girilmiş ya da sayım yanlış olabilir). Ayrıntı için malzemeye dokun.</p>
+      ${tamam.map(satir).join('')}</section>` : ''}
+    ${ilk.length ? `<section class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
+      <p class="bilgi">Daha önce sayılmadıkları için açık bir sonraki sayımda çıkar.</p>
+      <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></section>` : ''}
+    ${sayilmadi.length ? `<section class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
+      <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></section>` : ''}
+    <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım gün
+      sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayıma dahildir. TL, malzemenin bugünkü fiyatıyla.</p>`;
   icerik.querySelector('#sayim-sec').addEventListener('change', (e) => {
     secilenSayim = e.target.value;
     stokFarkiSekmesi(icerik).catch(hataGoster);
@@ -631,6 +805,7 @@ const buyukMiktar = (miktar, birim) =>
 const kucukMiktar = (miktar, birim) => Math.round(miktar * BIRIMLER[birim].bolen * 1000) / 1000;
 
 let secilenAy = null;   // Geçmişte gösterilen ay (YYYY-AA)
+let girisTuru = 'hepsi';   // Geçmiş girişlerde gösterilen tür
 
 async function girisSekmesi(icerik, user, patron) {
   secilenAy ??= bugunStr().slice(0, 7);
@@ -685,23 +860,36 @@ async function girisSekmesi(icerik, user, patron) {
     if (!m) return '?';
     return `${esc(m.ad)}: ${buyukMiktar(k.miktar, m.birim)}${tutarYaz(k)}`;
   };
-  // Faturanın KDV dahil toplamı: faturadaki genel toplam, yoksa satırların toplamı.
-  const faturaToplami = (g, satirlar) =>
-    `${tl.format(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0))} KDV dahil`;
   const bugun = bugunStr();
+  // Listede sağdaki tutar: fatura KDV dahil toplam; fire güncel fiyatla TL; satış ürün adedi; sayım malzeme sayısı.
+  const girisTutari = (g, satirlar) => {
+    if (g.tur === 'fatura') return tlYaz(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0));
+    if (g.tur === 'satis') return `${sayiYaz(satirlar.reduce((t, k) => t + Number(k.miktar), 0))} ürün`;
+    if (g.tur === 'fire') {
+      let toplam = 0;
+      for (const k of satirlar) {
+        const m = malzemeBul.get(k.malzeme_id);
+        if (!m) return `${satirlar.length} kalem`;   // ürün firesi: TL karşılığı burada hesaplanmaz
+        toplam += miktarTl(k.miktar, m.birim, m.fiyat) ?? 0;
+      }
+      return tlYaz(toplam);
+    }
+    return `${satirlar.length} malzeme`;
+  };
   const girisYaz = (g) => {
     const satirlar = kalemler.filter((k) => k.giris_id === g.id);
     const gBelgeler = belgeler.filter((b) => b.giris_id === g.id);
     const fatura = g.tur === 'fatura';
     const iptalEdebilir = !g.iptal_zamani
       && (patron || (g.giren === user.id && gunu(g.olusturma) === bugun));
+    const t = new Date(`${g.tarih}T12:00:00`);
     return `
-      <details class="giris${g.iptal_zamani ? ' iptal' : ''}" ${gBelgeler.length ? `data-belgeli="${esc(g.id)}"` : ''}>
+      <details class="giris giris-satiri${g.iptal_zamani ? ' iptal' : ''}" data-tur="${g.tur}" ${gBelgeler.length ? `data-belgeli="${esc(g.id)}"` : ''}>
         <summary>
-          <b>${TURLER[g.tur].ad}</b> · ${tarihYaz(g.tarih)}${g.aciklama ? ` · ${esc(g.aciklama)}` : ''}
-          <small>${esc(g.giren_ad)} · ${satirlar.length} satır${fatura ? ` · ${faturaToplami(g, satirlar)}` : ''}
-            ${fatura ? (gBelgeler.length ? ` · 📷 ${gBelgeler.length}` : ' · <span class="uyari">📷 yok</span>') : ''}
-            ${g.iptal_zamani ? ' · <span class="uyari">İPTAL</span>' : ''}</small>
+          <span class="giris-tarih"><b>${t.getDate()}</b><small>${t.toLocaleDateString('tr-TR', { month: 'short' })}</small></span>
+          <span class="giris-orta"><b>${TURLER[g.tur].ad}</b>${g.iptal_zamani ? ' <span class="etiket-kutu az">İptal</span>' : ''}
+            <small>${esc(g.aciklama || g.giren_ad)}${fatura && !gBelgeler.length ? ' · belge yok' : ''}</small></span>
+          <span class="giris-tutar">${girisTutari(g, satirlar)}</span>
         </summary>
         <ul>${satirlar.map((k) => `<li>${kalemYaz(k)}</li>`).join('')}</ul>
         ${gBelgeler.length ? '<div class="belgeler"><p class="bilgi">Belgeler yükleniyor…</p></div>' : ''}
@@ -726,16 +914,31 @@ async function girisSekmesi(icerik, user, patron) {
       <button class="ikincil" data-yeni="fatura">🧾 Fatura elle gir</button>
       <button class="ikincil" data-yeni="satis">💰 Satış gir</button>
     </div>
-    <div class="kart">
-      <h2>Geçmiş girişler</h2>
-      <label for="ay">Ay</label>
-      <input id="ay" type="month" value="${secilenAy}" max="${bugun.slice(0, 7)}">
+    <div class="kart liste-kart">
+      <div class="baslik-satir"><h2>Geçmiş girişler</h2>
+        <input id="ay" type="month" value="${secilenAy}" max="${bugun.slice(0, 7)}" aria-label="Ay"></div>
+      <div class="suzgec" role="group" aria-label="Tür">
+        ${[['hepsi', 'Hepsi'], ['fatura', 'Fatura'], ['satis', 'Satış'], ['fire', 'Fire'], ['sayim', 'Sayım']].map(([k, ad]) =>
+          `<button class="${girisTuru === k ? 'secili' : ''}" data-suz="${k}">${ad}</button>`).join('')}
+      </div>
       ${girisler.length ? girisler.map(girisYaz).join('')
         : '<p class="bilgi">Bu ayda giriş yok.</p>'}
+      <p class="bilgi bos-suzgec" hidden>Bu ayda bu türde giriş yok.</p>
       ${girisler.length === 1000 ? '<p class="uyari">Bu ayda çok fazla giriş var; yalnızca son 1000 tanesi gösteriliyor.</p>' : ''}
     </div>`;
 
   const yenile = () => girisSekmesi(icerik, user, patron).catch(hataGoster);
+  const suz = () => {
+    let gorunen = 0;
+    icerik.querySelectorAll('.giris-satiri').forEach((d) => {
+      d.hidden = girisTuru !== 'hepsi' && d.dataset.tur !== girisTuru;
+      if (!d.hidden) gorunen++;
+    });
+    icerik.querySelector('.bos-suzgec').hidden = !girisler.length || gorunen > 0;
+    icerik.querySelectorAll('[data-suz]').forEach((b) => b.classList.toggle('secili', b.dataset.suz === girisTuru));
+  };
+  icerik.querySelectorAll('[data-suz]').forEach((b) => b.addEventListener('click', () => { girisTuru = b.dataset.suz; suz(); }));
+  suz();
   icerik.querySelector('#ay').addEventListener('change', (e) => {
     if (!/^\d{4}-\d{2}$/.test(e.target.value)) return;
     secilenAy = e.target.value;
@@ -2285,6 +2488,7 @@ async function goster() {
     if (ur.error) throw ur.error;
     kurulumcu = kr.data === true;
     document.body.classList.toggle('sade', ur.data?.rol === 'barista');
+    document.body.classList.toggle('patron', ur.data?.rol === 'patron');
     if (!ur.data) return kurulumcu ? kurulumEkrani(app) : mekanSecEkrani(session.user);
     await anaEkran(session.user, ur.data);
   } catch (err) {
