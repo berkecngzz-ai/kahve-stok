@@ -1,0 +1,22 @@
+reset role;
+create temp table once_yetki as select (select count(*) from girisler) g,(select count(*) from malzeme_hareketleri) h,(select count(*) from fiyat_gecmisi) f;
+set role authenticated;
+select pg_temp.ol('dddddddd-0000-0000-0000-000000000002','baristaP@x.com');
+select pg_temp.hata_bekle($$select fatura_kaydet(bugun(),'Yetki testi','[]','{"genel":0}','[]')$$,'yalnızca patron');
+select pg_temp.ol('dddddddd-0000-0000-0000-000000000009','kurulumP@x.com');
+select pg_temp.hata_bekle($$select fatura_kaydet(bugun(),'Yetki testi','[]','{"genel":0}','[]')$$,'yalnızca patron');
+select pg_temp.ol('44444444-4444-4444-4444-444444444444','yabanci@x.com');
+select pg_temp.hata_bekle($$select fatura_kaydet(bugun(),'Yetki testi','[]','{"genel":0}','[]')$$,'yalnızca patron');
+reset role;
+set role anon;
+select pg_temp.hata_bekle($$select fatura_kaydet(current_date,'Yetki testi','[]','{"genel":0}','[]')$$,'permission denied');
+reset role;
+select pg_temp.dogrula((select g=(select count(*) from girisler) and h=(select count(*) from malzeme_hareketleri) and f=(select count(*) from fiyat_gecmisi) from once_yetki),'Yetkisiz çağrı veri değiştirdi');
+set role authenticated;
+select pg_temp.ol('eeeeeeee-0000-0000-0000-000000000001','scenario@example.invalid');
+do $$ declare c uuid; g uuid; begin
+ select id into c from malzemeler where ad='Senaryo Kahve';
+ g:=fatura_kaydet(bugun(),'Yetki testi',jsonb_build_array(jsonb_build_object('malzeme_id',c,'miktar',1000,'tutar_kdv_haric',650,'kdv_orani',0)),'{"genel":650}','[]');
+ assert (select count(*) from malzeme_hareketleri where giris_id=g and miktar=1000)=1,'Patron faturası kaydedilmedi';
+end $$;
+reset role;

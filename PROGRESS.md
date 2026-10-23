@@ -145,3 +145,6 @@ Gerçek kullanıcı testi sürüyor. İlk gerçek fatura/satış raporu kuyruğa
 4. Demo betiği: bekliyor; çalıştırılmayacak.
 5. Veri izni taslağı: bekliyor.
 Canlıya alma: bütün işler tamamlandıktan sonra kullanıcı onayıyla değerlendirilecek; şu ana kadar yalnız sql/13_rapor_uyarilari.sql hazırlandı.
+
+2. Elle fatura yetkisi: YAPILDI. sql/14_fatura_patron_yetkisi.sql sunucuda patron kontrolü yapar; barista, kurulum hesabı, mekansız ve anonim çağrılar reddedilir. Reddedilen çağrıların giriş/hareket/fiyat geçmişini değiştirmediği ve patronun kaydedebildiği PGlite'ta doğrulandı. npm test 40/40 ve npm run test:sql tam geçti. Canlıya uygulanmadı.
+Yerel commit kimliği: Codex <codex@local.invalid>; genel Git ayarları değiştirilmedi.
