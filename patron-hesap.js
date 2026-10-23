@@ -99,7 +99,12 @@ export function raporCsv(r, mekanAdi = '') {
   const sayi = (n, b = 3) => (n == null || !Number.isFinite(Number(n)) ? ''
     : new Intl.NumberFormat('tr-TR', { maximumFractionDigits: b, useGrouping: false }).format(Number(n)));
   const tarihTr = (t) => (t ? String(t).split('-').reverse().join('.') : '');
-  const hucre = (v) => { const t = String(v ?? ''); return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  // Formül gibi başlayan metin ("=…", "+…", "@…") Excel'de çalışmasın diye başına ' eklenir; sayılar ("-17,36") dokunulmaz.
+  const hucre = (v) => {
+    let t = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(t) && !/^-?\d+(,\d+)?$/.test(t)) t = `'${t}`;
+    return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
   const satirlar = [
     [`${mekanAdi} stok farkı raporu`, `${tarihTr(r.baslangic)} – ${tarihTr(r.bitis)}`],
     ['Malzeme', 'Birim', 'Önceki sayım', 'Gelen', 'Kullanılan (satış)', 'Fire', 'Olması gereken', 'Sayılan',

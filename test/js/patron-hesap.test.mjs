@@ -81,3 +81,12 @@ test('rapor CSV: Excel Türkçe biçimi, günlük birim, tırnak kaçışı', as
   assert.equal(satir.length, 8);                     // başlık 2 + 1 malzeme + boş + 2 toplam + uyarı + son satır sonu
   assert.ok(csv.includes('Uyarı;"a; b"'));
 });
+
+test('rapor CSV: formül gibi başlayan ad Excel\'de çalışmaz, eksi sayı sayı kalır', async () => {
+  const { raporCsv } = await import('../../patron-hesap.js');
+  const csv = raporCsv({ baslangic: '2026-10-09', bitis: '2026-10-16', toplam_acik_tl: -5, toplam_fazla_tl: 0, uyarilar: [],
+    satirlar: [{ ad: '=HYPERLINK("x")', birim: 'adet', durum: 'tamam', baslangic: 10, gelen: 0, satis: 3, fire: 0, beklenen: 7, sayilan: 5, fark: -2, fark_tl: -5 }] });
+  const satir = csv.split('\r\n')[2];
+  assert.ok(satir.startsWith(`"'=HYPERLINK(""x"")";adet;`), satir);
+  assert.ok(satir.includes(';-2;-5;'));
+});

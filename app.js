@@ -65,6 +65,8 @@ function formBagla(form, isle) {
 
 async function cikis() {
   aktifSekme = 'ozet';
+  // Seçimler mekana özel: aynı telefonda başka mekanın hesabı açılınca eski hafta/ay seçili kalmasın.
+  secilenSayim = null; secilenAy = null; girisTuru = 'hepsi'; ayarSekme = 'malzeme';
   document.body.classList.remove('patron');
   await sb.auth.signOut();
   goster();
@@ -397,9 +399,12 @@ async function stokFarkiSekmesi(icerik) {
     <section class="kart">
       <div class="donem-sec">
         <label for="sayim-sec">Hafta</label>
-        <select id="sayim-sec">${r.sayimlar.map((s) => {
+        <select id="sayim-sec">${r.sayimlar.map((s, i) => {
+          // Dönem adı trendden (son 8 hafta); daha eskisi ya da aynı güne ikinci sayım tarihiyle yazılır.
           const d = trend.find((t) => t.sayim_id === s.id);
-          return `<option value="${esc(s.id)}" ${s.id === r.sayim_id ? 'selected' : ''}>${d ? esc(donemYaz(d.baslangic, d.bitis)) : `${esc(kisaTarih(s.tarih))} (ilk sayım)`}</option>`;
+          const ilkSayim = i === r.sayimlar.length - 1 && r.sayimlar.length < 26;
+          return `<option value="${esc(s.id)}" ${s.id === r.sayim_id ? 'selected' : ''}>${d ? esc(donemYaz(d.baslangic, d.bitis))
+            : `${esc(kisaTarih(s.tarih))} sayımı${ilkSayim ? ' (ilk sayım)' : ''}`}</option>`;
         }).join('')}</select>
       </div>
       ${tamam.length ? `
