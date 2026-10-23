@@ -1,8 +1,10 @@
 import { readSalesFile, salesFileKind } from './satis-okuma.js';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
 import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js';
 import { cevapAnahtariniOku, anahtarBelgesi, karsilastir } from './okuma-testi.js';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
   ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
@@ -230,9 +232,75 @@ function bekleyenUyarisi(eksik) {
       ? ` (en eskisi ${esc(kisaTarih(eksik.en_eski))})` : ''}.</span></div>`;
 }
 
+// ---------- Teslimat kontrolü: faturadaki ile sayılan farklıysa patronun görevi (kararı patron verir) ----------
+const COZUMLER = [['iade', 'İade alındı'], ['sonra_geldi', 'Sonraki teslimatta geldi'], ['indirim', 'İndirim yapıldı'],
+  ['fark_yok', 'Fark yok (sayım hatası)'], ['diger', 'Diğer…']];
+
+function teslimatKarti(gorevler) {
+  if (!gorevler.length) return '';
+  return `<section class="kart gorev-kart" id="teslimat-gorevleri">
+    <h2>Teslimat kontrolü <span class="rozet">${gorevler.length}</span></h2>
+    ${gorevler.map((g) => {
+      const fark = Number(g.faturadaki) - Number(g.gelen);
+      const oran = Number(g.faturadaki) > 0 ? Math.max(0, Math.min(100, (Number(g.gelen) / Number(g.faturadaki)) * 100)) : 0;
+      return `<div class="gorev" data-gorev="${esc(g.id)}">
+        <div class="gorev-ust">
+          <span class="gorev-ikon" aria-hidden="true">${malzemeIkonu({ ad: g.malzeme, birim: g.birim })}</span>
+          <div class="gorev-baslik"><b>${esc(g.malzeme)}: ${okunurMiktar(Math.abs(fark), g.birim)} ${fark > 0 ? 'eksik' : 'fazla'} teslimat</b>
+            <small>${esc(g.tedarikci ?? 'Fatura')} · ${g.belge_tarihi ? esc(kisaTarih(g.belge_tarihi)) : ''}${g.fark_tl != null
+              ? ` · ${tlYaz(Math.abs(g.fark_tl))}` : ''}</small></div>
+        </div>
+        <div class="teslim-cubuk" aria-hidden="true"><span style="width:${oran.toFixed(1)}%"></span></div>
+        <div class="teslim-rakam"><span>Faturada <b>${okunurMiktar(g.faturadaki, g.birim)}</b></span>
+          <span>Gelen <b>${okunurMiktar(g.gelen, g.birim)}</b></span></div>
+        ${g.okuma_supheli ? '<p class="uyari-yazi">Okuma şüpheli: karar vermeden önce faturaya bak.</p>' : ''}
+        ${g.barista_notu ? `<p class="barista-notu">“${esc(g.barista_notu)}” · ${esc(g.giren_ad ?? '')}</p>` : ''}
+        ${g.dosyalar?.length ? `<details class="fatura-gor"><summary>Faturayı gör</summary>
+          <div class="belgeler" data-dosyalar="${esc(JSON.stringify(g.dosyalar))}"></div></details>` : ''}
+        <div class="cozum-dugmeleri">${COZUMLER.map(([k, ad]) => `<button class="ikincil kucuk" data-cozum="${k}">${ad}</button>`).join('')}</div>
+        <div class="cozum-not" hidden><input maxlength="300" placeholder="Ne oldu? (kısa açıklama)" aria-label="Açıklama">
+          <button class="kucuk" data-cozum-kaydet>Kapat</button></div>
+        <p class="mesaj"></p>
+      </div>`;
+    }).join('')}
+  </section>`;
+}
+
+function teslimatKartiBagla(icerik, yenile) {
+  icerik.querySelectorAll('#teslimat-gorevleri details.fatura-gor').forEach((d) => d.addEventListener('toggle', () => {
+    const kutu = d.querySelector('[data-dosyalar]');
+    if (d.open && kutu) belgeleriGoster(kutu, JSON.parse(kutu.dataset.dosyalar));
+  }));
+  icerik.querySelectorAll('#teslimat-gorevleri .gorev').forEach((g) => {
+    const mesaj = g.querySelector('.mesaj');
+    const kapat = async (cozum, not = null) => {
+      g.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      try {
+        await rpcVeri('teslimat_farki_coz', { p_id: g.dataset.gorev, p_cozum: cozum, p_not: not });
+        yenile();
+      } catch (err) {
+        g.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        mesaj.className = 'mesaj hata';
+        mesaj.textContent = hataMetni(err);
+      }
+    };
+    g.querySelectorAll('[data-cozum]').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.cozum === 'diger') { g.querySelector('.cozum-not').hidden = false; g.querySelector('.cozum-not input').focus(); return; }
+      kapat(b.dataset.cozum);
+    }));
+    g.querySelector('[data-cozum-kaydet]').addEventListener('click', () => {
+      const not = g.querySelector('.cozum-not input').value.trim();
+      if (!not) { mesaj.className = 'mesaj hata'; mesaj.textContent = 'Kısa bir açıklama yaz.'; return; }
+      kapat('diger', not);
+    });
+  });
+}
+
 async function ozetSekmesi(icerik) {
-  const [trend, eksikler, stok] = await Promise.all([
-    rpcVeri('acik_trendi', { p_adet: 8 }), rpcVeri('eksik_belge_ozeti'), rpcVeri('stok_durumu')]);
+  const [trend, eksikler, stok, gorevler] = await Promise.all([
+    rpcVeri('acik_trendi', { p_adet: 8 }), rpcVeri('eksik_belge_ozeti'), rpcVeri('stok_durumu'),
+    // Sunucu güncellemesi (sql/21) yoksa kart görünmez; Özet yine açılır.
+    rpcVeri('teslimat_gorevleri').catch((e) => { console.warn('Teslimat görevleri alınamadı:', e); return []; })]);
   trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
   const [son, onceki] = trend;
   const azalan = stok.malzemeler.filter((m) => ['az', 'dikkat'].includes(yeterDurumu(m.yeter_gun)));
@@ -277,6 +345,7 @@ async function ozetSekmesi(icerik) {
   }
 
   icerik.innerHTML = `
+    ${teslimatKarti(gorevler ?? [])}
     ${kahraman}
     ${bekleyenUyarisi(eksikler?.[0])}
     ${son ? `<section class="kart">
@@ -298,6 +367,7 @@ async function ozetSekmesi(icerik) {
         <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
     </section>` : ''}`;
+  teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
   icerik.querySelectorAll('[data-ayar-git]').forEach((b) => b.addEventListener('click', () => {
     aktifSekme = 'ayar';
     ayarSekme = b.dataset.ayarGit;
@@ -1799,7 +1869,11 @@ async function haftalikSayim(kutu, user, bitti) {
   ekran();
 }
 
-// ---------- 📦 Mal geldi: belge → okuma → (gerekirse "Bu ürün süt mü?") → özet → kaydet ----------
+// ---------- 📦 Mal geldi: belge → karekod → okuma → (tutmazsa ikinci okuma) → kör sayım → özet → kaydet ----------
+//
+// Kör sayım: barista faturadaki miktarı GÖRMEDEN gelen malı sayar. Sayılan farklıysa bir kez daha saydırılır;
+// hâlâ farklıysa fark okumadan mı teslimattan mı, mal-kabul.js karar verir (fotoğrafta ikinci okumaya bakılır).
+// Stok sayılan kadar artar; gerçek eksik/fazla teslimatı sunucu patrona görev olarak açar.
 
 const OKUNAMADI = {
   bulanik: 'Fotoğraf bulanık, bir daha çek.',
@@ -1808,6 +1882,9 @@ const OKUNAMADI = {
   satir_karisik: 'Fişteki adetler satırlara karışık okundu. Fişi düz tutup tekrar çek.',
 };
 
+// Okuma tutarsızsa (toplam / karekod tutmuyor, sayılan farklı) fatura bu modelle bir kez daha okunur.
+const IKINCI_MODEL = 'gpt-4.1';
+
 const blobDataUrl = (blob) => new Promise((ok, hata) => {
   const r = new FileReader();
   r.onload = () => ok(r.result);
@@ -1815,6 +1892,7 @@ const blobDataUrl = (blob) => new Promise((ok, hata) => {
   r.readAsDataURL(blob);
 });
 const ms = (a, b) => Math.round(b - a);
+const sureBekle = (n) => new Promise((r) => setTimeout(r, n));
 
 // Fotoğrafları AI ile okur (fatura-oku işlevi). Hata olursa fırlatır; çağıran yedek OCR'a düşer.
 // Döner: { sonuc (uygulama biçiminde), olcum: süreler (ms) ve boyut }
@@ -1841,23 +1919,74 @@ async function aiIleOku(bloblar, model = undefined) {
   };
 }
 
+// Bu fatura (karekod / e-fatura kimliği) mekanda zaten kayıtlı mı? Kontrol yapılamazsa null: akış durmaz,
+// sunucu kayıt sırasında ayrıca kontrol eder.
+async function mukerrerMi({ ettn = null, no = null, vkn = null } = {}) {
+  if (!ettn && !(no && vkn)) return null;
+  try {
+    const r = await rpcVeri('belge_kayitli_mi', { p_ettn: ettn, p_no: no, p_vkn: vkn });
+    return r?.var ? r : null;
+  } catch (e) {
+    console.warn('Mükerrer kontrolü yapılamadı:', e);
+    return null;
+  }
+}
+
+// Fotoğraf: önce karekod (en fazla 1,5 sn); fatura zaten kayıtlıysa AI'ya hiç gidilmez. Karekod o sürede
+// bulunamazsa arama arka planda sürer, AI okuması başlar; karekod sonradan bulunursa yine kullanılır.
+function fotoOkumasiBaslat(bloblar) {
+  return (async () => {
+    const kk = await karekodOnce(bloblar[0]);
+    if (kk.hazir) {
+      const m = await mukerrerMi({ ettn: kk.hazir.karekod.ettn, no: kk.hazir.karekod.no, vkn: kk.hazir.karekod.vkn });
+      if (m) return { kk, mukerrer: m };
+    }
+    try { return { kk, ai: await aiIleOku(bloblar) }; } catch (hata) { return { kk, hata }; }
+  })();
+}
+
+// Malzemenin kartlardaki simgesi (adından; bulunamazsa birimden).
+function malzemeIkonu(m) {
+  const a = anahtar(m?.ad);
+  if (/\b(sut|krema|ayran)/.test(a)) return '🥛';
+  if (/\b(kahve|espresso|cekirdek|filtre)/.test(a)) return '☕';
+  if (/\b(cay|bitki)/.test(a)) return '🍵';
+  if (/\b(surup|sos|bal)/.test(a)) return '🍯';
+  if (/\b(bardak|kapak|pipet)/.test(a)) return '🥤';
+  if (/\b(seker)/.test(a)) return '🧂';
+  return { ml: '🧴', g: '⚖️', adet: '📦' }[m?.birim] ?? '📦';
+}
+
 async function malGeldi(kutu, user, bitti) {
-  const [malzemeler, dr] = await Promise.all([
+  const [malzemeler, dr, surum] = await Promise.all([
     malzemeleriGetir(false),
     sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan, guncelleme'),
+    // Sunucu kör sayımı biliyor mu (sql/21)? Bilmiyorsa sayılan miktar sessizce yok sayılır, stok faturadaki kadar
+    // girerdi: mal kabul açılmaz.
+    rpcVeri('belge_kayitli_mi', { p_ettn: null, p_no: null, p_vkn: null }).then(() => true,
+      (e) => !/could not find the function|belge_kayitli_mi/i.test(e?.message ?? '')),
   ]);
   if (dr.error) throw dr.error;
+  if (!surum) {
+    return sadeHata(kutu, 'Uygulama güncelleniyor. Birkaç dakika sonra tekrar dene; faturayı sakla.', bitti);
+  }
   const malzemeBul = new Map(malzemeler.map((m) => [m.id, m]));
   let dosyalar = [];          // { dosya (asıl), tur: 'foto'|'pdf'|'xml', onizleme, yuklenen: {blob, yol} }
-  let sonuc = null;           // okuma sonucu + satırların sınıfı
+  let sonuc = null;           // kullanılan okuma + satırların sınıfı ve sayımı
   let istek = null;           // kaydetme kimliği (tekrar denemelerde aynı)
   let ayniOnay = false;
-  let onOkuma = null;         // ilk fotoğraf eklenir eklenmez arka planda başlayan AI okuması { dosya, is }
+  let onOkuma = null;         // ilk fotoğraf eklenir eklenmez arka planda başlayan karekod + AI okuması { dosya, is }
   let olcum = {};             // süreler (ms): küçültme, gönderme, AI, kayıt
+  let okunanGorseller = [];   // AI'ya gönderilen görseller (ikinci okuma için)
+  let kk = null;              // bulunan karekod { metin, karekod } ya da null
+  let ilkOkuma = null;        // ilk AI okuması (ikinci okuma kullanılırsa iz için)
+  let ikinci = null;          // ikinci okuma sonucu (belge başına en fazla bir kez)
+  let ikinciDenendi = false;
+  let kullanilan = 'ilk';     // 'ilk' | 'ikinci'
   const onOkumaBaslat = () => {
     const fotolar = dosyalar.filter((d) => d.tur === 'foto');
     if (fotolar.length !== 1 || onOkuma?.dosya === fotolar[0]) return;
-    onOkuma = { dosya: fotolar[0], is: aiIleOku([fotolar[0].dosya]).catch((hata) => ({ hata })) };
+    onOkuma = { dosya: fotolar[0], is: fotoOkumasiBaslat([fotolar[0].dosya]) };
   };
 
   const belgeEkrani = () => {
@@ -1869,6 +1998,7 @@ async function malGeldi(kutu, user, bitti) {
           <label class="dev ikincil">📷 Bir sayfa daha<input type="file" accept="image/*" capture="environment" id="kamera" hidden></label>`
         : `<label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="kamera" hidden></label>
           <label class="dev ikincil">📎 PDF / e-fatura seç<input type="file" accept="application/pdf,.pdf,.xml,application/xml,text/xml,image/*" id="dosya" hidden></label>`}
+        <p class="bilgi">Faturanın tamamı, karekodu da görünecek şekilde çek.</p>
         <p class="mesaj"></p>
         <button class="dev ikincil" id="geri">◀ Ana ekran</button></div>`;
     kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
@@ -1889,19 +2019,28 @@ async function malGeldi(kutu, user, bitti) {
           return oku();
         }
       }
-      onOkumaBaslat();         // barista "Oku"ya basmadan okuma başlasın
+      onOkumaBaslat();         // barista "Oku"ya basmadan karekod ve okuma başlasın
       belgeEkrani();
     });
     ekle(kutu.querySelector('#kamera'));
     ekle(kutu.querySelector('#dosya'));
   };
   const temizle = () => { dosyalar.forEach((d) => d.onizleme && URL.revokeObjectURL(d.onizleme)); };
+  const bastanCek = () => {
+    temizle(); dosyalar = []; sonuc = null; istek = null; onOkuma = null; kk = null;
+    ilkOkuma = null; ikinci = null; ikinciDenendi = false; kullanilan = 'ilk'; okunanGorseller = [];
+    belgeEkrani();
+  };
+
+  const bekleEkrani = (baslik, alt = 'Birkaç saniye sürer.') => {
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="buyuk-simge donen">⏳</div><h2>${esc(baslik)}</h2>
+        <div class="cubuk akan"><div id="okuma-cubuk"></div></div>
+        <p class="bilgi" id="okuma-not">${esc(alt)}</p></div>`;
+  };
 
   const oku = async () => {
-    kutu.innerHTML = `<div class="sade-ekran ortada">
-        <div class="buyuk-simge donen">⏳</div><h2>Okunuyor…</h2>
-        <div class="cubuk akan"><div id="okuma-cubuk"></div></div>
-        <p class="bilgi" id="okuma-not">Birkaç saniye sürer.</p></div>`;
+    bekleEkrani('Okunuyor…');
     const cubuk = kutu.querySelector('#okuma-cubuk');
     const not = kutu.querySelector('#okuma-not');
     const uzunSurdu = setTimeout(() => { if (not) not.textContent = 'Biraz uzun sürdü, bekle…'; }, 9000);
@@ -1913,13 +2052,17 @@ async function malGeldi(kutu, user, bitti) {
         cubuk.style.width = `${Math.max(5, Math.round(genel * 100))}%`;
       }
     };
-    // Fotoğraf (ya da taranmış PDF sayfası): önce AI, olmazsa telefondaki OCR
+    let kkArama = null;        // { hazir, sonra } — karekod araması
+    // Fotoğraf (ya da taranmış PDF sayfası): önce karekod + AI, AI olmazsa telefondaki OCR
     const fotoOku = async (bloblar, onceden) => {
+      okunanGorseller = bloblar;
+      const a = await (onceden ?? fotoOkumasiBaslat(bloblar));
+      kkArama = a.kk;
+      if (a.mukerrer) return { mukerrer: a.mukerrer };
       try {
-        const a = onceden ? await onceden : await aiIleOku(bloblar);
         if (a.hata) throw a.hata;
-        olcum = { ...olcum, ...a.olcum };
-        return a.sonuc;
+        olcum = { ...olcum, ...a.ai.olcum };
+        return a.ai.sonuc;
       } catch (e) {
         console.warn('AI okuması olmadı, yedek OCR:', e);
         if (not) not.textContent = 'Yedek okuyucu çalışıyor…';
@@ -1931,19 +2074,30 @@ async function malGeldi(kutu, user, bitti) {
       }
     };
     const t0 = performance.now();
+    let r;
     try {
       const d0 = dosyalar[0];
-      let r;
-      if (d0.tur === 'xml') r = await xmlDosyaOku(d0.dosya);
+      if (d0.tur === 'xml') r = await xmlDosyaOku(d0.dosya);                // ETTN dosyanın içinde
       else if (d0.tur === 'pdf') {
         r = await pdfOku(d0.dosya);
         if (r.taranmis) r = await fotoOku(r.sayfalar);
+        else {
+          const sayfa = await pdfIlkSayfa(d0.dosya).catch(() => null);
+          kkArama = sayfa ? { hazir: null, sonra: karekodBul(sayfa) } : null;
+        }
       } else {
         const fotolar = dosyalar.map((d) => d.dosya);
         const hazir = dosyalar.length === 1 && onOkuma?.dosya === dosyalar[0] ? onOkuma.is : null;
         r = await fotoOku(fotolar, hazir);
       }
+      if (r.mukerrer) { clearTimeout(uzunSurdu); return mukerrerEkrani(r.mukerrer); }
       sonuc = r;
+      ilkOkuma = r;
+      // Karekod araması okumadan sonra en fazla 1,5 sn daha beklenir
+      kk = kkArama ? await Promise.race([kkArama.sonra, sureBekle(1500).then(() => null)]) : null;
+      if (kk?.karekod) karekoduUygula(kk.karekod, sonuc);
+      const m = await mukerrerMi({ ettn: sonuc.ettn, no: sonuc.fatura_no, vkn: sonuc.tedarikci_vkn });
+      if (m) { clearTimeout(uzunSurdu); return mukerrerEkrani(m); }
       olcum.okuma_toplam_ms = ms(t0, performance.now());
     } catch (err) {
       console.error(err);
@@ -1956,8 +2110,44 @@ async function malGeldi(kutu, user, bitti) {
     // Fatura değil / satırlar karışık: hiçbir satır kendiliğinden stoğa girmez; gönderilirse tamamı kuruluma
     if (sonuc.notlar?.includes('fatura_degil')) return sorunEkrani(OKUNAMADI.fatura_degil, true, true);
     if (sonuc.notlar?.includes('satir_karisik')) return sorunEkrani(OKUNAMADI.satir_karisik, true, true);
+    await okumayiDogrula();
     siniflandirHepsi();
     soruSirasi();
+  };
+
+  // ---------- Okuma doğrulama ----------
+  // Okuma kendi içinde (satırlar = toplam) ve karekodla (makine verisi) tutarlı mı? Toplam okunamadıysa ve
+  // karekod yoksa bilinemez → tutarlı sayılır (barista toplamı yazar, sunucu kontrol eder).
+  const tutarliMi = (s) => {
+    if (kk?.karekod?.tur === 'fatura' && karekodlaKarsilastir(kk.karekod, s).tutuyor === false) return false;
+    return s.toplamlar.genel == null || toplamKontrol(s).tutuyor;
+  };
+  // İkinci okuma: aynı görseller farklı bir modelle. Yalnız fotoğraf okumasında, belge başına bir kez.
+  const ikinciOku = async () => {
+    if (ikinciDenendi || ilkOkuma?.kaynak !== 'ai' || !okunanGorseller.length) return ikinci;
+    ikinciDenendi = true;
+    try {
+      const a = await aiIleOku(okunanGorseller, IKINCI_MODEL);
+      if (kk?.karekod) karekoduUygula(kk.karekod, a.sonuc);
+      ikinci = a.sonuc;
+      olcum.ikinci_ai_ms = a.olcum.ai_ms;
+    } catch (e) {
+      console.warn('İkinci okuma olmadı:', e);
+    }
+    return ikinci;
+  };
+  // Kullanılmayan okuma (sayım farkında karşılaştırma için): ikinci kullanılıyorsa ilki, değilse ikinci.
+  const digerOkuma = async () => (kullanilan === 'ikinci' ? ilkOkuma : ikinciOku());
+  // Tutarsız okumada ikinci okuma; tutan kullanılır. İkisi de tutmazsa toplam karekoddan (makine verisi) alınır →
+  // satırlar sunucunun toplam kontrolünü geçemez, stoğa girmeden kontrole düşer: yanlış rakam sessizce girmez.
+  const okumayiDogrula = async () => {
+    if (sonuc.kaynak !== 'ai' || tutarliMi(sonuc)) return;
+    bekleEkrani('Fatura bir kez daha kontrol ediliyor…');
+    const s2 = await ikinciOku();
+    if (s2 && tutarliMi(s2)) { sonuc = s2; kullanilan = 'ikinci'; return; }
+    const kg = kk?.karekod;
+    if (kg?.tur === 'fatura' && (kg.vergidahil ?? kg.odenecek) != null) sonuc.toplamlar.genel = kg.vergidahil ?? kg.odenecek;
+    sonuc.notlar.push('okuma_tutarsiz');
   };
 
   // Okuma sorunu: tekrar çek ya da yine de devam (belge kuruluma gider)
@@ -1967,7 +2157,7 @@ async function malGeldi(kutu, user, bitti) {
         <button class="dev" id="tekrar">📷 Tekrar çek</button>
         ${devamEdilebilir ? '<button class="dev ikincil" id="devam">Yine de gönder</button>' : ''}
         <button class="metin-dugme" id="geri">Ana ekran</button></div>`;
-    kutu.querySelector('#tekrar').onclick = () => { temizle(); dosyalar = []; onOkuma = null; belgeEkrani(); };
+    kutu.querySelector('#tekrar').onclick = bastanCek;
     kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
     kutu.querySelector('#devam')?.addEventListener('click', () => {
       if (!sonuc.satirlar.length) sonuc.satirlar = [{ metin: '(fatura okunamadı)', miktar: null, birim: 'diger', tutar_haric: null, kdv_orani: null }];
@@ -1981,6 +2171,17 @@ async function malGeldi(kutu, user, bitti) {
     });
   };
 
+  const mukerrerEkrani = (m) => {
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="buyuk-simge">🔁</div><h2>Bu fatura daha önce yüklenmiş</h2>
+        <p class="buyuk-yazi">${esc(m.tarih ?? '')} · ${esc(m.giren_ad ?? '')}</p>
+        <p class="bilgi">Stoğa tekrar eklenmedi.</p>
+        <button class="dev" id="ana">Ana ekran</button>
+        <button class="dev ikincil" id="baska">📷 Başka bir fatura çek</button></div>`;
+    kutu.querySelector('#ana').onclick = () => { temizle(); bitti(); };
+    kutu.querySelector('#baska').onclick = bastanCek;
+  };
+
   const tedarikciAnahtari = () => sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '';
   const siniflandirHepsi = () => {
     const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari(), tedarikciAdi: sonuc.tedarikci };
@@ -1988,87 +2189,141 @@ async function malGeldi(kutu, user, bitti) {
     sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); s.cevap = null; });
   };
 
-  // Fotoğraftan okunan ve bu mekânda daha önce hiçbir faturada doğrulanmamış malzeme: fiyat geçmişi yok, okunan
-  // miktarı kontrol edecek bir şey yok. Barista evet/hayır yerine geleni sayar (paket/birim), sistem çarpar.
-  const ilkKezMi = (m) => !dr.data.some((d) => d.sonuc === 'malzeme' && d.malzeme_id === m.id);
+  // ---------- Kör sayım ----------
+  // Stoğa girecek her satır (defterden bilinen ya da baristaya sorulan) sayılır; faturadaki miktar gösterilmez.
+  const stokAdayi = (s) => s.karar.sinif === 'eslesti' || s.karar.sinif === 'soru';
+  const OLCU = { kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' };
   const sayimBirimi = (s, m) => {
     if (s.birim === 'diger' || (s.birim === 'adet' && m.birim === 'adet' && s.karar.carpan > 1)) return 'paket';
-    return { adet: 'adet', kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' }[s.birim] ?? 'paket';
+    return { adet: 'adet', ...OLCU }[s.birim] ?? 'paket';
   };
-  const sayimEkrani = (s, m, hata = '') => {
-    const b = sayimBirimi(s, m);
-    kutu.innerHTML = `<div class="sade-ekran ortada" id="sayim-ekrani"
-          data-metin="${esc(s.metin)}" data-malzeme="${esc(m.ad)}" data-carpan="${s.karar.carpan}">
-        <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>
-        <h2 class="soru">Kaç ${b} <u>${esc(m.ad)}</u> geldi?</h2>
-        <p class="buyuk-yazi">1 ${b} = ${buyukMiktar(s.karar.carpan, m.birim)}</p>
-        <div class="rakam-kutu"><input id="sayim" inputmode="decimal" autocomplete="off" aria-label="Kaç ${b}"><span>${b}</span></div>
-        <p class="buyuk-yazi" id="sayim-toplam" aria-live="polite"></p>
-        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
-        <button class="dev evet" id="sayim-tamam">Tamam ✓</button>
-        <button class="dev ikincil" id="sonra">Şimdi sayamıyorum — sonra</button>
-        <button class="metin-dugme" id="hayir">Bu ürün ${esc(m.ad)} değil</button></div>`;
-    // Yazarken toplamı göster: paket yerine adet yazılırsa (1000 paket) barista hemen görür.
-    kutu.querySelector('#sayim').addEventListener('input', (e) => {
-      const n = sayiOku(e.target.value);
-      kutu.querySelector('#sayim-toplam').textContent = Number.isFinite(n) && n > 0
-        ? `= ${buyukMiktar(n * s.karar.carpan, m.birim)} ${m.ad}` : '';
-    });
-    kutu.querySelector('#sayim-tamam').onclick = () => {
-      const n = sayiOku(kutu.querySelector('#sayim').value);
-      if (!Number.isFinite(n) || n <= 0) return sayimEkrani(s, m, `Kaç ${b} geldiğini yaz.`);
-      if (n !== Number(s.miktar)) {
-        // Sayılan, okunandan farklı: stok sayılana göre; satır tutarı aynı kalır, birim fiyat ondan çıkar.
-        s.miktar_okunan = s.miktar;
-        s.miktar = n;
-        s.birim_fiyat = s.tutar_haric != null ? Math.round((s.tutar_haric / n) * 10000) / 10000 : null;
-      }
-      s.sayildi = true;
-      s.cevap = 'evet';
-      soruSirasi();
-    };
-    kutu.querySelector('#sonra').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
-    kutu.querySelector('#hayir').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
+  const kurulumaGonder = (s, m) => {
+    s.karar = { sinif: 'belirsiz', aday_malzeme_id: m.id };
+    s.cevap = 'hayir';
   };
 
-  // "Bu ürün süt mü?" — yalnızca benzeyen, defterde olmayan satırlar için, tek tek
+  const sayimEkrani = (s, m, { tekrar = false, hata = '' } = {}) => {
+    const b = sayimBirimi(s, m);
+    const paketYazisi = (b === 'paket' || b === 'adet') && Number(s.karar.carpan) !== 1
+      ? `<p class="buyuk-yazi">1 ${b} = ${buyukMiktar(s.karar.carpan, m.birim)}</p>` : '';
+    const sira = sonuc.satirlar.filter(stokAdayi);
+    const no = sira.indexOf(s) + 1;
+    kutu.innerHTML = `<div class="sade-ekran ortada" id="sayim-ekrani"
+          data-metin="${esc(s.metin)}" data-malzeme="${esc(m.ad)}" data-carpan="${s.karar.carpan}">
+        ${sira.length > 1 ? `<div class="sayim-ilerleme" aria-label="${no}. kalem / ${sira.length}">
+          ${sira.map((_, i) => `<span class="${i < no - 1 ? 'bitti' : i === no - 1 ? 'simdi' : ''}"></span>`).join('')}</div>` : ''}
+        <div class="sayim-ikon" aria-hidden="true">${malzemeIkonu(m)}</div>
+        ${tekrar ? '<p class="sayim-uyari">Sayı faturayla uyuşmadı. Bir daha sayar mısın?</p>'
+                 : '<p class="bilgi">Gelen malı say, faturaya bakmadan yaz.</p>'}
+        <h2 class="soru">Kaç ${b} <u>${esc(m.ad)}</u> geldi?</h2>
+        ${paketYazisi}
+        <div class="sayac">
+          <button type="button" class="sayac-dugme" data-adim="-1" aria-label="Bir azalt">−</button>
+          <input id="sayim" inputmode="decimal" autocomplete="off" aria-label="Kaç ${b}">
+          <button type="button" class="sayac-dugme" data-adim="1" aria-label="Bir artır">+</button>
+        </div>
+        <p class="sayim-birim">${b}</p>
+        <p class="buyuk-yazi" id="sayim-toplam" aria-live="polite"></p>
+        ${tekrar ? `<label class="not-alani">Not (isteğe bağlı)
+          <input id="not" maxlength="300" placeholder="Örn. bir koli hasarlı geldi" value="${esc(s.barista_notu ?? '')}"></label>` : ''}
+        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
+        <button class="dev evet" id="sayim-tamam">Tamam ✓</button>
+        <button class="dev ikincil" id="sayilamiyor">${OLCU[s.birim] ? 'Tartamıyorum' : 'Şu an sayamıyorum'} — faturadaki gibi al</button>
+        <button class="metin-dugme" id="hayir">Bu ürün ${esc(m.ad)} değil</button></div>`;
+    const girdi = kutu.querySelector('#sayim');
+    const toplamYaz = () => {
+      const n = sayiOku(girdi.value);
+      kutu.querySelector('#sayim-toplam').textContent = Number.isFinite(n) && n > 0 && !OLCU[b === 'litre' ? 'lt' : b]
+        ? `= ${buyukMiktar(n * s.karar.carpan, m.birim)} ${m.ad}` : '';
+    };
+    // Yazarken toplamı göster: paket yerine adet yazılırsa (1000 paket) barista hemen görür.
+    girdi.addEventListener('input', toplamYaz);
+    kutu.querySelectorAll('.sayac-dugme').forEach((d) => d.addEventListener('click', () => {
+      const n = sayiOku(girdi.value);
+      girdi.value = String(Math.max(0, (Number.isFinite(n) ? n : 0) + Number(d.dataset.adim))).replace('.', ',');
+      toplamYaz();
+    }));
+    kutu.querySelector('#sayim-tamam').onclick = () => {
+      const n = sayiOku(girdi.value);
+      if (!Number.isFinite(n) || n < 0) return sayimEkrani(s, m, { tekrar, hata: `Kaç ${b} geldiğini yaz. Hiç gelmediyse 0 yaz.` });
+      s.barista_notu = kutu.querySelector('#not')?.value.trim() || s.barista_notu || null;
+      // İlk sayım faturayla uyuşmuyorsa bir kez daha saydırılır (faturadaki sayı yine gösterilmez).
+      if (!tekrar && s.miktar != null && !ayniMiktar(n, s.miktar)) return sayimEkrani(s, m, { tekrar: true });
+      sayimBitir(s, n);
+    };
+    kutu.querySelector('#sayilamiyor').onclick = () => {
+      Object.assign(s, { sayim: 'sayilmadi', gelen_miktar: null, teslimat: null, cevap: 'evet' });
+      soruSirasi();
+    };
+    kutu.querySelector('#hayir').onclick = () => { kurulumaGonder(s, m); soruSirasi(); };
+    girdi.focus();
+  };
+
+  // Son sayım: tam mı, okuma hatası mı, teslimat farkı mı? (Fotoğrafta ikinci okumaya bakılır.)
+  const sayimBitir = async (s, n) => {
+    Object.assign(s, { sayim: 'sayildi', gelen_miktar: n, cevap: 'evet' });
+    let k;
+    if (s.miktar == null) {
+      k = { karar: 'okuma_hatasi' };                      // miktar okunamamıştı: sayılan esas
+    } else {
+      let ikinciMiktar = null;
+      if (!ayniMiktar(n, s.miktar) && !kesinKaynak(sonuc.kaynak)) {
+        bekleEkrani('Fatura bir kez daha kontrol ediliyor…');
+        const diger = await digerOkuma();
+        const i = diger ? satirEsle(s, diger.satirlar) : -1;
+        if (i >= 0) ikinciMiktar = diger.satirlar[i].miktar;
+      }
+      k = teslimatKarari({ kaynak: sonuc.kaynak, faturadaki: s.miktar, sayilan: n, ikinci: ikinciMiktar });
+    }
+    s.teslimat = k.karar;
+    if (k.karar === 'okuma_hatasi') {
+      // İlk okuma yanlıştı: faturadaki miktar sayılana eşitlenir, birim fiyat satır tutarından yeniden çıkar.
+      s.okunan_miktar = s.miktar;
+      s.miktar = n;
+      s.birim_fiyat = s.tutar_haric != null && n > 0 ? Math.round((s.tutar_haric / n) * 10000) / 10000 : null;
+    }
+    soruSirasi();
+  };
+
   const soruSirasi = () => {
-    const s = sonuc.satirlar.find((x) => x.karar.sinif === 'soru' && x.cevap == null);
+    const s = sonuc.satirlar.find((x) => stokAdayi(x) && x.cevap == null);
     if (!s) return ozetEkrani();
-    const m = malzemeBul.get(s.karar.malzeme_id);
-    if (s.karar.say || (['ai', 'ocr'].includes(sonuc.kaynak) && ilkKezMi(m))) return sayimEkrani(s, m);
-    const stok = Number(s.miktar) * s.karar.carpan;
-    kutu.innerHTML = `<div class="sade-ekran ortada">
-        <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>
-        <h2 class="soru">Bu ürün <u>${esc(m.ad)}</u> mü?</h2>
-        <p class="buyuk-yazi">${buyukMiktar(stok, m.birim)} olarak eklenecek</p>
-        <div class="iki-dugme"><button class="dev hayir" id="hayir">✗ Hayır</button><button class="dev evet" id="evet">✓ Evet</button></div></div>`;
-    kutu.querySelector('#evet').onclick = () => { s.cevap = 'evet'; soruSirasi(); };
-    kutu.querySelector('#hayir').onclick = () => { s.cevap = 'hayir'; soruSirasi(); };
+    sayimEkrani(s, malzemeBul.get(s.karar.malzeme_id));
   };
 
   const ozetEkrani = (hata = '') => {
-    const stokta = sonuc.satirlar.filter((s) => s.karar.sinif === 'eslesti' || (s.karar.sinif === 'soru' && s.cevap === 'evet'));
-    const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'belirsiz' || (s.karar.sinif === 'soru' && s.cevap === 'hayir'));
+    const stokta = sonuc.satirlar.filter((s) => stokAdayi(s) && s.cevap === 'evet');
+    const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'belirsiz' || (stokAdayi(s) && s.cevap === 'hayir'));
     const disi = sonuc.satirlar.filter((s) => s.karar.sinif === 'takip_disi');
     const toplamVar = sonuc.toplamlar.genel != null;
     const kontrol = toplamVar ? toplamKontrol(sonuc) : { tutuyor: false, sebep: 'toplam_yok' };
     const tutmuyor = toplamVar && !kontrol.tutuyor;
+    const kalem = (s) => {
+      const m = malzemeBul.get(s.karar.malzeme_id);
+      const c = Number(s.karar.carpan);
+      const gelen = s.sayim === 'sayildi' ? Number(s.gelen_miktar) : Number(s.miktar);
+      const farkli = s.sayim === 'sayildi' && ['teslimat_farki', 'belirsiz'].includes(s.teslimat);
+      const fark = farkli ? (Number(s.miktar) - gelen) * c : 0;
+      return `<li class="kabul-kalem ${farkli ? 'farkli' : ''}">
+          <span class="kalem-ikon" aria-hidden="true">${malzemeIkonu(m)}</span>
+          <span class="kalem-metin"><b>${buyukMiktar(gelen * c, m.birim)}</b> ${esc(m.ad)}
+            ${s.sayim === 'sayilmadi' ? '<small>Sayılmadı · faturadaki gibi alındı</small>' : ''}
+            ${farkli ? `<small>Faturada ${buyukMiktar(Number(s.miktar) * c, m.birim)} · ${buyukMiktar(Math.abs(fark), m.birim)}
+              ${fark > 0 ? 'eksik' : 'fazla'} geldi, patrona iletilecek</small>` : ''}</span>
+          <span class="kalem-durum" aria-hidden="true">${tutmuyor ? '⏳' : farkli ? '⚠️' : '✓'}</span></li>`;
+    };
     kutu.innerHTML = `<div class="sade-ekran">
         <h2>📦 ${esc(sonuc.tedarikci ?? 'Fatura')}</h2>
         ${tutmuyor ? `<div class="sade-uyari">⚠️ Toplam tutmuyor, faturaya tekrar bak.
             <button class="dev ikincil" id="tekrar-cek">📷 Tekrar çek</button></div>` : ''}
-        <ul class="sade-liste">
-          ${stokta.map((s) => { const m = malzemeBul.get(s.karar.malzeme_id);
-            return `<li>${tutmuyor ? '⏳' : '✓'} <b>${buyukMiktar(Number(s.miktar) * s.karar.carpan, m.birim)}</b> ${esc(m.ad)}</li>`; }).join('')}
-        </ul>
+        <ul class="kabul-liste">${stokta.map(kalem).join('')}</ul>
         ${bekleyen.length ? `<p class="buyuk-yazi">⏳ ${bekleyen.length} kalem sonra kontrol edilecek</p>` : ''}
         ${disi.length ? `<p class="bilgi">— ${disi.length} kalem takip dışı (${disi.slice(0, 3).map((s) => esc(s.metin)).join(', ')}${disi.length > 3 ? '…' : ''})</p>` : ''}
         ${toplamVar ? '' : `<p class="buyuk-yazi">Faturanın en altındaki toplam?</p>${rakamKutusu('TL')}`}
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev" id="kaydet">Kaydet ✓</button>
         <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
-    kutu.querySelector('#tekrar-cek')?.addEventListener('click', () => { temizle(); dosyalar = []; sonuc = null; istek = null; onOkuma = null; belgeEkrani(); });
+    kutu.querySelector('#tekrar-cek')?.addEventListener('click', bastanCek);
     kutu.querySelector('#vazgec').onclick = () => { if (confirm('Fatura kaydedilmeden çıkılsın mı?')) { temizle(); bitti(); } };
     kutu.querySelector('#kaydet').onclick = () => {
       if (!toplamVar) {
@@ -2078,6 +2333,18 @@ async function malGeldi(kutu, user, bitti) {
         return ozetEkrani();          // toplam girildi: kontrolü göster, sonra kaydet
       }
       kaydet();
+    };
+  };
+
+  // Karekod ve ikinci okumanın izi (belgenin okunan bilgisine ve işlem geçmişine yazılır).
+  const karekodKontrolu = () => {
+    const k = kk?.karekod;
+    const kar = k ? karekodlaKarsilastir(k, sonuc) : null;
+    return {
+      bulundu: Boolean(k), tur: k?.tur ?? null, ettn: k?.ettn ?? null, no: k?.no ?? null,
+      tutuyor: kar?.tutuyor ?? null, celiskiler: kar?.celiskiler ?? [], okunan_kimlik: sonuc.okunan_kimlik ?? null,
+      ikinci_okuma: ikinciDenendi ? { model: IKINCI_MODEL, basarili: Boolean(ikinci), kullanildi: kullanilan === 'ikinci',
+        ilk_model: ilkOkuma?.model ?? null, ilk_genel: ilkOkuma?.toplamlar?.genel ?? null } : null,
     };
   };
 
@@ -2103,14 +2370,17 @@ async function malGeldi(kutu, user, bitti) {
       // 2) Belgeyi kaydet
       durum.textContent = '';
       const satirlar = sonuc.satirlar.map((s) => {
-        const evet = s.karar.sinif === 'eslesti' || (s.karar.sinif === 'soru' && s.cevap === 'evet');
+        const evet = stokAdayi(s) && s.cevap === 'evet';
         return {
           metin: s.metin, miktar: s.miktar, birim: s.birim, birim_fiyat: s.birim_fiyat ?? null,
           tutar_haric: s.tutar_haric, kdv_orani: s.kdv_orani,
           sinif: evet ? 'eslesti' : s.karar.sinif === 'takip_disi' ? 'takip_disi' : 'belirsiz',
           malzeme_id: evet ? s.karar.malzeme_id : null, carpan: evet ? s.karar.carpan : null,
-          barista_onayi: s.karar.sinif === 'soru' && s.cevap === 'evet',
+          barista_onayi: evet && s.karar.sinif === 'soru',
           aday_malzeme_id: s.karar.aday_malzeme_id ?? null,
+          gelen_miktar: evet && s.sayim === 'sayildi' ? s.gelen_miktar : null,
+          sayim: evet ? s.sayim ?? null : null, teslimat: evet ? s.teslimat ?? null : null,
+          okunan_miktar: s.okunan_miktar ?? null, barista_notu: s.barista_notu || null,
         };
       });
       const r = await rpcVeri('belge_kaydet', { p: {
@@ -2121,15 +2391,17 @@ async function malGeldi(kutu, user, bitti) {
         dosyalar: dosyalar.map((d) => d.yuklenen),
         okunan: { kaynak: sonuc.kaynak, guven: sonuc.guven, netlik: sonuc.netlik ?? null, notlar: sonuc.notlar,
                   model: sonuc.model ?? null, maliyet_usd: sonuc.maliyet_usd ?? null, olcum,
-                  toplamlar: sonuc.toplamlar, satirlar: sonuc.satirlar,
+                  toplamlar: sonuc.toplamlar, satirlar: sonuc.satirlar, karekod_kontrol: karekodKontrolu(),
                   ham_metin: sonuc.ham_metin ?? null },
         satirlar,
       } });
       olcum.kayit_ms = ms(tk, performance.now());
       temizle();
+      const farkVar = satirlar.some((x) => ['teslimat_farki', 'belirsiz'].includes(x.teslimat));
       kaydedildi(kutu, {
         baslik: 'Kaydedildi',
-        alt: r.durum === 'tamam' ? 'Stoğa eklendi.' : 'Bazı kalemler sonra kontrol edilecek.',
+        alt: r.durum !== 'tamam' ? 'Bazı kalemler sonra kontrol edilecek.'
+          : farkVar ? 'Stoğa sayılan kadar eklendi. Fark patrona iletildi.' : 'Stoğa eklendi.',
         geriAl: geriAlIstegi('belge', r.id), bitti,
       });
     } catch (err) {

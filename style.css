@@ -358,3 +358,46 @@ details.giris-satiri > summary { display: grid; grid-template-columns: 40px 1fr 
 .iskelet.kisa { height: 64px; }
 @keyframes iskelet { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .iskelet { animation: none; } }
+
+/* ---------- Mal kabul: kör sayım ---------- */
+.sayim-ilerleme { display: flex; gap: 6px; justify-content: center; margin-bottom: 4px; }
+.sayim-ilerleme span { width: 26px; height: 6px; border-radius: 3px; background: var(--cizgi); }
+.sayim-ilerleme span.bitti { background: var(--yesil); }
+.sayim-ilerleme span.simdi { background: var(--kahve); }
+.sayim-ikon { font-size: 56px; line-height: 1; }
+.sayim-uyari { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--sari-zemin); color: var(--sari); font-weight: 600; }
+.sayac { display: flex; align-items: center; gap: 10px; width: 100%; }
+.sayac input { flex: 1; min-width: 0; font-size: 44px; font-weight: 700; text-align: center; padding: 10px; min-height: 84px; }
+.sayac-dugme { flex: 0 0 72px; min-height: 84px; font-size: 40px; font-weight: 700; border-radius: 16px;
+  background: var(--kahve-acik); color: var(--metin); }
+.sayim-birim { margin: -6px 0 0; font-size: 20px; color: var(--soluk); }
+.not-alani { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font-size: 15px; color: var(--soluk); }
+.kabul-liste { list-style: none; padding: 0; margin: 0; }
+.kabul-kalem { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--cizgi); font-size: 19px; }
+.kabul-kalem .kalem-ikon { font-size: 30px; }
+.kabul-kalem .kalem-metin { flex: 1; display: flex; flex-direction: column; }
+.kabul-kalem .kalem-metin small { font-size: 14px; color: var(--soluk); }
+.kabul-kalem.farkli .kalem-metin small { color: var(--sari); font-weight: 600; }
+.kabul-kalem .kalem-durum { font-size: 22px; }
+
+/* ---------- Patron: teslimat kontrolü görevi ---------- */
+.gorev-kart { border: 1px solid color-mix(in srgb, var(--sari) 45%, transparent); }
+.gorev-kart h2 { display: flex; align-items: center; gap: 8px; }
+.gorev { padding: 14px 0; border-top: 1px solid var(--cizgi); }
+.gorev:first-of-type { border-top: 0; padding-top: 4px; }
+.gorev-ust { display: flex; gap: 12px; align-items: center; }
+.gorev-ikon { font-size: 34px; }
+.gorev-baslik { display: flex; flex-direction: column; }
+.gorev-baslik small { color: var(--soluk); font-size: 14px; }
+.teslim-cubuk { height: 12px; margin: 12px 0 6px; border-radius: 6px; background: var(--kirmizi-zemin); overflow: hidden; }
+.teslim-cubuk span { display: block; height: 100%; background: var(--yesil); border-radius: 6px 0 0 6px; }
+.teslim-rakam { display: flex; justify-content: space-between; font-size: 15px; color: var(--soluk); }
+.teslim-rakam b { color: var(--metin); }
+.uyari-yazi { margin: 8px 0 0; font-size: 14px; color: var(--sari); font-weight: 600; }
+.barista-notu { margin: 8px 0 0; font-size: 15px; font-style: italic; }
+.fatura-gor { margin-top: 8px; font-size: 15px; }
+.fatura-gor summary { cursor: pointer; color: var(--kahve); font-weight: 600; }
+.cozum-dugmeleri { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cozum-not { display: flex; gap: 8px; margin-top: 8px; }
+.cozum-not input { flex: 1; min-width: 0; }
+.cozum-not[hidden] { display: none; }

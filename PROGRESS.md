@@ -25,6 +25,48 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
+## FAZ 1 — Mal kabul (2026-10-24) · YEREL, CANLIDA DEĞİL, push yok
+
+Zincir: faturada 24 L → barista faturayı görmeden 22 L sayar → (uyuşmazsa bir kez daha sayar; fotoğrafta ikinci
+okuma) → stok 22 L artar, fiyat faturadaki 24 L'den → patronun Özet'inde "Teslimat kontrolü" görevi (faturanın
+fotoğrafı + barista notu) → patron kapatır (iade / sonraki teslimatta geldi / indirim / fark yok / diğer+açıklama)
+→ her adım `islem_gecmisi`nde (değiştirilemez).
+
+- **Karekod** (`karekod.js`, GİB Karekod Standardı V1.1): fotoğraf seçilince önce karekod aranır (en fazla 1,5 sn;
+  Android'de telefonun okuyucusu, her yerde jsQR ayrı iş parçacığında). Fatura mekanda kayıtlıysa (`belge_kayitli_mi`)
+  AI'ya hiç gidilmez. Bulunamazsa AI başlar, karekod arka planda sürer. Kimlik (no/ETTN/tarih/VKN) karekoddan;
+  toplamlar DEĞİŞTİRİLMEZ, karşılaştırılır (genel, KDV, satırlar = mal/hizmet toplamı). Okunamazsa akış eskisi gibi.
+  Ölçüm (tarayıcı, sentetik A4): 5/5 okundu, 0,4–2,9 sn; karekodsuz sayfa 0,2 sn'de null.
+- **İkinci okuma** (`IKINCI_MODEL = gpt-4.1`, yalnız fotoğraf, belge başına 1): toplam/karekod tutmazsa ya da sayılan
+  okunandan farklıysa. Tutan okuma kullanılır; ikisi de tutmazsa toplam karekoddan alınır → satırlar sunucu
+  kontrolünü geçemez, stoğa girmeden kuruluma düşer. ⚠️ Hangi modelin ikinci okumada en iyi olduğu ÖLÇÜLMEDİ.
+- **Kör sayım kararı** (`mal-kabul.js`): tam / okuma hatası (ikinci okuma sayılanla aynı → fatura miktarı düzeltilir,
+  fark YOK) / teslimat farkı / belirsiz (fark açılır, "okuma şüpheli"). XML / metinli PDF'te okuma kesin sayılır.
+  Tartılamayan/sayılamayan kalem: "faturadaki gibi al" → `sayim='sayilmadi'` izi.
+- **SQL 21** (`sql/21_mal_kabul.sql`): belge_satirlari'na gelen_miktar/sayim/teslimat/okunan_miktar/barista_notu;
+  `teslimat_farklari` + `islem_gecmisi` (RLS: yalnız patron okur; yazma yalnız işlevlerle); tetikleyiciler (giriş,
+  iptal, fark → geçmiş; belge iptal → açık fark iptal); `belge_kayitli_mi`, `teslimat_gorevleri`,
+  `teslimat_farki_coz` (yalnız patron); belge_kaydet / belge_satiri_stokla / kurulum_satir_coz yeni hâlleri.
+  Giriş kalemi tutarı = alınan malın değeri (tutar × gelen / faturadaki). Geri alma: `scripts/geri-al-21.sql`
+  (uygula → geri al → yeniden uygula yerelde denendi).
+- **Testler:** `npm test` 69/69 (yeni: test/js/mal-kabul.test.mjs), `npm run test:sql` tüm zincir + test/mal_kabul_test.sql
+  (24→22, fiyat şişmez, yetki, başka mekan, mükerrer, sayılamayan, hiç gelmeyen, okuma hatası, kurulum yolu, geri alma,
+  geçmiş değiştirilemez). Eski A/B2/C/D/G setleri 0 TL yeniden puanlandı: değişmedi.
+- **Demoda uçtan uca denendi** (`node scripts/demo/sunucu.mjs`; demo artık dosya yüklemeyi taklit eder +
+  `scripts/demo/demo-mal-kabul.sql` örnek görev): e-fatura XML → kör sayım 22 → yeniden sayım + not → kayıt → patron
+  Özet'inde görev → "İade alındı" ve "Diğer + açıklama" ile kapatma → geçmişte 8 kayıt.
+- **Denenmedi:** fotoğraf + AI + ikinci okuma akışı (demoda AI yok) · gerçek telefon (iOS/Android) · gerçek imzalı
+  e-fatura kâğıdı ve karekodu · canlı veritabanı.
+- Kapsam dışı bırakılan (kullanıcı kararı): indirim satırı ve tartılı ürün okuma düzeltmeleri (market fişi sorunları).
+
+### Canlıya alma (kullanıcı onayıyla)
+1. Kullanıcının imzalı e-fatura PDF'i/fotoğrafıyla telefonda deneme (karekod + kör sayım) — OpenAI ≈ 0,003–0,013 $.
+2. Yedek (`node scripts/yedek-al.mjs <klasör>`) → Supabase'de `sql/21_mal_kabul.sql` → SONRA ön yüz push.
+   (Ön yüz önce giderse: eski sunucu sayılan miktarı yok sayardı → sessiz yanlış. Bu yüzden Mal geldi açılırken
+   \`belge_kayitli_mi\` yoksa "Uygulama güncelleniyor" deyip sayımı BAŞLATMAZ; Özet açılır, görev kartı görünmez.
+   Eski sunucu + yeni ön yüz ile denendi.)
+3. Geri dönüş: `scripts/geri-al-21.sql` + `git revert`.
+
 ## Fatura okuma (AI) — durum 2026-10-20
 
 - **Model:** `gpt-4.1-mini` (uygulamanın varsayılanı). `gpt-4.1-nano` yalnızca testlerde karşılaştırma için seçilebilir.

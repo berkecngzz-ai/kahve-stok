@@ -27,11 +27,14 @@ const SEMA = [
   'sql/09_olagandisi_miktar.sql', 'sql/10_sifir_fiyat.sql', 'sql/11_acik_yetkiler.sql', 'sql/12_stok_duzeltmeleri.sql',
 ];
 for (const d of ['sql/13_rapor_uyarilari.sql', 'sql/14_fatura_patron_yetkisi.sql', 'sql/15_satis_excel_dosya.sql',
-  'sql/20_patron_ekranlari.sql']) {
+  'sql/20_patron_ekranlari.sql', 'sql/21_mal_kabul.sql']) {
   if (existsSync(join(KOK, d))) SEMA.push(d);
 }
 
-const db = await veritabani([...SEMA, VERI], { sessiz: true });
+// Mal kabul demosu (eksik teslimat görevi) yalnız 21 kuruluysa
+const EK = SEMA.includes('sql/21_mal_kabul.sql') && existsSync(join(KOK, 'scripts/demo/demo-mal-kabul.sql'))
+  ? ['scripts/demo/demo-mal-kabul.sql'] : [];
+const db = await veritabani([...SEMA, VERI, ...EK], { sessiz: true });
 // Demo hesapları: demo-veri.sql "-- hesap: e-posta şifre" satırlarıyla tanımlar (yalnız bu yerel demo için).
 const HESAPLAR = new Map([...readFileSync(join(KOK, VERI), 'utf8').matchAll(/^-- hesap: (\S+) (\S+)/gm)]
   .map((m) => [m[1], m[2]]));
@@ -227,7 +230,11 @@ createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   let govdeMetni = '';
   for await (const p of req) govdeMetni += p;
-  const govde = govdeMetni ? JSON.parse(govdeMetni) : null;
+  // Dosya yüklemesinin gövdesi JSON değildir (multipart / ikili): yalnız JSON çözülür.
+  let govde = null;
+  if (govdeMetni && /json/.test(req.headers['content-type'] || 'application/json')) {
+    try { govde = JSON.parse(govdeMetni); } catch { govde = null; }
+  }
   const kim = jetonOku(req.headers.authorization);
   try {
     if (url.pathname === '/auth/v1/token') {
@@ -246,6 +253,13 @@ createServer(async (req, res) => {
       return json(res, 200, { id: kim.sub, email: kim.email, aud: 'authenticated', role: 'authenticated' });
     }
     if (url.pathname.startsWith('/auth/v1/')) return json(res, 204);
+    // Dosya yükleme taklidi: içerik saklanmaz, yalnız storage.objects'e kayıt düşülür (RLS: mekanın klasörü).
+    const yukle = req.method === 'POST' && /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(url.pathname);
+    if (yukle) {
+      const [, kova, yol] = yukle.map(decodeURIComponent);
+      await sirayla(() => kullaniciAdina(kim, () => db.query('insert into storage.objects (bucket_id, name) values ($1, $2)', [kova, yol])));
+      return json(res, 200, { Key: `${kova}/${yol}`, Id: yol });
+    }
     if (url.pathname.startsWith('/storage/v1/')) return json(res, 200, []);
     if (url.pathname.startsWith('/functions/v1/')) return json(res, 503, { message: 'Demoda AI okuma yok.' });
     const m = /^\/rest\/v1\/(rpc\/)?([a-z_]+)$/.exec(url.pathname);

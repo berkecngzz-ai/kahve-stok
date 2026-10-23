@@ -488,6 +488,18 @@ export async function pdfOku(blob) {
   return { taranmis: true, sayfalar };
 }
 
+// PDF'in ilk sayfasını tuvale çizer (karekod araması için; e-fatura karekodu ilk sayfadadır).
+export async function pdfIlkSayfa(blob, olcek = 2.5) {
+  const lib = await pdfjsYukle();
+  const pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
+  const sayfa = await pdf.getPage(1);
+  const vp = sayfa.getViewport({ scale: olcek });
+  const c = document.createElement('canvas');
+  c.width = vp.width; c.height = vp.height;
+  await sayfa.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+  return c;
+}
+
 // Fişte "6 X 41,00" çarpanı ALTINDAKİ ürüne aittir. AI bunu yanlış satıra yazarsa (çarpan tek başına bir satır,
 // ürün adından sonra gelmiş ya da adet × fiyat satır tutarını vermiyor) satırların miktarları kaymış olabilir.
 const CARPMA = /(\d+(?:[.,]\d+)?)\s*[xX×*]\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/;
