@@ -133,6 +133,8 @@ test('AI takip dışı dese de malzemenin baş ismini taşıyan satır sessizce 
   // türev ürün (bardak kapağı) ya da başka ürün (kargo) AI'nın takip dışı kararıyla kalır
   assert.equal(aiIleSiniflandir({ metin: 'BARDAK KAPAĞI 12 OZ', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
   assert.equal(aiIleSiniflandir({ metin: 'KARGO BEDELİ', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+  // -lı sıfatı ürünün çeşididir, farklı ürün değil: "ÇİFT CİDARLI KARTON BARDAK" takip dışına düşmez (Set D, 2026-10-23)
+  assert.equal(aiIleSiniflandir({ metin: "ÇİFT CİDARLI KARTON BARDAK 8 OZ 25'Lİ", miktar: 20, birim: 'diger', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'belirsiz');
   // kısaltma (SRP) AI'nın takip dışı kararını bozmaz; tam baş isim gerekir
   assert.equal(aiIleSiniflandir({ metin: 'NANE SRP 70CL', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
 });

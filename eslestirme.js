@@ -130,7 +130,9 @@ export function basIsimTamVarMi(malzemeAdi, satirMetni) {
 const IYELIK = /^(s?[iu])$/;
 // markaKelimeleri: tedarikçinin adındaki kelimeler. Satırda da geçiyorsa marka/üretici adıdır ("ANADOLU SÜT DAĞITIM"
 // faturasında "ANADOLU TAM YAĞLI SÜT"): -lu/-li ile bitse bile sıfat (türev) sayılmaz.
-export function turevUrunMu(malzemeAdi, satirMetni, markaKelimeleri = []) {
+// sifat: false → yalnız tamlama/iyelik (farklı ürün: kapağı, kreması, X'in sütü) aranır; -lı/-li sıfatı (çeşit:
+// cidarlı bardak, aromalı şurup) türev sayılmaz. AI'nın "takip dışı" kararını bozarken bu dar anlam kullanılır.
+export function turevUrunMu(malzemeAdi, satirMetni, markaKelimeleri = [], { sifat = true } = {}) {
   const mk = kelimeler(malzemeAdi);
   const marka = new Set(markaKelimeleri);
   const sk = kelimeler(satirMetni).filter((k) => !marka.has(k) || mk.some((m) => kelimeUyar(m, k)));
@@ -152,7 +154,7 @@ export function turevUrunMu(malzemeAdi, satirMetni, markaKelimeleri = []) {
   const adTamlama = mk.length >= 2 && /[^aeiou](s?[iu])$|[aeiou]s[iu]$/.test(mk[mk.length - 1]);
   for (const [j, s] of sk.entries()) {
     if (eslesen.has(j) || mk.some((m) => kelimeUyar(m, s))) continue;
-    if (s.length >= 5 && /l[iu]$/.test(s)) return true;                       // -lı/-li/-lu/-lü sıfatı
+    if (sifat && s.length >= 5 && /l[iu]$/.test(s)) return true;              // -lı/-li/-lu/-lü sıfatı
     // tamlama: malzeme kelimesinin HEMEN ardından iyelik ekli isim ("süt kreması", "bardak kapağı", "süt tozu")
     if (!adTamlama && j === son + 1 && s.length >= 4 && /[^aeiou](s?[iu])$|[aeiou]s[iu]$/.test(s) && /[aeiou]/.test(s.slice(0, -1))) return true;
   }
@@ -199,10 +201,10 @@ export function aiIleSiniflandir(satir, ctx) {
   const marka = kelimeler(ctx.tedarikciAdi);
   if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) {
     // Satır bir malzemenin adını ya da türünü söyleyen baş ismini ("ESPRESSO HARMANI ÇEKİRDEK" → çekirdek) taşıyor ve
-    // türev ürün değilse AI'nın "takip dışı" kararına güvenilmez: yanlış "takip dışı" malzemeyi sessizce stoktan düşürür,
+    // başka bir ürün (tamlama: "bardak kapağı", "süt kreması") değilse AI'nın "takip dışı" kararına güvenilmez: yanlış "takip dışı" malzemeyi sessizce stoktan düşürür,
     // raporda sahte açık çıkar. Kurulumda karar verilir.
     const benzeyen = [...malzemeBul.values()].find((x) => (benzerlik(x.ad, satir.metin) === 1 || basIsimTamVarMi(x.ad, satir.metin))
-      && !turevUrunMu(x.ad, satir.metin, marka));
+      && !turevUrunMu(x.ad, satir.metin, marka, { sifat: false }));
     if (benzeyen) return { sinif: 'belirsiz', aday_malzeme_id: benzeyen.id };
     return { sinif: 'takip_disi', kaynak: 'ai' };
   }
