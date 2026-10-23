@@ -134,8 +134,12 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 - Kullanıcı kararı (2026-10-21): `fatura_kaydet` yetki açığı şimdilik böyle kalıyor. 23 Ekim: kullanıcı kapatılmasını istedi → sql/14 (canlıya uygulanmadı).
 
 ## Sıradaki adım
-Yerel işler bitti (23 Ekim, aşağıda). Canlıya almak için "Canlıya alma sırası"nı sırayla uygula. Hiçbir şey push edilmedi,
-canlı veritabanına SQL uygulanmadı, Edge Function yüklenmedi.
+CANLIDA (2026-10-23 akşam): sql/13, 14, 15, 20 canlıya uygulandı ve doğrulandı; ön yüz push edildi (2adf651).
+Yedek: `Desktopkahve-stok-yedek6-10-23_canliya-alma-oncesi` (`node scripts/yedek-al.mjs <klasör>` ile; depo dosya türleri `_kovalar.json`).
+Canlı duman testi (patron oturumu, kayıt yok): Özet, Stok, Rapor, Girişler, Ayarlar (Malzemeler/Ürünler/Mekan) açılıyor,
+konsolda hata yok, yatay taşma yok. Barista girişi denenmedi (şifre gerekir); barista ana ekran kodu önceki canlı sürümle aynı.
+Sonraki: ikinci haftalık sayımdan sonra Özet/Rapor açığını kontrol et; barista hesabıyla Mal geldi/Fire/Sayım ekranlarına bak.
+Bilinen veri notu: canlıda "Sade maden suyu 200 ml" 100 litre, "Vanilya şurubu 700 ml" 50 litre sayılmış (21 Ekim test sayımı).
 
 ## 6 saatlik bağımsız çalışma — 2026-10-23 (yerel, push yok)
 
