@@ -240,3 +240,10 @@ programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
 - Bulgu 2: indirim satırları ("25TLFINISH110TL −149,00") ayrı ürün ve ARTI tutarla okundu ("2STL…"); toplam kontrolü
   tutmadı (yakalandı). Takip dışı oldukları için stok zararı yok; malzemeye denk gelseydi yanlış giriş riski.
 - Ozmo (adında 23G, malzeme adet) kuruluma düştü — beklenen güvenli davranış.
+- G02 (market fişi, üstü kesik; 0,0024 $, 5,6 sn): 10 satırdan 4 doğru, 0 yanlış, 5 kurulum (+2 latte tek satırda
+  birleşti, puanlamada "okunamadı" görünür ama doğru). Toplam, KDV, tarih doğru; mağaza adı görünmüyordu → AI boş
+  bıraktı (uydurmadı). Tartılı çarpanlar bu kez doğru satıra gitti ama ağırlık rakamları kaydı (0,656→0,655;
+  0,378→0,373) — miktar × birim fiyat ≠ tutar ile yakalanabilir (şu an kontrol yok). AI "Piliç bonfile"yi
+  "Piliç baget"e bağladı (0,95 güven) → baş isim koruması kuruluma attı. Latte süt/kahveye bağlanmadı.
+  Asıl zayıflık: AI'nın 0,7–0,75 güvenli "takip dışı" kararları (Cemilusta, ekmek, soğan, latte) 0,8 eşiğinin
+  altında kalıp kuruluma düşüyor → patrona gereksiz iş.
