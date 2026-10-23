@@ -91,3 +91,27 @@ export function trendSvg(donemler, { genislik = 320, yukseklik = 120 } = {}) {
   return `<svg class="grafik" viewBox="0 0 ${genislik} ${yukseklik}" role="img" aria-label="Haftalık açık (TL): ${ozet}">
     <line class="grafik-taban" x1="0" x2="${genislik}" y1="${yukseklik - alt}" y2="${yukseklik - alt}"></line>${cubuklar}</svg>`;
 }
+
+// Haftalık raporu Excel'in Türkçe ayarında doğrudan açılan CSV'ye çevirir (noktalı virgül, ondalık virgül, BOM).
+// Miktarlar günlük birimle (kg / litre / adet), TL bugünkü fiyatla.
+export function raporCsv(r, mekanAdi = '') {
+  const BUYUK_AD = { g: 'kg', ml: 'litre', adet: 'adet' };
+  const sayi = (n, b = 3) => (n == null || !Number.isFinite(Number(n)) ? ''
+    : new Intl.NumberFormat('tr-TR', { maximumFractionDigits: b, useGrouping: false }).format(Number(n)));
+  const tarihTr = (t) => (t ? String(t).split('-').reverse().join('.') : '');
+  const hucre = (v) => { const t = String(v ?? ''); return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const satirlar = [
+    [`${mekanAdi} stok farkı raporu`, `${tarihTr(r.baslangic)} – ${tarihTr(r.bitis)}`],
+    ['Malzeme', 'Birim', 'Önceki sayım', 'Gelen', 'Kullanılan (satış)', 'Fire', 'Olması gereken', 'Sayılan',
+      'Fark (miktar)', 'Fark (TL)', 'Durum'],
+  ];
+  const DURUM = { buyuk: 'Yüksek açık', normal: 'Normal', fazla: 'Fazla çıktı' };
+  for (const x of r.satirlar.filter((y) => y.durum === 'tamam')) {
+    const b = BOLEN[x.birim];
+    satirlar.push([x.ad, BUYUK_AD[x.birim], sayi(x.baslangic / b), sayi(x.gelen / b), sayi(x.satis / b), sayi(x.fire / b),
+      sayi(x.beklenen / b), sayi(x.sayilan / b), sayi(x.fark / b), sayi(x.fark_tl, 2), DURUM[acikDurumu(x)]]);
+  }
+  satirlar.push([], ['Toplam açık (TL)', sayi(r.toplam_acik_tl, 2)], ['Toplam fazla (TL)', sayi(r.toplam_fazla_tl, 2)]);
+  for (const u of r.uyarilar ?? []) satirlar.push(['Uyarı', u]);
+  return `﻿${satirlar.map((s) => s.map(hucre).join(';')).join('\r\n')}\r\n`;
+}

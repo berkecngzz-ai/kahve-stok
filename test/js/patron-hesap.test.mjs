@@ -69,3 +69,15 @@ test('trend grafiği: eski hafta solda, kırmızı hafta işaretli, ekran okuyuc
   assert.ok(svg.indexOf('16 Eki') < svg.indexOf('23 Eki'));
   assert.equal(trendSvg([]), '');
 });
+
+test('rapor CSV: Excel Türkçe biçimi, günlük birim, tırnak kaçışı', async () => {
+  const { raporCsv } = await import('../../patron-hesap.js');
+  const csv = raporCsv({ baslangic: '2026-10-09', bitis: '2026-10-16', toplam_acik_tl: -763.84, toplam_fazla_tl: 0, uyarilar: ['a; b'],
+    satirlar: [{ ad: 'Süt; tam', birim: 'ml', durum: 'tamam', baslangic: 48000, gelen: 108000, satis: 104800, fire: 800, beklenen: 50400,
+      sayilan: 33040, fark: -17360, fark_tl: -763.84 }, { ad: 'Yeni', birim: 'g', durum: 'ilk_sayim' }] });
+  assert.ok(csv.startsWith('﻿'));
+  const satir = csv.split('\r\n');
+  assert.equal(satir[2], '"Süt; tam";litre;48;108;104,8;0,8;50,4;33,04;-17,36;-763,84;Yüksek açık');
+  assert.equal(satir.length, 8);                     // başlık 2 + 1 malzeme + boş + 2 toplam + uyarı + son satır sonu
+  assert.ok(csv.includes('Uyarı;"a; b"'));
+});

@@ -98,7 +98,8 @@ function suzgecCevir(params, tablo, degerler) {
     } else {
       const ops = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' };
       if (!ops[op]) throw Object.assign(new Error(`desteklenmeyen süzgeç: ${op}`), { kod: 400 });
-      ifade = `${kol} ${ops[op]} ${yer(d)}`;   // parametrenin tipi kolondan çıkar (tarih, uuid, sayı)
+      // eşitlik metin olarak (true, uuid, metin); büyük/küçük kolon tipinde (tarih, sayı)
+      ifade = op === 'eq' || op === 'neq' ? `${kol}::text ${ops[op]} ${yer(d)}::text` : `${kol} ${ops[op]} ${yer(d)}`;
     }
     kosul.push(degil ? `not (${ifade})` : ifade);
   }
@@ -258,7 +259,10 @@ createServer(async (req, res) => {
         return json(res, 200, sonuc[0]);
       }
       if (sonuc === null && !m[1]) return json(res, 201);
-      return json(res, 200, sonuc, { 'content-range': `0-${Array.isArray(sonuc) ? sonuc.length - 1 : 0}/*` });
+      const n = Array.isArray(sonuc) ? sonuc.length : 1;
+      const aralik = { 'content-range': `${n ? `0-${n - 1}` : '*'}/${/count=exact/.test(req.headers.prefer || '') ? n : '*'}` };
+      if (req.method === 'HEAD') { res.writeHead(200, aralik); return res.end(); }
+      return json(res, 200, sonuc, aralik);
     }
     return dosyaSun(req.url, res);
   } catch (e) {

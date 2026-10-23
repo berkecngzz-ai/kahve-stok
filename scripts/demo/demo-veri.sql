@@ -4,6 +4,7 @@
 -- Demo hesapları (yalnız yerel demo sunucusunda geçerli, gerçek hesap değildir):
 -- hesap: patron@demo.kafe demo1234
 -- hesap: barista@demo.kafe demo1234
+-- hesap: yeni@demo.kafe demo1234     (yeni açılmış, henüz sayım yapılmamış mekan: ilk gün ekranları)
 --
 -- Senaryo
 --   * 28 gün önce ilk sayım; sonra her 7 günde bir haftalık sayım (4 hafta → 4 açık raporu).
@@ -197,3 +198,12 @@ insert into public.belgeler (mekan_id, tur, kaynak, istek_id, tedarikci, belge_t
 select id, 'fatura', 'ocr', gen_random_uuid(), 'Metro Toptan', public.bugun() - 1, 1840.00, 'bekliyor',
        'd0000000-0000-4000-8000-000000000002', 'Mert'
 from public.mekanlar where ad = 'Demo Kafe';
+
+-- Yeni açılmış mekan: malzemeler girilmiş, henüz sayım yok.
+insert into auth.users values ('d0000000-0000-4000-8000-000000000003', 'yeni@demo.kafe');
+select set_config('request.jwt.claim.sub', 'd0000000-0000-4000-8000-000000000003', false),
+       set_config('request.jwt.claim.email', 'yeni@demo.kafe', false);
+set role authenticated;
+select public.mekan_olustur('Yeni Kafe', 'Can Demir');
+insert into public.malzemeler (ad, birim, fiyat) values ('Espresso çekirdeği', 'g', 1100), ('Süt', 'ml', 44);
+reset role;

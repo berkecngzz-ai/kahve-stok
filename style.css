@@ -345,6 +345,14 @@ details.giris-satiri > summary { display: grid; grid-template-columns: 40px 1fr 
 .giris-orta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .giris-tutar { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .iptal .giris-tutar { text-decoration: line-through; opacity: .6; }
+.adim { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--cizgi); }
+.adim:first-of-type { border-top: 0; }
+.adim-isaret { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--cizgi); display: flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: 15px; }
+.adim.bitti .adim-isaret { background: var(--yesil); border-color: var(--yesil); color: #fff; }
+.adim.bitti .adim-metin b { color: var(--soluk); }
+.adim-metin small { display: block; color: var(--soluk); font-size: 13px; }
+.gizli { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .iskelet { height: 120px; border-radius: 14px; margin-bottom: 14px;
   background: linear-gradient(90deg, var(--kahve-acik), var(--kart), var(--kahve-acik)); background-size: 200% 100%; animation: iskelet 1.2s linear infinite; }
 .iskelet.kisa { height: 64px; }

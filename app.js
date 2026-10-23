@@ -4,7 +4,7 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
 import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
 import { cevapAnahtariniOku, anahtarBelgesi, karsilastir } from './okuma-testi.js';
-import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg,
+import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
   ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
 
 const app = document.getElementById('app');
@@ -146,6 +146,8 @@ function mekanSecEkrani(user) {
 let aktifSekme = 'ozet';
 // Ayarlar içindeki alt sekme (malzeme, urun, mekan, kurulum).
 let ayarSekme = 'malzeme';
+// Raporlarda (indirilen dosyada) görünen mekan adı.
+let mekanAdi = '';
 // Giriş yapan kişinin mekanı.
 let mekan = { id: null };
 // Giriş yapan kişi kurulum (servis) hesabı mı?
@@ -155,6 +157,7 @@ async function anaEkran(user, uye) {
   const patron = uye.rol === 'patron';
   mekan = { id: uye.mekan_id };
   if (!patron) return baristaEkrani(user, uye);
+  mekanAdi = uye.mekanlar.ad;
   if (!PATRON_SEKMELER.some(([k]) => k === aktifSekme)) aktifSekme = 'ozet';
   if (ayarSekme === 'kurulum' && !kurulumcu) ayarSekme = 'malzeme';
   app.innerHTML = `
@@ -247,10 +250,28 @@ async function ozetSekmesi(icerik) {
         ${sonSayimGun > 8 ? `<div class="alt-yazi">Son sayım ${sonSayimGun} gün önce. Bu haftanın sayımı bekleniyor.</div>` : ''}
       </section>`;
   } else {
+    // Yeni mekan: açık ikinci sayımdan sonra çıkar; o zamana kadar kurulum adımları gösterilir.
+    const [mr, ur, uyr] = await Promise.all([
+      sb.from('malzemeler').select('id', { count: 'exact', head: true }).eq('aktif', true),
+      sb.from('tarif_kalemleri').select('urun_id', { count: 'exact', head: true }),
+      sb.from('uyeler').select('user_id', { count: 'exact', head: true }).eq('rol', 'barista')]);
+    const adimlar = [
+      [mr.count > 0, 'Malzemeleri gir', 'Kahve, süt, bardak… ve kg / litre / adet fiyatı', 'malzeme'],
+      [ur.count > 0, 'Ürün tariflerini gir', 'Latte = 18 g kahve + 220 ml süt + 1 bardak', 'urun'],
+      [uyr.count > 0, 'Baristayı davet et', 'Mekan ayarlarındaki davet kodunu ver', 'mekan'],
+      [sayilmis, 'İlk haftalık sayım', 'Barista "Haftalık sayım" ile yapar; ikinci sayımda ilk açık raporu çıkar', null],
+    ];
     kahraman = `<section class="kart kahraman">
       <div class="etiket">Haftalık açık</div>
       <p class="buyuk-yazi">${sayilmis ? 'İlk sayım yapıldı. Açık, bir sonraki haftalık sayımdan sonra burada görünür.'
-        : 'Henüz sayım yok. Barista ilk haftalık sayımı yapınca takip başlar.'}</p></section>`;
+        : 'Henüz sayım yok. Aşağıdaki adımlar bitince takip başlar.'}</p></section>
+      <section class="kart"><h2>İlk adımlar</h2>
+        ${adimlar.map(([tamam, ad, alt, git]) => `<div class="adim ${tamam ? 'bitti' : ''}">
+          <span class="adim-isaret" aria-hidden="true">${tamam ? '✓' : ''}</span>
+          <span class="adim-metin"><b>${ad}</b><small>${alt}</small></span>
+          ${!tamam && git ? `<button class="ikincil kucuk" data-ayar-git="${git}">Aç</button>` : ''}
+          <span class="gizli">${tamam ? 'tamamlandı' : 'bekliyor'}</span></div>`).join('')}
+      </section>`;
   }
 
   icerik.innerHTML = `
@@ -275,6 +296,12 @@ async function ozetSekmesi(icerik) {
         <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
     </section>` : ''}`;
+  icerik.querySelectorAll('[data-ayar-git]').forEach((b) => b.addEventListener('click', () => {
+    aktifSekme = 'ayar';
+    ayarSekme = b.dataset.ayarGit;
+    window.scrollTo(0, 0);
+    goster();
+  }));
   icerik.querySelectorAll('[data-git]').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.sayim) secilenSayim = b.dataset.sayim;
     aktifSekme = b.dataset.git;
@@ -390,7 +417,8 @@ async function stokFarkiSekmesi(icerik) {
       <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: kayıp, kullanılanın %${ACIK_ORAN_ESIGI * 100}'ünden fazla ve
         ${ACIK_TL_ESIGI} TL'den büyük. <span class="nokta fazla"></span>Sarı: sayılan fazla çıktı (satış ya da fire eksik girilmiş,
         fatura iki kez girilmiş ya da sayım yanlış olabilir). Ayrıntı için malzemeye dokun.</p>
-      ${tamam.map(satir).join('')}</section>` : ''}
+      ${tamam.map(satir).join('')}
+      <button class="ikincil tam" id="indir">Raporu indir (Excel)</button></section>` : ''}
     ${ilk.length ? `<section class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
       <p class="bilgi">Daha önce sayılmadıkları için açık bir sonraki sayımda çıkar.</p>
       <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></section>` : ''}
@@ -398,6 +426,13 @@ async function stokFarkiSekmesi(icerik) {
       <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></section>` : ''}
     <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım gün
       sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayıma dahildir. TL, malzemenin bugünkü fiyatıyla.</p>`;
+  // Muhasebeci / ortak için: haftanın tablosu Excel'de açılan dosya olarak (cihazda üretilir, hiçbir yere gönderilmez).
+  icerik.querySelector('#indir')?.addEventListener('click', () => {
+    const blob = new Blob([raporCsv(r, mekanAdi)], { type: 'text/csv;charset=utf-8' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `stok-raporu-${r.bitis}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  });
   icerik.querySelector('#sayim-sec').addEventListener('change', (e) => {
     secilenSayim = e.target.value;
     stokFarkiSekmesi(icerik).catch(hataGoster);
