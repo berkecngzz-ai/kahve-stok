@@ -1943,7 +1943,7 @@ async function malGeldi(kutu, user, bitti) {
 
   const tedarikciAnahtari = () => sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '';
   const siniflandirHepsi = () => {
-    const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari() };
+    const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari(), tedarikciAdi: sonuc.tedarikci };
     const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
     sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); s.cevap = null; });
   };
@@ -1963,10 +1963,17 @@ async function malGeldi(kutu, user, bitti) {
         <h2 class="soru">Kaç ${b} <u>${esc(m.ad)}</u> geldi?</h2>
         <p class="buyuk-yazi">1 ${b} = ${buyukMiktar(s.karar.carpan, m.birim)}</p>
         <div class="rakam-kutu"><input id="sayim" inputmode="decimal" autocomplete="off" aria-label="Kaç ${b}"><span>${b}</span></div>
+        <p class="buyuk-yazi" id="sayim-toplam" aria-live="polite"></p>
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev evet" id="sayim-tamam">Tamam ✓</button>
         <button class="dev ikincil" id="sonra">Şimdi sayamıyorum — sonra</button>
         <button class="metin-dugme" id="hayir">Bu ürün ${esc(m.ad)} değil</button></div>`;
+    // Yazarken toplamı göster: paket yerine adet yazılırsa (1000 paket) barista hemen görür.
+    kutu.querySelector('#sayim').addEventListener('input', (e) => {
+      const n = sayiOku(e.target.value);
+      kutu.querySelector('#sayim-toplam').textContent = Number.isFinite(n) && n > 0
+        ? `= ${buyukMiktar(n * s.karar.carpan, m.birim)} ${m.ad}` : '';
+    });
     kutu.querySelector('#sayim-tamam').onclick = () => {
       const n = sayiOku(kutu.querySelector('#sayim').value);
       if (!Number.isFinite(n) || n <= 0) return sayimEkrani(s, m, `Kaç ${b} geldiğini yaz.`);
@@ -1989,7 +1996,7 @@ async function malGeldi(kutu, user, bitti) {
     const s = sonuc.satirlar.find((x) => x.karar.sinif === 'soru' && x.cevap == null);
     if (!s) return ozetEkrani();
     const m = malzemeBul.get(s.karar.malzeme_id);
-    if (['ai', 'ocr'].includes(sonuc.kaynak) && ilkKezMi(m)) return sayimEkrani(s, m);
+    if (s.karar.say || (['ai', 'ocr'].includes(sonuc.kaynak) && ilkKezMi(m))) return sayimEkrani(s, m);
     const stok = Number(s.miktar) * s.karar.carpan;
     kutu.innerHTML = `<div class="sade-ekran ortada">
         <p class="bilgi">Faturada: <b>${esc(s.metin)}</b></p>
@@ -2343,7 +2350,7 @@ async function okumaTestiEkrani(kutu, geri) {
         const t = performance.now();
         try {
           const { sonuc, olcum } = await is();
-          const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '' };
+          const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '', tedarikciAdi: sonuc.tedarikci };
           const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
           sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); });
           ekle({ dosya: dosya.name, yontem, sure_ms: Math.max(ms(t, performance.now()), olcum.okuma_ms ?? 0), olcum, maliyet: sonuc.maliyet_usd ?? null,

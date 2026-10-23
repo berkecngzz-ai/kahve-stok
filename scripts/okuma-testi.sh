@@ -26,13 +26,18 @@ bekle() { node -e "setTimeout(() => {}, $1)"; }
 mapfile -t FOTOLAR < <(cd "$KLASOR" && ls -1 *.jpg *.jpeg *.png *.JPG *.JPEG *.PNG 2>/dev/null | sort -u || true)
 [ "${#FOTOLAR[@]}" -gt 0 ] || { echo "Klasörde fotoğraf (jpg/jpeg/png) yok: $KLASOR"; exit 1; }
 
+# Ekrana yazan asıl çıkış (3/4) saklanır: bir komut yönlendirilmiş çıktıdayken hata verirse temizlik mesajları
+# o dosyaya gidip kayboluyordu (test yolunun kapanıp kapanmadığı görünmüyordu).
+exec 3>&1 4>&2
 temizle() {
+  exec 1>&3 2>&4
   echo "→ Test görüntüleri siliniyor ve test yolu kapatılıyor…"
   for f in "${FOTOLAR[@]}"; do
     (cd "$KLASOR" && npx --prefix "$KOK" supabase storage rm "ss:///fatura-belgeleri/_test/$ETIKET/$f" \
       --linked --project-ref "$REF" --experimental --yes --workdir "$KOK") >/dev/null 2>&1 || true
   done
-  sorgu "select public.okuma_testi_ac(false)" >/dev/null 2>&1 || echo "UYARI: test yolu kapatılamadı; elle: select public.okuma_testi_ac(false);"
+  if sorgu "select public.okuma_testi_ac(false)" 2>/dev/null | grep -q "KAPALI"; then echo "✓ Test yolu KAPALI."
+  else echo "UYARI: test yolu kapatılamadı; elle: select public.okuma_testi_ac(false);"; fi
   rm -rf "$GECICI"
 }
 trap temizle EXIT
@@ -58,8 +63,9 @@ for i in $(seq 1 60); do
 done
 [ "$bekleyen" = "0" ] || echo "UYARI: bazı okumalar 5 dakikada bitmedi; rapor eksik olabilir."
 
-sorgu "select dosya_yolu, model, malzemeler, sonuc, durum, hata, giris_token, cikis_token, maliyet_usd, ai_ms, toplam_ms, boyut_kb
-       from public.okuma_testleri where etiket = '$ETIKET' and durum = 'tamam' order by dosya_yolu, model" > "$GECICI/sonuc.json" 2>/dev/null
+# Not: sorgu TEK SATIR olmalı — Windows'ta npx komut satırındaki satır sonunu keser, sorgu bozulur.
+sorgu "select dosya_yolu, model, malzemeler, sonuc, durum, hata, giris_token, cikis_token, maliyet_usd, ai_ms, toplam_ms, boyut_kb from public.okuma_testleri where etiket = '$ETIKET' and durum = 'tamam' order by dosya_yolu, model" > "$GECICI/sonuc.json"
+cp "$GECICI/sonuc.json" "$KLASOR/sonuc-$ETIKET.json"   # ham sonuç klasörde kalır (yeniden puanlamak için)
 sorgu "select dosya_yolu, model, hata from public.okuma_testleri where etiket = '$ETIKET' and durum <> 'tamam'" 2>/dev/null \
   | grep -o '"dosya_yolu": *"[^"]*"\|"model": *"[^"]*"\|"hata": *"[^"]*"' | paste - - - || true
 

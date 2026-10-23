@@ -36,8 +36,11 @@ test('AI ile eşleştirme', () => {
     { sinif: 'soru', malzeme_id: 'sut', carpan: 1000, aday_malzeme_id: 'sut', kaynak: 'ai' });
   // kural yok (paket), AI paket içini hesaplamış (50'li) → soru, çarpan 50
   assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 200, 0.85) }, ctx).carpan, 50);
-  // AI'nın miktarı kuralla çelişiyor (1L × 12 = 12000, AI 1200 diyor) → kuyruk
-  assert.equal(aiIleSiniflandir({ metin: 'SUT 1LT', miktar: 12, birim: 'adet', ai: e('malzeme', 'sut', 1200, 0.9) }, ctx).sinif, 'belirsiz');
+  // AI'nın miktarı kuralla çelişiyor (1L × 12 = 12000, AI 1200 diyor) → hangisi doğru belli değil: barista sayar
+  assert.deepEqual(aiIleSiniflandir({ metin: 'SUT 1LT', miktar: 12, birim: 'adet', ai: e('malzeme', 'sut', 1200, 0.9) }, ctx),
+    { sinif: 'soru', malzeme_id: 'sut', carpan: 1000, aday_malzeme_id: 'sut', kaynak: 'ai', say: true });
+  // aynı çelişki ama AI emin değil → kuyruk
+  assert.equal(aiIleSiniflandir({ metin: 'SUT 1LT', miktar: 12, birim: 'adet', ai: e('emin_degil', 'sut', 1200, 0.9) }, ctx).sinif, 'belirsiz');
   // AI listede olmayan id verirse → kuyruk
   assert.equal(aiIleSiniflandir({ metin: 'X', miktar: 1, birim: 'adet', ai: e('malzeme', 'yok', 1, 0.99) }, ctx).sinif, 'belirsiz');
   // defter her zaman önce: AI ne derse desin
@@ -67,9 +70,18 @@ test('gerçek AI testinden (2026-10-20): fiş öneki ve paket içi', () => {
   assert.equal(aiIleSiniflandir({ metin: 'Espresso Blend Çekirdek Kahve 1KG', miktar: 3, birim: 'adet', ai: e('emin_degil', 'kc', 3000, 0.8) }, ctx).sinif, 'soru');
   // "emin değilim" ve kuralla doğrulanamıyor → kuyruk
   assert.equal(aiIleSiniflandir({ metin: 'KAHVE', miktar: 3, birim: 'adet', ai: e('emin_degil', 'kc', 3000, 0.8) }, ctx).sinif, 'belirsiz');
-  // paket: ürün adındaki 50'Lİ ile AI'nın 200 adedi uyuşuyor → soru; uyuşmuyorsa kuyruk
+  // paket: ürün adındaki 50'Lİ ile AI'nın 200 adedi uyuşuyor → soru; uyuşmuyorsa barista paket sayar
   assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 200, 0.9) }, ctx).carpan, 50);
-  assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 400, 0.9) }, ctx).sinif, 'belirsiz');
+  const say = aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 4, birim: 'diger', ai: e('malzeme', 'b', 400, 0.9) }, ctx);
+  assert.ok(say.sinif === 'soru' && say.say === true && say.carpan === 50);
+  // fiş: "25LI" 3 adet, AI 3 bardak diyor (3 paket = 75 olabilir) → barista sayar, 1 paket = 25
+  const fis = aiIleSiniflandir({ metin: 'KARTON BARDAK 12OZ 25LI %20', miktar: 3, birim: 'adet', ai: e('malzeme', 'b', 3, 0.8) }, ctx);
+  assert.ok(fis.sinif === 'soru' && fis.say === true && fis.carpan === 25);
+  // koli "(500'lü)" 1000 adet, AI 1000 bardak → 2 koli mi 1000 koli mi belgeden belli değil → barista sayar
+  const koli = aiIleSiniflandir({ metin: "Bardak 8oz koli (500'lü)", miktar: 1000, birim: 'adet', ai: e('malzeme', 'b', 1000, 0.9) }, ctx);
+  assert.ok(koli.sinif === 'soru' && koli.say === true && koli.carpan === 500);
+  // türev ürün çelişkide de sorulmaz → kuyruk
+  assert.equal(aiIleSiniflandir({ metin: "BARDAK KAPAĞI 12OZ 100'LÜ", miktar: 2, birim: 'adet', ai: e('malzeme', 'b', 2, 0.9) }, ctx).sinif, 'belirsiz');
 });
 test('AI takip dışı dese de satır malzemenin adını taşıyorsa kuyruk; türevse takip dışı', () => {
   assert.equal(aiIleSiniflandir({ metin: 'KARTON BARDAK 8OZ 50LI', miktar: 2, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'belirsiz');
@@ -112,4 +124,27 @@ test('AI fişi "KDV dahil" dese de hesap hariç gösteriyorsa hariç sayılır',
                { metin: 'SEKER', miktar: 2, birim: 'adet', birim_fiyat: 64.5, tutar: 129, kdv_orani: 1, eslesme: null }] });
   assert.deepEqual(f.satirlar.map((s) => s.tutar_haric), [246, 210, 129]);
   assert.deepEqual(toplamKontrol(f), { tutuyor: true });
+});
+
+test('AI takip dışı dese de malzemenin baş ismini taşıyan satır sessizce düşmez (Set C, 2026-10-23)', () => {
+  // "ESPRESSO HARMANI ÇEKİRDEK 1 KG": "kahve" yazmıyor ama tür (çekirdek) yazıyor → kurulum, takip dışı değil
+  assert.deepEqual(aiIleSiniflandir({ metin: 'ESPRESSO HARMANI ÇEKİRDEK 1 KG', miktar: 4, birim: 'adet', ai: e('takip_disi', null, null, 0.8) }, ctx),
+    { sinif: 'belirsiz', aday_malzeme_id: 'kc' });
+  // türev ürün (bardak kapağı) ya da başka ürün (kargo) AI'nın takip dışı kararıyla kalır
+  assert.equal(aiIleSiniflandir({ metin: 'BARDAK KAPAĞI 12 OZ', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+  assert.equal(aiIleSiniflandir({ metin: 'KARGO BEDELİ', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+  // kısaltma (SRP) AI'nın takip dışı kararını bozmaz; tam baş isim gerekir
+  assert.equal(aiIleSiniflandir({ metin: 'NANE SRP 70CL', miktar: 1, birim: 'adet', ai: e('takip_disi', null, null, 0.9) }, ctx).sinif, 'takip_disi');
+});
+
+test('tedarikçi adındaki kelime marka sayılır, -lu/-li ile bitse de türev değildir', () => {
+  const s = { metin: 'ANADOLU TAM YAĞLI SÜT 1 LT', miktar: 36, birim: 'adet', ai: e('malzeme', 'sut', 36000, 0.9) };
+  assert.equal(aiIleSiniflandir(s, ctx).sinif, 'belirsiz');                       // tedarikçi bilinmiyorsa eskisi gibi temkinli
+  const k = aiIleSiniflandir(s, { ...ctx, tedarikciAdi: 'ANADOLU SÜT DAĞITIM A.Ş.' });
+  assert.ok(k.sinif === 'soru' && k.malzeme_id === 'sut' && k.carpan === 1000);
+  // gerçek türev ürün marka kuralına takılmaz: "VANİLYALI SÜT" hâlâ kurulum
+  assert.equal(aiIleSiniflandir({ metin: 'ANADOLU VANİLYALI SÜT 1 LT', miktar: 6, birim: 'adet', ai: e('malzeme', 'sut', 6000, 0.9) },
+    { ...ctx, tedarikciAdi: 'ANADOLU SÜT DAĞITIM A.Ş.' }).sinif, 'belirsiz');
+  // kural yolunda da (AI'sız okuma) aynı
+  assert.equal(siniflandir({ metin: 'ANADOLU SÜT 1 LT', miktar: 12, birim: 'adet' }, { ...ctx, tedarikciAdi: 'Anadolu Süt Dağıtım' }).sinif, 'soru');
 });

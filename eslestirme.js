@@ -113,15 +113,27 @@ export function basIsimVarMi(malzemeAdi, satirMetni) {
         && iskelet.some((s) => s.startsWith(sessiz(w)) || (sessiz(w)[0] === s[0] && altDizi(sessiz(w), s)))));
 }
 
+// Baş isim (son kelime) satırda kısaltmasız geçiyor mu: "Kahve çekirdeği" → "ÇEKİRDEK", "Süt" → "SÜT".
+// basIsimVarMi'den farkı: "SRP" gibi kısaltma kabul edilmez (AI'nın kararını bozmak için daha sıkı kanıt).
+export function basIsimTamVarMi(malzemeAdi, satirMetni) {
+  const mk = kelimeler(malzemeAdi);
+  if (!mk.length) return false;
+  const bas = mk[mk.length - 1];
+  return bas.length >= 3 && kelimeler(satirMetni).some((w) => kelimeUyar(bas, w));
+}
+
 // Satır, malzemenin adını içerse bile başka bir ürün mü? (Türkçe tamlama ve sıfat yapısına bakar)
 //   "BADEM SÜTÜ", "TÜRK KAHVESİ"  → malzeme kelimesi iyelik ekiyle, önünde başka bir isim: X'in sütü
 //   "SÜT KREMASI", "BARDAK KAPAĞI" → malzeme kelimesinden sonra iyelik ekli başka bir isim: sütün kreması
 //   "VANİLYALI SÜT", "AROMALI …"   → -lı/-li sıfatı: çeşnili / türev ürün
 // Böyle satır malzemeye otomatik bağlanmaz; karar kurulumda verilir.
 const IYELIK = /^(s?[iu])$/;
-export function turevUrunMu(malzemeAdi, satirMetni) {
+// markaKelimeleri: tedarikçinin adındaki kelimeler. Satırda da geçiyorsa marka/üretici adıdır ("ANADOLU SÜT DAĞITIM"
+// faturasında "ANADOLU TAM YAĞLI SÜT"): -lu/-li ile bitse bile sıfat (türev) sayılmaz.
+export function turevUrunMu(malzemeAdi, satirMetni, markaKelimeleri = []) {
   const mk = kelimeler(malzemeAdi);
-  const sk = kelimeler(satirMetni);
+  const marka = new Set(markaKelimeleri);
+  const sk = kelimeler(satirMetni).filter((k) => !marka.has(k) || mk.some((m) => kelimeUyar(m, k)));
   if (!mk.length || !sk.length) return false;
   const eslesen = new Set();
   for (const m of mk) {
@@ -184,17 +196,20 @@ export function aiIleSiniflandir(satir, ctx) {
   }
   const ai = satir.ai;
   if (!ai) return siniflandir(satir, ctx);
+  const marka = kelimeler(ctx.tedarikciAdi);
   if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) {
-    // Satır bir malzemenin adını tam içeriyor ve türev ürün değilse AI'nın "takip dışı" kararına güvenilmez:
-    // yanlış "takip dışı" malzemeyi sessizce stoktan düşürür. Kurulumda karar verilir.
-    const benzeyen = [...malzemeBul.values()].find((x) => benzerlik(x.ad, satir.metin) === 1 && !turevUrunMu(x.ad, satir.metin));
+    // Satır bir malzemenin adını ya da türünü söyleyen baş ismini ("ESPRESSO HARMANI ÇEKİRDEK" → çekirdek) taşıyor ve
+    // türev ürün değilse AI'nın "takip dışı" kararına güvenilmez: yanlış "takip dışı" malzemeyi sessizce stoktan düşürür,
+    // raporda sahte açık çıkar. Kurulumda karar verilir.
+    const benzeyen = [...malzemeBul.values()].find((x) => (benzerlik(x.ad, satir.metin) === 1 || basIsimTamVarMi(x.ad, satir.metin))
+      && !turevUrunMu(x.ad, satir.metin, marka));
     if (benzeyen) return { sinif: 'belirsiz', aday_malzeme_id: benzeyen.id };
     return { sinif: 'takip_disi', kaynak: 'ai' };
   }
   const m = ai.karar !== 'takip_disi' ? malzemeBul.get(ai.malzeme_id) : null;
   if (!m || !(ai.guven >= AI_MALZEME_GUVEN)) return { sinif: 'belirsiz', aday_malzeme_id: m?.id ?? null };
   // Satır malzemenin türevi (krema, bitkisel/aromalı süt, kapak…) görünüyorsa AI'ya rağmen otomatik bağlanmaz.
-  if (turevUrunMu(m.ad, satir.metin) || !basIsimVarMi(m.ad, satir.metin)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  if (turevUrunMu(m.ad, satir.metin, marka) || !basIsimVarMi(m.ad, satir.metin)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   // İade / eksi satır: stoktan düşme henüz desteklenmiyor → kurulum.
   if (Number(satir.miktar) < 0 || Number(satir.tutar_belge) < 0) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const miktar = Number(satir.miktar);
@@ -205,7 +220,13 @@ export function aiIleSiniflandir(satir, ctx) {
     .test(String(satir.metin ?? '').replace(/^\s*\d+(?:[.,]\d+)?\s*[x×*]\s*\d[\d.]*(?:,\d+)?\s*/, ''));
   const paketIci = kural ?? (paketYazili ? carpanBul('adet', m.birim, satir.metin) : null);
   const aiCarpan = Number(ai.stok_miktari) > 0 ? Number(ai.stok_miktari) / miktar : null;
-  if (paketIci && aiCarpan && Math.abs(paketIci - aiCarpan) / paketIci > 0.01) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  // Ürün adındaki paket içi ("25'Lİ", "(500'lü)") AI'nın stok hesabıyla çelişiyor: hangisinin doğru olduğu belgeden
+  // anlaşılmaz (3 paket mi 3 bardak mı?). Malzeme tutarlı eşleştiyse kuruluma atmak yerine barista geleni sayar:
+  // "Kaç paket geldi? 1 paket = 25 adet" — sayılan esas alınır. AI emin değilse eskisi gibi kurulum.
+  if (paketIci && aiCarpan && Math.abs(paketIci - aiCarpan) / paketIci > 0.01) {
+    if (ai.karar === 'malzeme' && paketIci > 1) return { sinif: 'soru', malzeme_id: m.id, carpan: paketIci, aday_malzeme_id: m.id, kaynak: 'ai', say: true };
+    return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  }
   // AI "emin değilim" dediyse yalnızca miktar kuralla da doğrulanıyorsa baristaya sorulur; yoksa kuyruk.
   if (ai.karar === 'emin_degil' && !(kural && aiCarpan)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
   const carpan = kural ?? (aiCarpan ? Math.round(aiCarpan * 1e6) / 1e6 : null);
@@ -260,7 +281,7 @@ export function siniflandir(satir, ctx) {
   // Kuralla öneri yalnızca malzeme adının tamamı satırda varsa ve satır türev ürün değilse
   // ("Kahve çekirdeği" için "ESPRESSO ÇEKİRDEK" yarım eşleşme; "SÜT KREMASI" türev) — yoksa kurulum.
   const tam = benzerlik(m.ad, satir.metin) === 1 || defterden.has(enIyi);
-  if (!tam || turevUrunMu(m.ad, satir.metin)) return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
+  if (!tam || turevUrunMu(m.ad, satir.metin, kelimeler(ctx.tedarikciAdi))) return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
   const carpan = carpanBul(birim, m.birim, satir.metin);
   if (!carpan || !(Number(satir.miktar) > 0)) return { sinif: 'belirsiz', aday_malzeme_id: enIyi };
   return { sinif: 'soru', malzeme_id: enIyi, carpan, aday_malzeme_id: enIyi };

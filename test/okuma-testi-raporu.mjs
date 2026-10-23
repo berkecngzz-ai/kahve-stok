@@ -18,7 +18,7 @@ for (const r of satirlar) {
     ['karamel_surubu', 'Karamel şurubu', 'ml'], ['vanilya_surubu', 'Vanilya şurubu', 'ml'], ['bardak', 'Bardak', 'adet'],
   ].map(([id, ad, birim]) => ({ id, ad, birim }))).map((m) => ({ ...m, aktif: true }));
   const sonuc = aiSonucunuCevir(r.sonuc);
-  const ctx = { malzemeler, defter: [], tedarikciAnahtar: sonuc.tedarikci_vkn ?? '' };
+  const ctx = { malzemeler, defter: [], tedarikciAnahtar: sonuc.tedarikci_vkn ?? '', tedarikciAdi: sonuc.tedarikci };
   sonuc.satirlar.forEach((s) => { s.karar = aiIleSiniflandir(s, ctx); });
   const k = karsilastir(beklenen, sonuc, new Map(malzemeler.map((m) => [m.id, m.ad])));
   rapor.push({ dosya, model: r.model, k, tutuyor: toplamKontrol(sonuc).tutuyor, ai_ms: r.ai_ms, toplam_ms: r.toplam_ms,
