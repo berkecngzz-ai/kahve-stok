@@ -148,3 +148,7 @@ Canlıya alma: bütün işler tamamlandıktan sonra kullanıcı onayıyla değer
 
 2. Elle fatura yetkisi: YAPILDI. sql/14_fatura_patron_yetkisi.sql sunucuda patron kontrolü yapar; barista, kurulum hesabı, mekansız ve anonim çağrılar reddedilir. Reddedilen çağrıların giriş/hareket/fiyat geçmişini değiştirmediği ve patronun kaydedebildiği PGlite'ta doğrulandı. npm test 40/40 ve npm run test:sql tam geçti. Canlıya uygulanmadı.
 Yerel commit kimliği: Codex <codex@local.invalid>; genel Git ayarları değiştirilmedi.
+
+3. CSV/Excel satış okuma: YAPILDI (kurulumda cihaz üzerinde okuma + kontrol ederek kayıt). Ürün/adet sütunları tanınır; kesin ad eşleşmesi uygulanır, ikram eki temizlenir, fiyat sıfır olsa da tüketim sayılır. Eşleşmeyen satırlar ürün seçilmeden kaydedilmez. Negatif/kesirli/bozuk/belirsiz adetler elle incelemeye bırakılır. Barista dosya seçimine XLSX eklendi; ilave ekran yok. sql/15_satis_excel_dosya.sql mevcut dosya türlerini koruyarak XLSX izni hazırlar.
+Test: asıl 05_satis_raporu_haftalik.csv ve bunun XLSX karşılığı: Latte 148, toplam 537 adet. npm test 49/49, npm run test:sql tam geçti. İncelemede Excel MIME türündeki xml sözcüğünün yanlış uzantı üretmesi yakalanıp testle düzeltildi.
+Sınır: Eski .xls, formüllü veya birden çok görünür sayfalı Excel otomatik okunmaz; CSV/değerler gerekir. Eşleşenler de mevcut kurulum onayından sonra stoğa girer. Canlı arayüz ve cihaz tarayıcısı denenmedi; yerel okuyucu, dosya türü ve SQL testleri geçti.

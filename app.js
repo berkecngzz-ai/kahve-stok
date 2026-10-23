@@ -1,3 +1,4 @@
+import { readSalesFile, salesFileKind } from './satis-okuma.js';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
@@ -1516,7 +1517,7 @@ async function haftalikSayim(kutu, user, bitti) {
         <div class="buyuk-simge tamam">✓</div><h2>Sayım kaydedildi</h2>
         <p class="buyuk-yazi">Son adım: bu haftanın satış raporu</p>
         <label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="r-kamera" hidden></label>
-        <label class="dev ikincil">📎 Dosya seç<input type="file" accept="image/*,application/pdf,.csv,.txt,.xml" id="r-dosya" hidden></label>
+        <label class="dev ikincil">📎 Dosya seç<input type="file" accept="image/*,application/pdf,.csv,.txt,.xml,.xlsx,.tsv" id="r-dosya" hidden></label>
         <p class="mesaj"></p>
         <button class="dev ikincil" id="atla">Şimdi değil</button></div>`;
     const bitir = (alt) => kaydedildi(kutu, { baslik: 'Haftalık sayım tamam', alt, geriAl: geriAlIstegi('giris', sayimId), bitti });
@@ -1531,13 +1532,13 @@ async function haftalikSayim(kutu, user, bitti) {
         kutu.querySelectorAll('button, label').forEach((x) => { x.style.pointerEvents = 'none'; x.style.opacity = '.6'; });
         try {
           const istek = istekKimligi();
-          const tur = dosyaTuru(dosya);
+          const tur = salesFileKind(dosya, dosyaTuru);
           const blob = tur === 'foto' ? await fotoKucult(dosya) : dosya;
           if (blob.size > 5 * 1024 * 1024) throw new Error('Dosya çok büyük (en fazla 5 MB).');
           const uzanti = tur === 'foto' ? 'jpg' : tur === 'pdf' ? 'pdf' : tur === 'xml' ? 'xml' : (dosya.name.split('.').pop() || 'txt').toLowerCase();
           const yol = `${mekan.id}/${istek}/rapor.${uzanti}`;
           const tip = tur === 'foto' ? 'image/jpeg' : tur === 'pdf' ? 'application/pdf' : tur === 'xml' ? 'application/xml'
-            : uzanti === 'csv' ? 'text/csv' : 'text/plain';
+            : uzanti === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : uzanti === 'csv' ? 'text/csv' : 'text/plain';
           const { error } = await sb.storage.from(BELGE_KOVASI).upload(yol, blob, { contentType: tip, upsert: false });
           if (error && !/exists|duplicate/i.test(error.message)) throw error;
           await rpcVeri('belge_kaydet', { p: { istek_id: istek, tur: 'satis_raporu', kaynak: 'dosya', dosyalar: [yol],
@@ -2015,6 +2016,31 @@ async function kurulumEkrani(kutu) {
 
   // Satış raporu → satış girişi
   kutu.querySelectorAll('form[data-rapor]').forEach((form) => {
+    // CSV/XLSX cihazda okunur; kurulum sonucu kontrol ederek mevcut güvenli RPC ile kaydeder.
+    const sources = JSON.parse(form.dataset.satisDosyalar || '[]');
+    const products = JSON.parse(form.dataset.satisUrunler || '[]');
+    const source = sources.find(d => /\.(csv|xlsx|tsv|txt)$/i.test(d.yol));
+    if (source) {
+      const save = form.querySelector('[data-rapor-kaydet]');
+      const message = form.querySelector('[data-satis-okuma]');
+      save.disabled = true; message.textContent = 'Rapor okunuyor…';
+      (async () => {
+        try {
+          const { data, error } = await sb.storage.from(BELGE_KOVASI).download(source.yol);
+          if (error) throw error;
+          const result = await readSalesFile(new File([data], source.yol.split('/').pop()), products);
+          for (const item of result.matched) {
+            const input = [...form.querySelectorAll('[data-urun]')].find(i => i.dataset.urun === item.urun_id);
+            if (input) input.value = item.miktar;
+          }
+          form.querySelector('[data-satis-eslesmeyen]').innerHTML = result.unmatched.map(row =>
+            '<label class="uyari">' + esc(row.name) + ' · ' + row.quantity + ' adet<select data-satis-coz="' + row.quantity + '"><option value="">Ürün seç</option>' + products.map(p => '<option value="' + esc(p.id) + '">' + esc(p.ad) + '</option>').join('') + '</select></label>').join('');
+          message.textContent = result.unmatched.length ? 'Eşleşmeyen ürünleri seç. İkramlar adetlere dahil.' : 'Adetler okundu. Kontrol edip kaydet. İkramlar dahil.';
+        } catch (err) { message.textContent = 'Otomatik okunamadı: ' + hataMetni(err) + ' Belgeyi açıp adetleri elle yaz.'; }
+        finally { save.disabled = false; }
+      })();
+    }
+
     form.querySelector('[data-rapor-kaydet]').onclick = async (e) => {
       try {
         const kalemler = [];
@@ -2024,6 +2050,13 @@ async function kurulumEkrani(kutu) {
           if (!Number.isInteger(n) || n < 0 || n > 100000) throw new Error('Adetleri tam sayı olarak yaz.');
           if (n > 0) kalemler.push({ urun_id: inp.dataset.urun, miktar: n });
         }
+        for (const select of form.querySelectorAll('[data-satis-coz]')) {
+          if (!select.value) throw new Error('Eşleşmeyen her satır için ürün seç.');
+          const amount = Number(select.dataset.satisCoz);
+          const existing = kalemler.find(k => k.urun_id === select.value);
+          if (existing) existing.miktar += amount; else kalemler.push({ urun_id: select.value, miktar: amount });
+        }
+        if (kalemler.some(k => k.miktar > 100000)) throw new Error('Bir ürünün toplam adedi 100000 sınırını aşıyor.');
         if (!kalemler.length) throw new Error('En az bir ürünün adedini yaz.');
         const tarih = form.querySelector('[name=tarih]').value;
         const toplam = kalemler.reduce((t, k) => t + k.miktar, 0);
@@ -2180,8 +2213,9 @@ function belgeKarti(k, b) {
     ? `<button class="ikincil kucuk" data-belge-ac='${esc(JSON.stringify(b.dosyalar.map((d) => d.yol)))}'>📄 Belgeyi aç (${b.dosyalar.length})</button>` : '';
   if (b.tur === 'satis_raporu') {
     const bugun = bugunStr();
-    return `<form class="kart" data-rapor="${esc(b.id)}" onsubmit="return false">
+    return `<form class="kart" data-rapor="${esc(b.id)}" data-satis-dosyalar="${esc(JSON.stringify(b.dosyalar))}" data-satis-urunler="${esc(JSON.stringify(k.urunler))}" onsubmit="return false">
       <b>💰 Satış raporu</b> · ${esc(k.mekan)} · ${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}<br>${dosyaDugmesi}
+      <p class="bilgi" data-satis-okuma></p><div data-satis-eslesmeyen></div>
       <p class="bilgi">Rapordaki adetleri yaz (ikram / 0 TL satırlar dahil; malzeme yine harcandı). Satılmayanı boş bırak.
         Tarih: raporun kapsadığı son gün (genelde sayım günü). Kaydedince satışlar tarifle stoktan düşer.</p>
       <label>Tarih<input type="date" name="tarih" value="${gunu(b.olusturma)}" max="${bugun}" required></label>
