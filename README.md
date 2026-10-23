@@ -51,6 +51,15 @@ Kahve dükkanları için stok açığı takibi. Barista gelen malı, satışlar�
   reddedilir); **stok farkı raporu** (`stok_farki`, yalnız patron): her malzeme için önceki sayım + fatura − satış
   (tarifle) − fire = olması gereken; sayılanla fark, güncel fiyatla TL. Sayım gün sonu kabul edilir.
 
+- **Adım 6** (`sql/20_patron_ekranlari.sql`, `patron-hesap.js`): patron ekranları — Özet (son haftanın açığı, en çok açık
+  veren 3 malzeme, bekleyen belge, haftalık grafik), Stok (şu an elde ne var: `stok_durumu()`), Rapor (malzeme başına gelen/
+  kullanılan/fire/sayılan/açık, miktar ve TL; kırmızı = kayıp kullanılanın %3'ünden fazla ve 50 TL'den büyük; Excel indirme),
+  Girişler (sade liste + süzgeç). Haftalık trend: `acik_trendi()`. Yalnız patron.
+
+## Yerel demo (canlıya bağlanmaz)
+`node scripts/demo/sunucu.mjs` → http://localhost:8787. Veritabanı PGlite; `sql/` + `scripts/demo/demo-veri.sql`
+("Demo Kafe", 4 hafta, 3. haftada süt açığı) her açılışta sıfırdan kurulur. Hesaplar dosyanın başında (yalnız yerel).
+
 ## Okuma ve eşleştirme testleri
 `npm install` sonra `npm test` (Node 20+).
 

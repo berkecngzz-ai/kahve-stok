@@ -35,8 +35,8 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 
 ## Açık işler
 - Telefonda uçtan uca okuma süresi ölçülmedi.
-- Satış raporu otomatik OKUNMUYOR: kurulum rapora bakıp ürün adetlerini elle yazar (aşağıda). POS formatı belli
-  olunca CSV/AI okuma eklenebilir.
+- Satış raporu: CSV/XLSX kurulumda cihazda okunuyor (23 Ekim, canlıda değil); fotoğraf/PDF rapor hâlâ elle yazılır.
+- Gerçek (sentetik olmayan) fatura fotoğraflarıyla doğruluk ölçülmedi.
 
 ## Fatura okuma V2 testi (test-faturalar-v2) — 2026-10-21
 
@@ -131,53 +131,98 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
   sekmeler sığıyor; konsol hatası yok; DB sayıları değişmedi. Kurulum fiyat önizleme / satış raporu formu canlıda
   bekleyen belge olmadığı için görülmedi (yalnız SQL testleriyle doğrulandı).
 
-- Kullanıcı kararı (2026-10-21): `fatura_kaydet` yetki açığı şimdilik böyle kalıyor; gerçek kullanıcı testine geçildi.
+- Kullanıcı kararı (2026-10-21): `fatura_kaydet` yetki açığı şimdilik böyle kalıyor. 23 Ekim: kullanıcı kapatılmasını istedi → sql/14 (canlıya uygulanmadı).
 
 ## Sıradaki adım
-Gerçek kullanıcı testi sürüyor. İlk gerçek fatura/satış raporu kuyruğa düşünce kurulum formunu canlıda gözle.
-İkinci haftalık sayımdan sonra Rapor'daki farkları elle kontrol et.
+Yerel işler bitti (23 Ekim, aşağıda). Canlıya almak için "Canlıya alma sırası"nı sırayla uygula. Hiçbir şey push edilmedi,
+canlı veritabanına SQL uygulanmadı, Edge Function yüklenmedi.
 
-## Yerel çalışma — 2026-10-23 (canlıya uygulanmadı, push yok)
-1. Açık raporu: YAPILDI. 14 günlük sahte kafe, iki sayım, günlük satış/fire ve iki fatura. Elle beklenen kahve -100 g/-65 TL, süt -4000 ml/-168 TL, bardak +5/+10 TL; toplam açık -233 TL. PGlite raporu birebir tutuyor. Hesap doğru; eksik fatura/satış ve çift satış uyarılarının ters yönleri sql/13_rapor_uyarilari.sql ile düzeltildi.
-   Test: npm test 40/40; npm run test:sql tüm zincir geçti (test/iki_hafta_test.sql dahil).
-2. Elle fatura yetkisi: sırada.
-3. Satış CSV/Excel: bekliyor.
-4. Demo betiği: bekliyor; çalıştırılmayacak.
-5. Veri izni taslağı: bekliyor.
-Canlıya alma: bütün işler tamamlandıktan sonra kullanıcı onayıyla değerlendirilecek; şu ana kadar yalnız sql/13_rapor_uyarilari.sql hazırlandı.
+## 6 saatlik bağımsız çalışma — 2026-10-23 (yerel, push yok)
 
-2. Elle fatura yetkisi: YAPILDI. sql/14_fatura_patron_yetkisi.sql sunucuda patron kontrolü yapar; barista, kurulum hesabı, mekansız ve anonim çağrılar reddedilir. Reddedilen çağrıların giriş/hareket/fiyat geçmişini değiştirmediği ve patronun kaydedebildiği PGlite'ta doğrulandı. npm test 40/40 ve npm run test:sql tam geçti. Canlıya uygulanmadı.
-Yerel commit kimliği: Codex <codex@local.invalid>; genel Git ayarları değiştirilmedi.
+Aynı klasörde aynı anda iki ajan çalıştı: **Codex** (2, 3, 4, 6, 7. işler; `main` üzerinde) ve **Claude** (1, 5, 8. işler +
+Codex'in işlerinin gözden geçirmesi; ayrı çalışma kopyası `C:\Users\berke\kahve-stok-claude`, dal `claude/patron-ekranlari`,
+sonra `main`'e ileri sarıldı). Çakışma yok; bütün commit'ler `main`'de sırayla.
 
-3. CSV/Excel satış okuma: YAPILDI (kurulumda cihaz üzerinde okuma + kontrol ederek kayıt). Ürün/adet sütunları tanınır; kesin ad eşleşmesi uygulanır, ikram eki temizlenir, fiyat sıfır olsa da tüketim sayılır. Eşleşmeyen satırlar ürün seçilmeden kaydedilmez. Negatif/kesirli/bozuk/belirsiz adetler elle incelemeye bırakılır. Barista dosya seçimine XLSX eklendi; ilave ekran yok. sql/15_satis_excel_dosya.sql mevcut dosya türlerini koruyarak XLSX izni hazırlar.
-Test: asıl 05_satis_raporu_haftalik.csv ve bunun XLSX karşılığı: Latte 148, toplam 537 adet. npm test 49/49, npm run test:sql tam geçti. İncelemede Excel MIME türündeki xml sözcüğünün yanlış uzantı üretmesi yakalanıp testle düzeltildi.
-Sınır: Eski .xls, formüllü veya birden çok görünür sayfalı Excel otomatik okunmaz; CSV/değerler gerekir. Eşleşenler de mevcut kurulum onayından sonra stoğa girer. Canlı arayüz ve cihaz tarayıcısı denenmedi; yerel okuyucu, dosya türü ve SQL testleri geçti.
-
-4. Demo Kafe betiği: YAPILDI, ÇALIŞTIRILMADI. scripts/demo-kafe.mjs yalnız bellek içi PGlite kullanır; proje/demo-output/demo-kafe.json çıktısını yeni dosya olarak oluşturacak, var olanı ezmeyecek. Dört hafta, 28 günlük satış/fire, dört fatura ve başlangıç dahil beş sayım planı. 3. hafta süt -12000 ml/-504 TL; 4. hafta önceki açık tekrar sayılmaz.
-Test: yalnız saf veri planı birim testi ve betiğin sözdizimi kontrolü; demo betiği/seed çalıştırılmadı. npm test 50/50; npm run test:sql tam geçti. Çalışma zamanı provası kullanıcının sonraki onayına bırakıldı.
-
-5. Veri izni metni: YAPILDI (taslak). docs/veri-izni-taslak.md: Supabase kayıt/dosya alanı; OpenAI'a görüntü + malzeme kimliği/adı/birimi aktarımı; kurulum erişimi; kalıcı silme ile iptal ayrımı. Bilinmeyen bölge/saklama/iletişim/silme bilgileri açık yer tutucular; uygulamada izin ekranı veya silme özelliği varmış gibi vaat yok.
-Test: taslak kapsam kontrolü ve kodla elle karşılaştırma; npm test 51/51, npm run test:sql tam geçti. Canlı ayarlar ve hukuki uygunluk doğrulanmadı; taslak yayımlanmadı.
-
-## SON RAPOR — 2026-10-23
-
-| İş | Durum | Doğrulama |
+| İş | Durum | Test / ölçüm |
 |---|---|---|
-| 1. Açık raporu | Yapıldı; hesaplar doğru, ters uyarı metinleri düzeltildi | 14 günlük PGlite senaryosu: -233 TL açık, +10 TL fazla |
-| 2. Elle fatura yetkisi | Yapıldı; SQL yalnız dosyada | Patron kabul; barista/kurulum/mekansız/anon ret; ret sırasında veri değişmiyor |
-| 3. Satış CSV/Excel | Yapıldı; kurulumda yerel okuma, kontrollü kayıt | Örnek CSV ve XLSX: 537 adet, 148 Latte (6 ikram dahil). Uçtan uca PGlite tüketimi 9794 g kahve, 62120 ml süt, 537 bardak. Tekrar kayıt engeli geçti |
-| 4. Demo betiği | Hazırlandı, ÇALIŞTIRILMADI | Saf plan testi + sözdizimi; yalnız 3. hafta -12 L/-504 TL süt |
-| 5. Veri izni | Taslak hazırlandı, yayımlanmadı | Kodla karşılaştırıldı; bilinmeyen ayarlar açık bırakıldı |
+| 1. Patron ekranları | YAPILDI | Özet, Stok, Rapor, Girişler, Ayarlar; 375 px'te taşma yok; uçtan uca tıklama testi hatasız |
+| 2. Açık raporu doğrulaması | YAPILDI (Codex) + ek test (Claude) | 14 gün elle hesap −233 TL birebir; ayrıca 10 günlük stok/trend testi elle hesapla |
+| 3. Elle fatura yalnız patron | YAPILDI (Codex) | sql/14: barista/kurulum/mekansız/anon reddedilir, veri değişmez |
+| 4. Satış CSV/Excel + ikram | YAPILDI (Codex), iyileştirildi (Claude) | Örnek CSV/XLSX 537 adet, 6 ikram dahil |
+| 5. Fotoğraf okuma doğruluğu | YAPILDI (genel kurallar) | Görülmemiş D seti, tek ölçüm: 14/16 doğru, 1 kurulum, 1 yanlış |
+| 6. Demo Kafe verisi | YAPILDI (iki betik) | Ekran görüntüleri bununla; 3. hafta süt −17,4 L / −764 TL |
+| 7. Veri izni metni | TASLAK (Codex) | `docs/veri-izni-taslak.md`; bölge/saklama/iletişim boş bırakıldı |
+| 8. Diğer iyileştirmeler | YAPILDI | Aşağıda |
 
-Son kontrol: npm test 52/52, npm run test:sql tüm zincir geçti; git diff --check temiz. Her iş ayrı yerel commit'te; ek uçtan uca test/son rapor ayrıca commit edildi. Mevcut testler ilk işten sonra tam geçti; değişiklikten önce ayrı bir temel ölçüm alınmadı. Kod ve testler yerel; canlı Supabase, OpenAI ve ücretli servis çağrısı yok. Push yok. Dosya silinmedi; bütün yazımlar kahve-stok klasöründe. .local-work/ içindeki betikler/test günlükleri silinmeden bırakıldı, commit'e dahil edilmedi.
+**1. Patron ekranları (app.js, patron-hesap.js, style.css, sql/20_patron_ekranlari.sql)**
+- Alt menü: Özet · Stok · Rapor · Girişler · Ayarlar (Malzemeler/Ürünler/Mekan/Kurulum Ayarlar'ın altında). Barista ekranı değişmedi.
+- **Özet:** son haftanın açığı büyük rakamla (kırmızı = normalden yüksek, yeşil = normal), önceki haftayla fark, en çok açık
+  veren 3 malzeme, bekleyen fatura/satış raporu uyarısı, haftalara göre açık grafiği, "≈ N gün yeter" azalan malzemeler.
+  Yeni mekânda "İlk adımlar" listesi (malzeme → tarif → barista daveti → ilk sayım).
+- **Stok:** her malzemede şu an elde ne var (son sayım + sonra gelen − satılan − fire), günlük birimle ("17 litre",
+  "10,4 kg", "350 ml"), kaç gün yeteceği (son 28 gün ortalaması) ve elde olan malın TL değeri. Yeni SQL: `stok_durumu()`.
+- **Rapor:** hafta seçimi, toplam açık/fazla, her malzemede önceki sayım / gelen / kullanılan / fire / olması gereken /
+  sayılan / açık — miktar ve TL. Kural: **kayıp, kullanılanın %3'ünden fazla VE 50 TL'den büyükse kırmızı**; fazla
+  çıkan sarı; diğerleri yeşil (`patron-hesap.js`'de tek yerde). Haftalık açık grafiği (SQL: `acik_trendi()`).
+  "Raporu indir (Excel)": Türkçe Excel'de açılan CSV (cihazda üretilir; formül enjeksiyonuna karşı korumalı).
+- **Girişler:** tarih · tür · tedarikçi/açıklama · tutar satırları (fatura TL, fire TL, satış ürün adedi, sayım malzeme
+  sayısı), türe göre süzgeç; ayrıntı dokununca açılır.
+- Ekran görüntüleri: `ekran-goruntuleri/once/` (5 adet, eski ekranlar) ve `ekran-goruntuleri/sonra/` (12 adet, koyu tema
+  ve yeni mekan dahil), hepsi 375 px, Demo Kafe verisiyle.
+- Yerel demo: `node scripts/demo/sunucu.mjs` → http://localhost:8787 (patron@demo.kafe / barista@demo.kafe /
+  yeni@demo.kafe, şifre demo1234 — yalnız bu yerel sunucuda). Canlıya hiç bağlanmaz; PGlite + sql/ dosyaları.
 
-### Sen dönünce canlıya alma sırası (henüz yapılmadı)
-1. Yerel commitleri ve bu raporu gözden geçir. Özellikle CSV/XLSX'in kurulum kontrolünden geçerek kaydedilmesi davranışını onayla.
-2. Onayından sonra canlı yedeğini al; güncel şemayı dosyalarla karşılaştır. Daha önce uygulanmış 01-12 dosyalarını baştan çalıştırma.
-3. Yalnız yeni dosyaları sırayla uygula: sql/13_rapor_uyarilari.sql → sql/14_fatura_patron_yetkisi.sql → sql/15_satis_excel_dosya.sql. Edge Function değişikliği yok.
-4. app.js ve yeni satis-okuma.js dosyasını birlikte yayımla. Bu aşamaya kadar push/deploy yapılmadı.
-5. Kontrollü test hesabında baristanın doğrudan elle fatura çağrısının reddini, patron kaydını; CSV/XLSX yükleme, ikram, eşleşmeyen ürün seçimi ve çift yükleme davranışını doğrula. Cihazda 375 px görünümü ve Excel desteğini de dene; bunlar bu oturumda tarayıcıyla doğrulanmadı.
-6. Demo betiğini istersen yalnız yerelde ayrıca çalıştır; bu çalışma sırasında çalıştırılmadı. Oluşacak JSON canlı içe aktarma dosyası olarak hazırlanmadı.
-7. Veri izni taslağındaki bölge, sorumlu/iletişim, silme ve saklama alanlarını doğrula/doldur; uygunluk incelemesinden sonra yayımla. İzin ekranı ve gerçek kalıcı silme akışı bu iş kapsamında kodlanmadı.
+**2. Açık raporu:** Codex'in 14 günlük senaryosu (−233 TL) + `test/patron_ekranlari_test.sql` (elle hesaplanmış şu anki
+stok, kaç gün yeter, trend = rapor, barista/başka mekan/anonim ret, bekleyen fatura uyarısının dönemi).
 
-Sınırlamalar: Formüllü/çok görünür sayfalı Excel ve eski .xls otomatik işlenmez; CSV/değerler üzerinden devam edilir. Tarayıcıda XLSX açılımı desteklenmezse kurulumda elle giriş uyarısı gösterilir. Tedarikçi fatura okumasında bildirilen başarı tek sentetik örneğe aittir; gerçek doğruluk ölçümü sayılmaz.
+**4. Satış raporu (Claude ekleri):** "Stok Adı", "Satış Miktarı", "Ürün Açıklaması" gibi kasa programı başlıkları tanınır;
+kod/grup/fiyat sütunları aday olmaz; "ARA TOPLAM:", "Genel Toplam (TL)" satırları atlanır; tarifi olmayan ürün (şişe su,
+kek) için "Tarifi yok, stoktan düşme" seçeneği — eskiden böyle bir satır varsa rapor hiç kaydedilemiyordu.
+
+**5. Fotoğraf okuma** (yalnız `scripts/okuma-testi.sh` ile, model gpt-4.1-mini)
+- Genel kurallar (eski A/B2 setlerinin saklı ham AI cevapları üzerinde, OpenAI'sız geliştirildi):
+  (a) ürün adındaki paket içi ("25'Lİ", "(500'lü)") AI'nın miktarıyla çelişirse satır kuruluma değil **baristanın paket
+  sayımına** gider; sayım ekranı yazarken toplamı gösterir ("= 500 adet"); (b) AI "takip dışı" dese de satır bir malzemenin
+  baş ismini kısaltmasız taşıyorsa ("ESPRESSO HARMANI ÇEKİRDEK") sessizce düşmez, kuruluma gider (tamlama — bardak
+  kapağı, süt kreması — hariç); (c) tedarikçinin adında da geçen kelime ("ANADOLU SÜT" faturasında "ANADOLU") -lu/-li
+  sıfatı sanılmaz.
+- Ölçüm sırası (dürüst): **Set C** (9 belge, kod dondurulduktan sonra üretildi) ilk ölçüm: 23 satırdan 15 doğru, 5 kurulum,
+  3 yanlış (biri kahvenin sessizce takip dışı sayılması). C'ye bakılarak (b) ve (c) eklendi → C artık bağımsız değil.
+  **Set D** (8 yeni belge, sonra üretildi) **tek gerçek ölçüm: 16 satırdan 14 doğru, 1 kurulum, 1 yanlış** (D04 "çift
+  cidarlı bardak" takip dışı sayıldı → stok eksik). Bu da genel kuralla düzeltildi (-lı sıfatı farklı ürün sayılmaz);
+  yeniden puanlamada D 14 doğru / 2 kurulum / 0 yanlış — ama bu bağımsız ölçüm değildir. Eski A/B2'de gerileme yok.
+- Setler sentetik çekimlerdir (tarayıcıda üretilip eğiklik/ışık/gürültü eklendi), gerçek telefon fotoğrafı değildir:
+  `Desktop\test-faturalar-C`, `Desktop\test-faturalar-D` (cevap anahtarları ve ham sonuç içinde).
+- Ortalama AI süresi 2,5–3,0 sn, fatura başı ≈ 0,0020 $.
+- `okuma-testi.sh` düzeltildi: çok satırlı sorgu Windows'ta `npx` ile bozuluyordu; hata anında temizlik mesajı görünmüyordu.
+- **Test yolu sonunda KAPALI** ("okuma testi KAPALI" döndü), canlı depoda `_test/` klasörü boş (kontrol edildi).
+
+**OpenAI harcaması (bu oturum, tamamı okuma testi): ≈ 0,054 $** (C seti iki kez ≈ 0,038 $ — ilk çalıştırmada betik hatası
+nedeniyle sonuçlar alınamadı —, D seti 0,016 $). Codex OpenAI kullanmadı.
+
+**6. Demo verisi:** iki betik var. `scripts/demo/demo-veri.sql` (Claude; çalışır, ekran görüntüleri bununla: 4 hafta,
+günlük satış, faturalar, fire, haftalık sayım, 3. haftada süt −17,4 L, 1 bekleyen fatura, boş "Yeni Kafe").
+`scripts/demo-kafe.mjs` (Codex; JSON plan üretir, çalıştırılmadı). İkisi de canlıya yazmaz. Biri yeter; demo-veri.sql'i öneririm.
+
+**8. Diğer:** rapordaki "fatura bekliyor" uyarısı yalnız o haftaya düşen faturada çıkar (eskiden bütün eski haftalarda);
+sunucu güncellenmeden ön yüz açılırsa İngilizce hata yerine Türkçe uyarı; çıkışta seçili hafta/ay sıfırlanır (aynı
+telefonda başka mekan açılınca "sayım yok" görünüyordu); sekme simgesi.
+
+**Testler (son):** `npm test` 63/63, `npm run test:sql` tüm zincir (01–15, 20 ve testleri) geçti.
+**Denenmeyenler:** gerçek telefonda (iOS/Android) dokunma ve indirme; canlı veriyle yeni ekranlar; Excel'in gerçek kasa
+programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
+
+### Canlıya alma sırası (senin yapman gerekenler)
+1. `main`'deki yerel commit'leri ve ekran görüntülerini gözden geçir (`ekran-goruntuleri/once` ↔ `sonra`).
+2. Canlı veritabanının yedeğini al (önceki gibi `Desktop\kahve-stok-yedek\…`).
+3. Supabase SQL Editor'da yalnız yeni dosyaları **bu sırayla** çalıştır: `sql/13_rapor_uyarilari.sql` →
+   `sql/14_fatura_patron_yetkisi.sql` → `sql/15_satis_excel_dosya.sql` → `sql/20_patron_ekranlari.sql`.
+   (01–12 zaten canlıda; tekrar çalıştırma.) Edge Function değişikliği yok.
+4. **SQL'ler bittikten sonra** ön yüzü yayımla (`git push` → GitHub Pages). Sıra önemli: ön yüz önce giderse patronun Özet
+   ekranı "sunucu güncellemesi yapılmamış" uyarısı verir.
+5. Kendi patron hesabınla telefonda: Özet, Stok, Rapor (hafta değiştir, "Raporu indir"), Girişler süzgeci. Barista
+   hesabıyla: Mal geldi / Fire / Sayım ekranlarının aynı kaldığını gör; baristanın "Fatura elle gir" çağrısının reddi.
+6. İlk gerçek satış raporu Excel/CSV gelince kurulumda eşleşmeyen satırları ve "Tarifi yok" seçeneğini kontrol et.
+7. Veri izni taslağındaki boşlukları (bölge, saklama süresi, iletişim, silme) doldur; sonra yayımla.
+8. Geri dönüş: ön yüz için `git revert` + push; SQL için 20 → `drop function public.stok_durumu(); drop function
+   public.acik_trendi(int);`, 13/14/15 için önceki işlev metinleri `kahve-stok-yedek` yedeğinde.
