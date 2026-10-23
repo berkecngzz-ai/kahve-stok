@@ -158,3 +158,26 @@ Test: yalnız saf veri planı birim testi ve betiğin sözdizimi kontrolü; demo
 
 5. Veri izni metni: YAPILDI (taslak). docs/veri-izni-taslak.md: Supabase kayıt/dosya alanı; OpenAI'a görüntü + malzeme kimliği/adı/birimi aktarımı; kurulum erişimi; kalıcı silme ile iptal ayrımı. Bilinmeyen bölge/saklama/iletişim/silme bilgileri açık yer tutucular; uygulamada izin ekranı veya silme özelliği varmış gibi vaat yok.
 Test: taslak kapsam kontrolü ve kodla elle karşılaştırma; npm test 51/51, npm run test:sql tam geçti. Canlı ayarlar ve hukuki uygunluk doğrulanmadı; taslak yayımlanmadı.
+
+## SON RAPOR — 2026-10-23
+
+| İş | Durum | Doğrulama |
+|---|---|---|
+| 1. Açık raporu | Yapıldı; hesaplar doğru, ters uyarı metinleri düzeltildi | 14 günlük PGlite senaryosu: -233 TL açık, +10 TL fazla |
+| 2. Elle fatura yetkisi | Yapıldı; SQL yalnız dosyada | Patron kabul; barista/kurulum/mekansız/anon ret; ret sırasında veri değişmiyor |
+| 3. Satış CSV/Excel | Yapıldı; kurulumda yerel okuma, kontrollü kayıt | Örnek CSV ve XLSX: 537 adet, 148 Latte (6 ikram dahil). Uçtan uca PGlite tüketimi 9794 g kahve, 62120 ml süt, 537 bardak. Tekrar kayıt engeli geçti |
+| 4. Demo betiği | Hazırlandı, ÇALIŞTIRILMADI | Saf plan testi + sözdizimi; yalnız 3. hafta -12 L/-504 TL süt |
+| 5. Veri izni | Taslak hazırlandı, yayımlanmadı | Kodla karşılaştırıldı; bilinmeyen ayarlar açık bırakıldı |
+
+Son kontrol: npm test 52/52, npm run test:sql tüm zincir geçti; git diff --check temiz. Her iş ayrı yerel commit'te; ek uçtan uca test/son rapor ayrıca commit edildi. Mevcut testler ilk işten sonra tam geçti; değişiklikten önce ayrı bir temel ölçüm alınmadı. Kod ve testler yerel; canlı Supabase, OpenAI ve ücretli servis çağrısı yok. Push yok. Dosya silinmedi; bütün yazımlar kahve-stok klasöründe. .local-work/ içindeki betikler/test günlükleri silinmeden bırakıldı, commit'e dahil edilmedi.
+
+### Sen dönünce canlıya alma sırası (henüz yapılmadı)
+1. Yerel commitleri ve bu raporu gözden geçir. Özellikle CSV/XLSX'in kurulum kontrolünden geçerek kaydedilmesi davranışını onayla.
+2. Onayından sonra canlı yedeğini al; güncel şemayı dosyalarla karşılaştır. Daha önce uygulanmış 01-12 dosyalarını baştan çalıştırma.
+3. Yalnız yeni dosyaları sırayla uygula: sql/13_rapor_uyarilari.sql → sql/14_fatura_patron_yetkisi.sql → sql/15_satis_excel_dosya.sql. Edge Function değişikliği yok.
+4. app.js ve yeni satis-okuma.js dosyasını birlikte yayımla. Bu aşamaya kadar push/deploy yapılmadı.
+5. Kontrollü test hesabında baristanın doğrudan elle fatura çağrısının reddini, patron kaydını; CSV/XLSX yükleme, ikram, eşleşmeyen ürün seçimi ve çift yükleme davranışını doğrula. Cihazda 375 px görünümü ve Excel desteğini de dene; bunlar bu oturumda tarayıcıyla doğrulanmadı.
+6. Demo betiğini istersen yalnız yerelde ayrıca çalıştır; bu çalışma sırasında çalıştırılmadı. Oluşacak JSON canlı içe aktarma dosyası olarak hazırlanmadı.
+7. Veri izni taslağındaki bölge, sorumlu/iletişim, silme ve saklama alanlarını doğrula/doldur; uygunluk incelemesinden sonra yayımla. İzin ekranı ve gerçek kalıcı silme akışı bu iş kapsamında kodlanmadı.
+
+Sınırlamalar: Formüllü/çok görünür sayfalı Excel ve eski .xls otomatik işlenmez; CSV/değerler üzerinden devam edilir. Tarayıcıda XLSX açılımı desteklenmezse kurulumda elle giriş uyarısı gösterilir. Tedarikçi fatura okumasında bildirilen başarı tek sentetik örneğe aittir; gerçek doğruluk ölçümü sayılmaz.
