@@ -136,3 +136,12 @@ test görüntülerini siler ve test yolunu yine kapatır. Test yolu normalde **k
 ## Sıradaki adım
 Gerçek kullanıcı testi sürüyor. İlk gerçek fatura/satış raporu kuyruğa düşünce kurulum formunu canlıda gözle.
 İkinci haftalık sayımdan sonra Rapor'daki farkları elle kontrol et.
+
+## Yerel çalışma — 2026-10-23 (canlıya uygulanmadı, push yok)
+1. Açık raporu: YAPILDI. 14 günlük sahte kafe, iki sayım, günlük satış/fire ve iki fatura. Elle beklenen kahve -100 g/-65 TL, süt -4000 ml/-168 TL, bardak +5/+10 TL; toplam açık -233 TL. PGlite raporu birebir tutuyor. Hesap doğru; eksik fatura/satış ve çift satış uyarılarının ters yönleri sql/13_rapor_uyarilari.sql ile düzeltildi.
+   Test: npm test 40/40; npm run test:sql tüm zincir geçti (test/iki_hafta_test.sql dahil).
+2. Elle fatura yetkisi: sırada.
+3. Satış CSV/Excel: bekliyor.
+4. Demo betiği: bekliyor; çalıştırılmayacak.
+5. Veri izni taslağı: bekliyor.
+Canlıya alma: bütün işler tamamlandıktan sonra kullanıcı onayıyla değerlendirilecek; şu ana kadar yalnız sql/13_rapor_uyarilari.sql hazırlandı.
