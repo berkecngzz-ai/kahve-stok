@@ -267,13 +267,13 @@ async function ozetSekmesi(icerik) {
       <div class="etiket">Haftalık açık</div>
       <p class="buyuk-yazi">${sayilmis ? 'İlk sayım yapıldı. Açık, bir sonraki haftalık sayımdan sonra burada görünür.'
         : 'Henüz sayım yok. Aşağıdaki adımlar bitince takip başlar.'}</p></section>
-      <section class="kart"><h2>İlk adımlar</h2>
+      ${adimlar.every(([tamam]) => tamam) ? '' : `<section class="kart"><h2>İlk adımlar</h2>
         ${adimlar.map(([tamam, ad, alt, git]) => `<div class="adim ${tamam ? 'bitti' : ''}">
           <span class="adim-isaret" aria-hidden="true">${tamam ? '✓' : ''}</span>
           <span class="adim-metin"><b>${ad}</b><small>${alt}</small></span>
           ${!tamam && git ? `<button class="ikincil kucuk" data-ayar-git="${git}">Aç</button>` : ''}
           <span class="gizli">${tamam ? 'tamamlandı' : 'bekliyor'}</span></div>`).join('')}
-      </section>`;
+      </section>`}`;
   }
 
   icerik.innerHTML = `
