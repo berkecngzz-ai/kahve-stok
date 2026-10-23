@@ -86,6 +86,28 @@ begin
   assert (stok_farki((t -> 0 ->> 'sayim_id')::uuid) ->> 'toplam_acik_tl')::numeric = -220, 'Rapor ile trend farklı';
 end $$;
 
+-- Bekleyen fatura uyarısı yalnız kendi dönemindeki raporda çıkar (sql/13).
+reset role;
+insert into public.belgeler (mekan_id, tur, kaynak, istek_id, tedarikci, belge_tarihi, genel_toplam, durum, giren, giren_ad)
+select id, 'fatura', 'ocr', gen_random_uuid(), 'Sonraki Hafta', public.bugun() - 2, 100, 'bekliyor', 'ffffffff-0000-0000-0000-000000000001', 'Ekran Patron'
+from public.mekanlar where ad = 'Ekran Test Kafe';
+set role authenticated;
+do $$ declare s uuid; begin
+  select id into s from girisler where tur = 'sayim' and tarih = bugun() - 4;
+  assert jsonb_array_length(stok_farki(s) -> 'uyarilar') = 0, 'Sonraki haftanın faturası eski raporda uyarı veriyor';
+  assert (eksik_belge_ozeti()).bekleyen_fatura = 1, 'Özet bekleyen faturayı göstermeli';
+end $$;
+reset role;
+insert into public.belgeler (mekan_id, tur, kaynak, istek_id, tedarikci, belge_tarihi, genel_toplam, durum, giren, giren_ad)
+select id, 'fatura', 'ocr', gen_random_uuid(), 'Bu Hafta', public.bugun() - 6, 100, 'bekliyor', 'ffffffff-0000-0000-0000-000000000001', 'Ekran Patron'
+from public.mekanlar where ad = 'Ekran Test Kafe';
+set role authenticated;
+do $$ declare s uuid; r jsonb; begin
+  select id into s from girisler where tur = 'sayim' and tarih = bugun() - 4;
+  r := stok_farki(s) -> 'uyarilar';
+  assert jsonb_array_length(r) = 1 and r ->> 0 like '1 fatura eşleştirme bekliyor%', format('Dönemdeki fatura uyarısı yok: %s', r);
+end $$;
+
 -- Barista göremez (fiyat ve açık patrona özel).
 select pg_temp.ol('ffffffff-0000-0000-0000-000000000002', 'ekranbarista@example.invalid');
 select public.mekana_katil(:'ekran_kod', 'Ekran Barista');

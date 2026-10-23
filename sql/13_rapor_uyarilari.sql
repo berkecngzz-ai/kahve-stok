@@ -74,8 +74,12 @@ begin
   from hesap;
 
   -- Sonucu bozabilecek eksikler (rapor yine gösterilir, patron uyarıyı görür).
+  -- Yalnız bu döneme düşen faturalar (fatura tarihi; okunamadıysa yükleme günü): sonraki haftanın bekleyen faturası
+  -- eski haftaların raporunu "eksik olabilir" diye göstermesin.
   select count(*) into v_say from belgeler
-    where mekan_id = v_mekan and tur = 'fatura' and durum = 'bekliyor' and iptal_zamani is null;
+    where mekan_id = v_mekan and tur = 'fatura' and durum = 'bekliyor' and iptal_zamani is null
+      and coalesce(belge_tarihi, (olusturma at time zone 'Europe/Istanbul')::date) <= s2.tarih
+      and (v_baslangic is null or coalesce(belge_tarihi, (olusturma at time zone 'Europe/Istanbul')::date) > v_baslangic);
   if v_say > 0 then
     v_uyari := v_uyari || format('%s fatura eşleştirme bekliyor: gelen mal eksik sayılmış olabilir; fazla olduğundan büyük, açık olduğundan küçük görünebilir.', v_say);
   end if;
