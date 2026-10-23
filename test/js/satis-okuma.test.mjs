@@ -43,3 +43,14 @@ test('XLSX MIME içindeki xml sözcüğü dosya uzantısını XML yapmaz',()=>{
  assert.equal(salesFileKind({name:'rapor.xlsx',type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},dosyaTuru),'xlsx');
  assert.equal(salesFileKind({name:'r.jpg',type:'image/jpeg'},dosyaTuru),'foto');
 });
+test('kasa programlarının başlıkları: Stok Adı / Satış Miktarı; kod, grup, fiyat sütunları aday değil; özet satırları atlanır',()=>{
+ const p=[{id:'1',ad:'Latte'}];
+ assert.deepEqual(matchSales([['Stok Kodu','Stok Adı','Satış Miktarı','Tutar'],['L01','Latte','12','840'],['','ARA TOPLAM:','12','840'],['','Genel Toplam (TL)','12','840']],p),
+  {matched:[{urun_id:'1',miktar:12}],unmatched:[]});
+ assert.deepEqual(matchSales([['Ürün Kodu','Ürün Adı','Ürün Grubu','Adet','Birim Fiyatı'],['1','Latte','Sıcak','3','70']],p).matched,[{urun_id:'1',miktar:3}]);
+ assert.deepEqual(matchSales([['Item Description','Qty Sold','Price'],['Latte','4','0']],p).matched,[{urun_id:'1',miktar:4}]);
+ // "Toplama" gibi toplamla başlamayan ürün adı atlanmaz; birebir bilinen başlık (Satış Adedi) benzerine (İade Adedi) üstün
+ assert.equal(matchSales([['Ürün','Adet'],['Toplama Kahve','2']],p).unmatched.length,1);
+ assert.deepEqual(matchSales([['Ürün Adı','Satış Adedi','İade Adedi'],['Latte','3','1']],p).matched,[{urun_id:'1',miktar:3}]);
+ assert.throws(()=>matchSales([['Ürün Adı','Satılan Adet','Satış Miktarı'],['Latte','3','3']],p),/belirsiz/);
+});

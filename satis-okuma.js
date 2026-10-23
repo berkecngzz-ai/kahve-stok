@@ -18,19 +18,31 @@ export function csvRows(text) {
  if(rows.length>10001)throw Error('Raporda en fazla 10000 satır olabilir.');
  return rows;
 }
+// Sütun başlığı puanı: birebir bilinen ad 3, bilinen kelimeyi içeren ad 2 (kasa programları "Satış Miktarı",
+// "Stok Adı", "Ürün Açıklaması" gibi yazar). Kod/tutar/fiyat sütunları aday olmaz. En yüksek puan tek olmalı.
+const NAME_EXACT=['urun adi','urun','product','product name','item','item name'];
+const QTY_EXACT=['adet','miktar','quantity','qty','satis adedi'];
+const nameScore=v=>NAME_EXACT.includes(v)?3:/\b(kod|kodu|code|id|no|barkod|barcode|grup|grubu|group|kategori|category)\b/.test(v)?0
+ :/\b(urun|product|item|stok|menu)\b/.test(v)&&/\b(adi|ad|name|aciklama|aciklamasi|tanim|tanimi)\b|^(urun|product|item)\b/.test(v)?2:0;
+const qtyScore=v=>QTY_EXACT.includes(v)?3:/\b(tutar|fiyat|fiyati|price|amount|ciro|total|toplam|birim|unit|kdv|tax)\b/.test(v)?0
+ :/\b(adet|adedi|miktar|miktari|quantity|qty|satilan)\b/.test(v)?2:0;
+function bestColumn(cells,score){
+ const p=cells.map(score),max=Math.max(0,...p);if(!max)return -1;
+ const all=p.flatMap((x,j)=>x===max?[j]:[]);if(all.length!==1)throw Error('Ürün ve adet sütunları belirsiz.');return all[0];
+}
+// "TOPLAM", "Ara Toplam", "GENEL TOPLAM:", "Total (TL)" gibi özet satırları ürün değildir.
+const isTotalRow=v=>/^(ara |genel |gun |grand |sub)?(toplam|total|subtotal)\b/.test(v);
 export function matchSales(rows,products){
- const names=['urun adi','urun','product','product name','item','item name'];
- const quantities=['adet','miktar','quantity','qty','satis adedi'];
  let header=-1,ni=-1,qi=-1;
  for(let i=0;i<Math.min(rows.length,20);i++){
-  const r=rows[i].map(normalize), n=r.map((v,j)=>names.includes(v)?j:-1).filter(j=>j>=0),q=r.map((v,j)=>quantities.includes(v)?j:-1).filter(j=>j>=0);
-  if(n.length&&q.length){if(n.length!==1||q.length!==1)throw Error('Ürün ve adet sütunları belirsiz.');header=i;ni=n[0];qi=q[0];break;}
+  const r=rows[i].map(normalize),n=bestColumn(r,nameScore),q=bestColumn(r,qtyScore);
+  if(n>=0&&q>=0&&n!==q){header=i;ni=n;qi=q;break;}
  }
  if(header<0)throw Error('Ürün adı ve adet sütunları bulunamadı.');
  const totals=new Map(),unmatched=[];
  for(let i=header+1;i<rows.length;i++){
   const r=rows[i];if(!r.some(v=>String(v??'').trim()))continue;
-  const raw=String(r[ni]??'').trim();if(['toplam','genel toplam','grand total','total'].includes(normalize(raw)))continue;
+  const raw=String(r[ni]??'').trim();if(isTotalRow(normalize(raw)))continue;
   const value=String(r[qi]??'').trim();
   if(!raw||!/^\d+(?:[.,]0{1,2})?$/.test(value))throw Error(`${i+1}. satırın ürün adı veya adedi geçersiz.`);
   const amount=Number(value.replace(',','.'));if(!Number.isSafeInteger(amount)||amount<0||amount>100000)throw Error(`${i+1}. satırın adedi geçersiz.`);

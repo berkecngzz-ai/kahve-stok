@@ -2244,8 +2244,8 @@ async function kurulumEkrani(kutu) {
             if (input) input.value = item.miktar;
           }
           form.querySelector('[data-satis-eslesmeyen]').innerHTML = result.unmatched.map(row =>
-            '<label class="uyari">' + esc(row.name) + ' · ' + row.quantity + ' adet<select data-satis-coz="' + row.quantity + '"><option value="">Ürün seç</option>' + products.map(p => '<option value="' + esc(p.id) + '">' + esc(p.ad) + '</option>').join('') + '</select></label>').join('');
-          message.textContent = result.unmatched.length ? 'Eşleşmeyen ürünleri seç. İkramlar adetlere dahil.' : 'Adetler okundu. Kontrol edip kaydet. İkramlar dahil.';
+            '<label class="uyari">' + esc(row.name) + ' · ' + row.quantity + ' adet<select data-satis-coz="' + row.quantity + '"><option value="">Ürün seç</option><option value="-">Tarifi yok, stoktan düşme</option>' + products.map(p => '<option value="' + esc(p.id) + '">' + esc(p.ad) + '</option>').join('') + '</select></label>').join('');
+          message.textContent = result.unmatched.length ? 'Eşleşmeyen ürünleri seç; tarifi olmayanlar (şişe su, kek…) için "Tarifi yok" de. İkramlar adetlere dahil.' : 'Adetler okundu. Kontrol edip kaydet. İkramlar dahil.';
         } catch (err) { message.textContent = 'Otomatik okunamadı: ' + hataMetni(err) + ' Belgeyi açıp adetleri elle yaz.'; }
         finally { save.disabled = false; }
       })();
@@ -2261,7 +2261,8 @@ async function kurulumEkrani(kutu) {
           if (n > 0) kalemler.push({ urun_id: inp.dataset.urun, miktar: n });
         }
         for (const select of form.querySelectorAll('[data-satis-coz]')) {
-          if (!select.value) throw new Error('Eşleşmeyen her satır için ürün seç.');
+          if (!select.value) throw new Error('Eşleşmeyen her satır için ürün seç ya da "Tarifi yok" de.');
+          if (select.value === '-') continue;   // tarifi olmayan ürün (şişe su, kek…): malzeme tüketmez
           const amount = Number(select.dataset.satisCoz);
           const existing = kalemler.find(k => k.urun_id === select.value);
           if (existing) existing.miktar += amount; else kalemler.push({ urun_id: select.value, miktar: amount });
