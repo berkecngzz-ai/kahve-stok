@@ -155,3 +155,6 @@ Sınır: Eski .xls, formüllü veya birden çok görünür sayfalı Excel otomat
 
 4. Demo Kafe betiği: YAPILDI, ÇALIŞTIRILMADI. scripts/demo-kafe.mjs yalnız bellek içi PGlite kullanır; proje/demo-output/demo-kafe.json çıktısını yeni dosya olarak oluşturacak, var olanı ezmeyecek. Dört hafta, 28 günlük satış/fire, dört fatura ve başlangıç dahil beş sayım planı. 3. hafta süt -12000 ml/-504 TL; 4. hafta önceki açık tekrar sayılmaz.
 Test: yalnız saf veri planı birim testi ve betiğin sözdizimi kontrolü; demo betiği/seed çalıştırılmadı. npm test 50/50; npm run test:sql tam geçti. Çalışma zamanı provası kullanıcının sonraki onayına bırakıldı.
+
+5. Veri izni metni: YAPILDI (taslak). docs/veri-izni-taslak.md: Supabase kayıt/dosya alanı; OpenAI'a görüntü + malzeme kimliği/adı/birimi aktarımı; kurulum erişimi; kalıcı silme ile iptal ayrımı. Bilinmeyen bölge/saklama/iletişim/silme bilgileri açık yer tutucular; uygulamada izin ekranı veya silme özelliği varmış gibi vaat yok.
+Test: taslak kapsam kontrolü ve kodla elle karşılaştırma; npm test 51/51, npm run test:sql tam geçti. Canlı ayarlar ve hukuki uygunluk doğrulanmadı; taslak yayımlanmadı.
