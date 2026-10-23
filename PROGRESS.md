@@ -230,3 +230,13 @@ programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
 7. Veri izni taslağındaki boşlukları (bölge, saklama süresi, iletişim, silme) doldur; sonra yayımla.
 8. Geri dönüş: ön yüz için `git revert` + push; SQL için 20 → `drop function public.stok_durumu(); drop function
    public.acik_trendi(int);`, 13/14/15 için önceki işlev metinleri `kahve-stok-yedek` yedeğinde.
+
+## İlk GERÇEK fiş testi — 2026-10-23 (kod değişmedi, gpt-4.1-mini, 0,0026 $)
+- Set: `Desktop\test-faturalar-gercek` (kullanıcının telefonla çektiği gerçek fişler; G01 = ŞOK market fişi). Fişler
+  biriktikçe buraya eklenir; kod ölçüm bitene kadar dondurulur. Test için fişteki 3 ürün malzeme tanımlandı.
+- G01: 8 satırdan 5 doğru, 2 kurulum, 1 yanlış. Tedarikçi, VKN, tarih, KDV 46,60, genel toplam 427,42 doğru; fiş no okunmadı.
+- Bulgu 1 (yanlış): "1,033Kg X 99,00" çarpanı AI'da ürün adına yapıştı ("1,033KG TADPİ PİLİÇ BAGET KG") → eşleştirme
+  addaki 1,033 kg'ı paket boyu sandı → 1,033 × 1033 = 1.067 g önerildi (1.033 g olmalı). Tartıyla satılan ürün riski.
+- Bulgu 2: indirim satırları ("25TLFINISH110TL −149,00") ayrı ürün ve ARTI tutarla okundu ("2STL…"); toplam kontrolü
+  tutmadı (yakalandı). Takip dışı oldukları için stok zararı yok; malzemeye denk gelseydi yanlış giriş riski.
+- Ozmo (adında 23G, malzeme adet) kuruluma düştü — beklenen güvenli davranış.
