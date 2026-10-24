@@ -25,9 +25,10 @@ test('soda satırı artık sorusuz/otomatik 1 çarpanla stoğa gitmez', () => {
   const ctx = { malzemeler, defter: [], tedarikciAnahtar: '5891234701' };
   const s = { metin: 'SODA SADE 200ML', miktar: 24, birim: 'ml' };
   assert.notEqual(siniflandir(s, ctx).carpan, 1);
-  // AI "maden suyu, 24 ml" dese bile: adda 200 ml paket yazıyor, AI'nın 1 çarpanı kuralla çelişir → kurulum
+  // AI "maden suyu, 24 ml" dese bile: adda 200 ml paket yazıyor, AI'nın 1 çarpanı kuralla çelişir → barista sayar
   const ai = { karar: 'malzeme', malzeme_id: 'soda', stok_miktari: 24, guven: 0.9 };
-  assert.equal(aiIleSiniflandir({ ...s, ai }, ctx).sinif, 'belirsiz');
+  const r0 = aiIleSiniflandir({ ...s, ai }, ctx);
+  assert.ok(r0.sinif === 'soru' && r0.carpan !== 1);
   // AI 4800 ml derse (24 × 200) tutarlı → baristaya sorulur, çarpan 200
   const ai2 = { karar: 'malzeme', malzeme_id: 'soda', stok_miktari: 4800, guven: 0.9 };
   const ctx2 = { ...ctx, malzemeler: [{ id: 'soda', ad: 'Sade soda', birim: 'ml', aktif: true }] };
@@ -44,9 +45,9 @@ test('takip dışı kararından sonra eklenen malzeme: satır yeniden kuruluma g
   const once = [{ ...sonra[0], olusturma: '2026-10-20T10:00:00Z' }];
   const s = { metin: "Karton Bardak 12 oz / 50'li", miktar: 6, birim: 'diger' };
   const ctx = (malzemeler) => ({ malzemeler, defter, tedarikciAnahtar: '4820193756' });
-  assert.deepEqual(siniflandir(s, ctx(sonra)), { sinif: 'belirsiz', aday_malzeme_id: 'bardak' });
-  assert.deepEqual(aiIleSiniflandir({ ...s, ai: { karar: 'takip_disi', guven: 0.95 } }, ctx(sonra)),
-    { sinif: 'belirsiz', aday_malzeme_id: 'bardak' });
+  for (const r of [siniflandir(s, ctx(sonra)), aiIleSiniflandir({ ...s, ai: { karar: 'takip_disi', guven: 0.95 } }, ctx(sonra))]) {
+    assert.ok(r.sinif === 'soru' && r.malzeme_id === 'bardak', JSON.stringify(r));
+  }
   // Malzeme karardan ÖNCE vardı → bilerek dışarıda bırakılmış, karar geçerli
   assert.equal(siniflandir(s, ctx(once)).sinif, 'takip_disi');
   // Pasif malzeme ya da türev ürün kararı bozmaz

@@ -42,12 +42,13 @@ test('sınıflandırma', () => {
   const ctx = { malzemeler, defter: [], tedarikciAnahtar: '1234567890' };
   assert.deepEqual(siniflandir({ metin: 'SÜTAŞ SÜT 1L', miktar: 24, birim: 'adet' }, ctx),
     { sinif: 'soru', malzeme_id: 'sut', carpan: 1000, aday_malzeme_id: 'sut' });
-  // İlk kez görülen, hiçbir malzemeye benzemeyen satır: takip dışı DEĞİL, kuyruğa (karar defterden gelir)
+  // Hiçbir malzemeye benzemeyen satır: stok listesinde karşılığı yok → sessizce geçilir (otomatik malzeme açılmaz)
   assert.deepEqual(siniflandir({ metin: 'DETERJAN 5L', miktar: 1, birim: 'adet' }, ctx), { sinif: 'belirsiz' });
   assert.deepEqual(siniflandir({ metin: 'ESPRESSO BLEND 1KG', miktar: 1, birim: 'adet' }, ctx), { sinif: 'belirsiz' });
   assert.equal(siniflandir({ metin: 'ŞURUP KARAMEL', miktar: 1, birim: 'adet' }, ctx).sinif, 'belirsiz'); // pasif malzeme
-  // benziyor ama paket boyu yok → kurulum
-  assert.deepEqual(siniflandir({ metin: 'SÜT', miktar: 5, birim: 'adet' }, ctx), { sinif: 'belirsiz', aday_malzeme_id: 'sut' });
+  // benziyor ama paket boyu yok → barista stok biriminde (litre) sayar
+  assert.deepEqual(siniflandir({ metin: 'SÜT', miktar: 5, birim: 'adet' }, ctx),
+    { sinif: 'soru', malzeme_id: 'sut', carpan: null, stokBirimi: true, aday_malzeme_id: 'sut' });
   // kg → g çevrilebilir
   assert.equal(siniflandir({ metin: 'KAHVE ÇEKİRDEĞİ', miktar: 5, birim: 'kg' }, ctx).carpan, 1000);
 });
@@ -95,15 +96,15 @@ test('baş isim / kısaltma', () => {
   assert.equal(basIsimVarMi('Süt', 'SU 0,5LT 24LU'), false);
   assert.equal(basIsimVarMi('Bardak', 'KARTON BRDK 50LI'), true);
 });
-test('kural yolunda yarım eşleşme soru olmaz', () => {
+test('kural yolunda başka ürün geçilir, yarım eşleşmeyi barista doğrular', () => {
   const ctx = { malzemeler: [...malzemeler, { id: 'fk', ad: 'Filtre kahve', birim: 'g', aktif: true }], defter: [], tedarikciAnahtar: '' };
   assert.equal(siniflandir({ metin: 'TÜRK KAHVESİ 100 GR', miktar: 10, birim: 'adet' }, ctx).sinif, 'belirsiz');
-  assert.equal(siniflandir({ metin: 'ESPRESSO ÇEKİRDEK 1 KG', miktar: 3, birim: 'adet' }, ctx).sinif, 'belirsiz');
+  assert.equal(siniflandir({ metin: 'ESPRESSO ÇEKİRDEK 1 KG', miktar: 3, birim: 'adet' }, ctx).sinif, 'soru');
 });
-test('iki yakın aday → belirsiz', () => {
+test('iki yakın aday → en iyisi baristaya sorulur (yanlışsa "değil" der)', () => {
   const m2 = [...malzemeler, { id: 'sutk', ad: 'Süt kremalı', birim: 'ml', aktif: true }, { id: 'sutl', ad: 'Süt laktozsuz', birim: 'ml', aktif: true }];
   const r = siniflandir({ metin: 'SÜT 1L', miktar: 1, birim: 'adet' }, { malzemeler: m2, defter: [], tedarikciAnahtar: '' });
   assert.equal(r.sinif, 'soru');   // "Süt" tam tutuyor (1.0), diğerleri 0.5
   const r2 = siniflandir({ metin: 'LAKTOZSUZ KREMALI SÜT 1L', miktar: 1, birim: 'adet' }, { malzemeler: m2, defter: [], tedarikciAnahtar: '' });
-  assert.equal(r2.sinif, 'belirsiz');
+  assert.equal(r2.sinif, 'soru');
 });

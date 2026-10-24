@@ -340,16 +340,31 @@ export function parcalariSatirla(parcalar) {
 
 // ---------- Kontroller ----------
 
+// Satırın KDV dahil tutarı: belgede yazan dahil tutar; yoksa hariç tutar + okunan oran; ikisi de yoksa bilinmez.
+// Bilinmeyen oran %0 SAYILMAZ (veritabanındaki satir_dahil_tutar ile aynı kural).
+export function satirDahil(s) {
+  if (s.tutar_dahil != null) return s.tutar_dahil;
+  return s.tutar_haric != null && s.kdv_orani != null ? yuvarla2(s.tutar_haric * (1 + s.kdv_orani / 100)) : null;
+}
+
 // Satırların toplamı faturadaki toplamla tutuyor mu? (veritabanıyla aynı kural)
+//   (a) tüm satırların KDV dahil tutarı belli ve genel toplamı tutuyor, ya da
+//   (b) KDV belirsiz ama tüm satırların hariç tutarı belli ve faturadaki hariç toplamı tutuyor (kdv_belirsiz: true).
 export function toplamKontrol(sonuc) {
   const { genel, kdv_haric: haric, indirim } = sonuc.toplamlar;
   if (genel == null) return { tutuyor: false, sebep: 'toplam_yok' };
-  if (sonuc.satirlar.some((s) => s.tutar_haric == null)) return { tutuyor: false, sebep: 'satir_tutari_yok' };
   const pay = Math.max(1, 0.01 * sonuc.satirlar.length);
-  const dahil = sonuc.satirlar.reduce((t, s) => t + s.tutar_haric * (1 + (s.kdv_orani ?? 0) / 100), 0);
-  const harics = sonuc.satirlar.reduce((t, s) => t + s.tutar_haric, 0);
-  if (Math.abs(yuvarla2(dahil) - (indirim ?? 0) - genel) > pay) return { tutuyor: false, sebep: 'fark', fark: yuvarla2(dahil - (indirim ?? 0) - genel) };
-  if (haric != null && Math.abs(harics - haric) > pay) return { tutuyor: false, sebep: 'haric_fark' };
+  const harics = sonuc.satirlar.every((s) => s.tutar_haric != null)
+    ? sonuc.satirlar.reduce((t, s) => t + s.tutar_haric, 0) : null;
+  const haricTutuyor = haric != null && harics != null && Math.abs(harics - haric) <= pay;
+  const dahiller = sonuc.satirlar.map(satirDahil);
+  if (dahiller.some((d) => d == null)) {
+    return haricTutuyor ? { tutuyor: true, kdv_belirsiz: true } : { tutuyor: false, sebep: 'satir_tutari_yok' };
+  }
+  const dahil = dahiller.reduce((t, d) => t + d, 0);
+  const fark = yuvarla2(dahil - (indirim ?? 0) - genel);
+  if (Math.abs(fark) > pay) return haricTutuyor ? { tutuyor: true, kdv_belirsiz: true } : { tutuyor: false, sebep: 'fark', fark };
+  if (haric != null && harics != null && !haricTutuyor) return { tutuyor: false, sebep: 'haric_fark' };
   return { tutuyor: true };
 }
 
@@ -516,8 +531,8 @@ export function carpmaSatiriKarisik(u) {
 }
 
 // ---------- AI (fatura-oku işlevi) cevabını uygulamanın biçimine çevirme ----------
-// AI satır tutarlarını faturada yazdığı gibi verir; KDV dahilse (fiş) hariç tutara çevrilir. Oran yoksa
-// faturanın KDV tutarlarından çözülmeye çalışılır (OCR'daki gibi); çözülemezse tutar bilinmiyor sayılır.
+// AI satır tutarlarını faturada yazdığı gibi verir. KDV dahilse (fiş) dahil tutar saklanır; oran belgede yazıyorsa
+// ya da faturanın KDV tutarlarından tek çözümle bulunursa hariç tutar da hesaplanır. Oran UYDURULMAZ (varsayılan yok).
 export function aiSonucunuCevir(ai) {
   const toplamlar = { genel: ai.genel_toplam ?? null, kdv_haric: ai.kdv_haric_toplam ?? null,
                       kdv: ai.kdv_toplam ?? null, indirim: ai.indirim ?? 0 };
@@ -540,11 +555,8 @@ export function aiSonucunuCevir(ai) {
     ai: s.eslesme ?? null,
   }));
   if (dahil) {
-    // Belgede KDV hiç yazmıyorsa (elle yazılmış toptancı fişi gibi) ve satırlar toplamı tutuyorsa tutarlar ödenen
-    // tutardır: KDV ayrıştırılamaz, %0 sayılır (birim maliyet KDV dahil tutardan doğru hesaplanır).
-    const kdvYok = toplamlar.kdv == null && toplamlar.kdv_haric == null && satirlar.length
-      && satirlar.every((u) => u.kdv_orani == null && u.tutar_dahil != null) && dahilTutar;
-    if (kdvYok) satirlar.forEach((u) => { u.kdv_orani = 0; });
+    // Belgede KDV hiç yazmıyorsa (elle yazılmış toptancı fişi gibi) tutarlar ödenen tutardır: dahil tutar yeter,
+    // oran boş kalır (birim maliyet KDV dahil tutardan hesaplanır).
     kdvOranlariniCoz(satirlar, toplamlar, new Map(), [], true);
     for (const u of satirlar) {
       u.tutar_haric = u.kdv_orani != null && u.tutar_dahil != null ? yuvarla2(u.tutar_dahil / (1 + u.kdv_orani / 100)) : null;

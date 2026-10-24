@@ -39,3 +39,22 @@ reset role;
 update public.malzeme_hareketleri h set miktar = h.miktar + 1000
   from public.girisler g
   where g.id = h.giris_id and g.tur = 'sayim' and g.tarih = public.bugun() and h.malzeme_id = :'kahve';
+
+-- Demo (sql/23): KDV oranı okunamamış fatura → kakao/şurup stoğa girdi, fiyatı "kontrol bekliyor" (patronun Özet'i).
+reset role;
+select m.id as surup from public.malzemeler m join public.mekanlar k on k.id = m.mekan_id
+  where k.ad = 'Demo Kafe' and m.birim = 'ml' and m.ad not like 'Süt%' order by m.ad limit 1 \gset
+select set_config('request.jwt.claim.sub', 'd0000000-0000-4000-8000-000000000002', false),
+       set_config('request.jwt.claim.email', 'barista@demo.kafe', false);
+set role authenticated;
+select public.belge_kaydet(jsonb_build_object(
+  'istek_id', gen_random_uuid(), 'tur', 'fatura', 'kaynak', 'xml', 'tedarikci', 'Aroma Toptan',
+  'tedarikci_vkn', '6666666666', 'tarih', public.bugun(), 'fatura_no', 'ARM2026000000077',
+  'toplamlar', jsonb_build_object('genel', 1800, 'kdv_haric', 1500), 'okunan', jsonb_build_object('not', 'demo'),
+  'satirlar', jsonb_build_array(jsonb_build_object(
+    'metin', 'ŞURUP 700ML', 'miktar', 6, 'birim', 'adet', 'tutar_haric', 1500, 'sinif', 'eslesti',
+    'malzeme_id', :'surup', 'carpan', 700, 'barista_onayi', true, 'gelen_miktar', 6, 'sayim', 'sayildi', 'teslimat', 'tam'))));
+reset role;
+update public.malzeme_hareketleri h set miktar = h.miktar + 4200
+  from public.girisler g
+  where g.id = h.giris_id and g.tur = 'sayim' and g.tarih = public.bugun() and h.malzeme_id = :'surup';

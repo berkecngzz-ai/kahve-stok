@@ -7,6 +7,8 @@
 // AI'nın okuduğu toplamlarla karşılaştırılır, tutmazsa okuma şüphelidir. İrsaliye karekodunda tutar yoktur.
 // Çözme cihazda yapılır (internet ve AI yok).
 
+import { kdvOranlariniCoz } from './okuma.js';
+
 const ETTN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // "1080.00", "1 080.00", "1.080,00" → 1080
@@ -107,8 +109,24 @@ export function karekoduUygula(k, sonuc) {
     sonuc.notlar = (sonuc.notlar ?? []).filter((n) => n !== 'toplam_yok' && n !== 'eksik_gorunuyor');
     sonuc.notlar.push('toplam_karekoddan');
   }
+  karekodVergisiniUygula(k, sonuc);
   sonuc.karekod = k;
   return sonuc;
+}
+
+// Karekoddaki vergi bilgisi (oran başına matrah / KDV, makine verisi) satırların okunamayan KDV oranı için sessizce
+// kullanılır; kimseye sorulmaz. Tek oran varsa bütün satırlar o orandadır. Birden fazla oran varsa yalnız KDV
+// tutarlarını TEK bir dağılım tutturuyorsa atanır; tutturmuyorsa oran boş kalır (tahmin yok).
+export function karekodVergisiniUygula(k, sonuc) {
+  const satirlar = sonuc?.satirlar ?? [];
+  const eksik = satirlar.filter((s) => s.kdv_orani == null && s.tutar_haric != null && s.tutar_dahil == null);
+  const oranlar = Object.keys(k.matrahlar ?? {}).map(Number).filter((o) => Number.isFinite(o) && o >= 0 && o <= 100);
+  if (sonuc.toplamlar && sonuc.toplamlar.kdv == null && k.kdv_toplam != null) sonuc.toplamlar.kdv = k.kdv_toplam;
+  if (!eksik.length || !oranlar.length) return;
+  if (oranlar.length === 1) { eksik.forEach((s) => { s.kdv_orani = oranlar[0]; }); return; }
+  if (satirlar.some((s) => s.tutar_haric == null)) return;
+  const oranKdvleri = new Map(Object.entries(k.kdvler ?? {}).map(([o, t]) => [Number(o), t]));
+  kdvOranlariniCoz(satirlar, { ...sonuc.toplamlar, kdv: k.kdv_toplam }, oranKdvleri, [], false);
 }
 
 // ---------- Tarayıcı: görüntüde karekod arama ----------

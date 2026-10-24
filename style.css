@@ -462,3 +462,6 @@ button.kontrol-madde { cursor: pointer; }
 .gecmis-metin small { color: var(--soluk); font-size: 13px; }
 .stok-satir .sol { flex: 1; }
 .sayim-ikon, .sayim-birim { text-align: center; }
+
+/* "KDV dahil" ibaresi: fiyatların yanında küçük ve sade */
+.kdv-dahil { font-size: 12px; font-weight: 400; color: var(--soluk, #777); margin-left: 4px; }

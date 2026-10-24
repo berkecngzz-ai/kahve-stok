@@ -2,7 +2,7 @@ import { readSalesFile, salesFileKind } from './satis-okuma.js';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
-import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js';
 import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js';
 import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
@@ -295,6 +295,62 @@ function teslimatKartiBagla(icerik, yenile) {
   });
 }
 
+// ---------- Fiyatı doğrulanmayan kalemler (patron) ----------
+// Mal stoğa girdi ama fiyatı doğrulanamadı (KDV belirsiz ya da fatura toplamı tutmadı). Patron faturadaki tutarı
+// (KDV dahil) yazar ya da kayıtlı fiyatı onaylar. Vergi sorusu yok.
+function fiyatKontrolKarti(liste) {
+  if (!liste?.length) return '';
+  return `<section class="kart gorev-kart" id="fiyat-kontrol">
+    <h2>Fiyatı doğrulanmayanlar <span class="rozet">${liste.length}</span></h2>
+    <p class="bilgi kucuk-yazi">Mal stoğa girdi. Faturaya bakıp bu satırın tutarını yaz; o zamana kadar TL hesapları
+      son onaylı fiyatla tahminidir.</p>
+    ${liste.map((x) => `<div class="gorev" data-fk="${esc(x.id)}">
+        <div class="gorev-ust">
+          <span class="gorev-ikon" aria-hidden="true">${malzemeIkonu({ ad: x.malzeme, birim: x.birim })}</span>
+          <div class="gorev-baslik"><b>${esc(x.malzeme)}: ${okunurMiktar(x.faturadaki ?? x.miktar, x.birim)}</b>
+            <small>${esc(x.tedarikci ?? 'Fatura')} · ${esc(kisaTarih(x.tarih))}${x.satir_metni ? ` · ${esc(x.satir_metni)}` : ''}</small></div>
+        </div>
+        ${x.toplam_tutuyor === false ? '<p class="uyari-yazi">Fatura toplamı tutmuyor: fotoğrafı kontrol et.</p>' : ''}
+        ${x.dosyalar?.length ? `<details class="fatura-gor"><summary>Faturayı gör</summary>
+          <div class="belgeler" data-dosyalar="${esc(JSON.stringify(x.dosyalar))}"></div></details>` : ''}
+        <label class="not-alani">Faturada bu satırın tutarı (TL, KDV dahil)
+          <input inputmode="decimal" autocomplete="off" data-fk-tutar placeholder="Örn. 2.520"></label>
+        <div class="cozum-dugmeleri"><button class="kucuk" data-fk-onay>Onayla ✓</button>
+          ${Number(x.onayli_fiyat) > 0
+            ? `<button class="ikincil kucuk" data-fk-kayitli>Kayıtlı fiyat doğru (${tlYaz(x.onayli_fiyat)}/${birimFiyatAdi(x.birim)})</button>`
+            : '<small class="bilgi">Onaylı fiyatı yok: TL toplamlarına girmiyor.</small>'}</div>
+        <p class="mesaj"></p>
+      </div>`).join('')}
+  </section>`;
+}
+
+function fiyatKontrolKartiBagla(icerik, yenile) {
+  icerik.querySelectorAll('#fiyat-kontrol details.fatura-gor').forEach((d) => d.addEventListener('toggle', () => {
+    const kutu = d.querySelector('[data-dosyalar]');
+    if (d.open && kutu) belgeleriGoster(kutu, JSON.parse(kutu.dataset.dosyalar));
+  }));
+  icerik.querySelectorAll('#fiyat-kontrol .gorev').forEach((g) => {
+    const mesaj = g.querySelector('.mesaj');
+    const kapat = async (tutar) => {
+      g.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      try {
+        await rpcVeri('fiyat_kontrol_coz', { p_kalem: Number(g.dataset.fk), p_tutar: tutar });
+        yenile();
+      } catch (err) {
+        g.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        mesaj.className = 'mesaj hata';
+        mesaj.textContent = hataMetni(err);
+      }
+    };
+    g.querySelector('[data-fk-onay]').addEventListener('click', () => {
+      const n = sayiOku(g.querySelector('[data-fk-tutar]').value);
+      if (!(n > 0)) { mesaj.className = 'mesaj hata'; mesaj.textContent = 'Faturadaki tutarı yaz.'; return; }
+      kapat(n);
+    });
+    g.querySelector('[data-fk-kayitli]')?.addEventListener('click', () => kapat(null));
+  });
+}
+
 // ---------- Bugünkü kontrol: patron yalnız dikkat etmesi gerekeni görür; sorun yoksa yeşil ----------
 const gunFarki = (a, b) => Math.round((new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)) / 864e5);
 const birimFiyatAdi = (birim) => ({ g: 'kg', ml: 'litre', adet: 'adet' }[birim] ?? birim);
@@ -313,9 +369,17 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son }) {
     maddeler.push(['sari', '📈', `${f.ad} %${String(f.degisim_yuzde).replace('.', ',')} pahalandı`,
       `${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)} · ayda ≈ ${tlYaz(f.aylik_etki)} ek maliyet`, '#fiyatlar']);
   }
-  for (const e of kontrol.elle_fiyat_kontrol ?? []) {
-    maddeler.push(['sari', '✍️', `Elle girilen fiyat kontrol bekliyor: ${e.malzeme}`,
-      `${buyukMiktar(e.miktar, e.birim)} · ${tlYaz(e.tutar)} · ${e.giren_ad}. Fiyat güncellenmedi; doğruysa malzemeden düzelt.`, 'ayar']);
+  if (kontrol.fiyat_kontrol != null) {
+    if (Number(kontrol.fiyat_kontrol)) {
+      maddeler.push(['sari', '🏷️', `${kontrol.fiyat_kontrol} kalemin fiyatı doğrulanmadı`,
+        'Mal stoğa girdi; TL hesapları tahmini. Aşağıda tutarı yazıp onayla', '#fiyat-kontrol']);
+    }
+  } else {
+    // Sunucu henüz eski sürümse (sql/23 yok): elle girişin kontrolü eskisi gibi
+    for (const e of kontrol.elle_fiyat_kontrol ?? []) {
+      maddeler.push(['sari', '✍️', `Elle girilen fiyat kontrol bekliyor: ${e.malzeme}`,
+        `${buyukMiktar(e.miktar, e.birim)} · ${tlYaz(e.tutar)} · ${e.giren_ad}. Fiyat güncellenmedi; doğruysa malzemeden düzelt.`, 'ayar']);
+    }
   }
   const sayimGun = kontrol.son_sayim ? gunFarki(kontrol.bugun, kontrol.son_sayim) : null;
   if (sayimGun == null) maddeler.push(['sari', '📋', 'Henüz sayım yok', 'Takip ilk haftalık sayımla başlar', null]);
@@ -361,17 +425,18 @@ function fiyatKarti(fiyatlar) {
           ${f.aylik_etki != null ? ` · ayda ${tlYaz(f.aylik_etki, { isaret: true })}` : ' · kullanım verisi yok, aylık etki hesaplanmadı'}</small>
       </div>`;
     }).join('')}
-    <p class="bilgi kucuk-yazi">Uyarı: %5'ten fazla artış ve ayda 250 TL'den fazla ek maliyet. Ortalama, alınan miktara göre.</p>
+    <p class="bilgi kucuk-yazi">Fiyatlar KDV dahil. Uyarı: %5'ten fazla artış ve ayda 250 TL'den fazla ek maliyet.
+      Ortalama, alınan miktara göre (yalnız doğrulanmış fiyatlar).</p>
   </section>`;
 }
 
 async function ozetSekmesi(icerik) {
   // Yeni işlevler (sql/21, 22) sunucuda yoksa ilgili kart görünmez; Özet yine açılır.
   const yoksa = (deger) => (e) => { console.warn('Özet verisi alınamadı:', e); return deger; };
-  const [trend, eksikler, stok, gorevler, kontrol, fiyatlar] = await Promise.all([
+  const [trend, eksikler, stok, gorevler, kontrol, fiyatlar, fiyatKontrol] = await Promise.all([
     rpcVeri('acik_trendi', { p_adet: 8 }), rpcVeri('eksik_belge_ozeti'), rpcVeri('stok_durumu'),
     rpcVeri('teslimat_gorevleri').catch(yoksa([])), rpcVeri('gunluk_kontrol').catch(yoksa(null)),
-    rpcVeri('fiyat_degisimleri').catch(yoksa([]))]);
+    rpcVeri('fiyat_degisimleri').catch(yoksa([])), rpcVeri('fiyat_kontrolleri').catch(yoksa([]))]);
   trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
   const [son, onceki] = trend;
   const azalan = stok.malzemeler.filter((m) => ['az', 'dikkat'].includes(yeterDurumu(m.yeter_gun)));
@@ -418,6 +483,7 @@ async function ozetSekmesi(icerik) {
   icerik.innerHTML = `
     ${gunlukKontrolKarti({ kontrol, fiyatlar, eksik: eksikler?.[0], son })}
     ${teslimatKarti(gorevler ?? [])}
+    ${fiyatKontrolKarti(fiyatKontrol)}
     ${kahraman}
     ${kontrol ? '' : bekleyenUyarisi(eksikler?.[0])}
     ${son ? `<section class="kart">
@@ -441,6 +507,7 @@ async function ozetSekmesi(icerik) {
     </section>` : ''}
     ${fiyatKarti(fiyatlar)}`;
   teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
+  fiyatKontrolKartiBagla(icerik, () => ozetSekmesi(icerik));
   icerik.querySelectorAll('[data-kontrol-git]').forEach((b) => b.addEventListener('click', () => {
     const git = b.dataset.kontrolGit;
     if (git.startsWith('#')) { icerik.querySelector(git)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -476,11 +543,16 @@ function stokGuveni(m, bugun, faturaBekliyor) {
 }
 
 async function stokSekmesi(icerik) {
-  const [r, eksikler] = await Promise.all([rpcVeri('stok_durumu'), rpcVeri('eksik_belge_ozeti')]);
+  const [r, eksikler, fk] = await Promise.all([rpcVeri('stok_durumu'), rpcVeri('eksik_belge_ozeti'),
+    rpcVeri('fiyat_kontrolleri').catch(() => [])]);
   const faturaBekliyor = Number(eksikler?.[0]?.bekleyen_fatura) > 0;
   const sayilan = r.malzemeler.filter((m) => m.simdi != null);
   const sayilmayan = r.malzemeler.filter((m) => m.simdi == null);
   const deger = sayilan.reduce((t, m) => t + Number(m.deger_tl || 0), 0);
+  // Fiyatı doğrulanmayan malzemenin değeri son onaylı fiyatla (tahmini); onaylı fiyatı hiç olmayan değere girmez.
+  const kontrolde = new Set((fk ?? []).map((x) => x.malzeme_id));
+  const tahminiDeger = sayilan.filter((m) => kontrolde.has(m.malzeme_id) && Number(m.fiyat) > 0).length;
+  const fiyatsiz = sayilan.filter((m) => !(Number(m.fiyat) > 0) && Number(m.simdi) > 0);
   const azSayi = sayilan.filter((m) => yeterDurumu(m.yeter_gun) === 'az').length;
   const tahminSayi = sayilan.filter((m) => stokGuveni(m, r.tarih, faturaBekliyor)[0] !== 'dogru').length;
   const satir = (m) => {
@@ -502,8 +574,10 @@ async function stokSekmesi(icerik) {
   };
   icerik.innerHTML = `
     <section class="kart">
-      <div class="etiket">Elde olan malın değeri</div>
-      <div class="buyuk-rakam">${sayilan.length ? tlYaz(deger) : '—'}</div>
+      <div class="etiket">Elde olan malın değeri ${KDV_DAHIL}</div>
+      <div class="buyuk-rakam">${sayilan.length ? `${tahminiDeger ? '≈ ' : ''}${tlYaz(deger)}` : '—'}</div>
+      ${tahminiDeger ? `<p class="bilgi kucuk-yazi">${tahminiDeger} malzemenin fiyatı doğrulanmadı; değer son onaylı fiyatla tahmini.</p>` : ''}
+      ${fiyatsiz.length ? `<p class="bilgi kucuk-yazi">Fiyatı olmadığı için değere girmeyenler: ${fiyatsiz.map((m) => esc(m.ad)).join(', ')}.</p>` : ''}
       <p class="bilgi kucuk-yazi">${sayilan.length ? `${sayilan.length} malzeme${azSayi
         ? ` · <span class="uyari">${azSayi} tanesi 2 gün yetmeyebilir</span>` : ''}. ` : ''}Son sayım + sonra gelen − satılan − fire.
         ${tahminSayi ? `<b>${tahminSayi} malzemenin rakamı tahmini</b> (etiketine bak); ` : ''}bir sonraki sayımda kesinleşir. "Gün", son ${r.kullanim_gun || 28} günün ortalama kullanımına göre tahmindir.</p>
@@ -517,7 +591,10 @@ async function stokSekmesi(icerik) {
 let secilenSayim = null;   // Raporda seçili sayım (yoksa en son)
 
 async function stokFarkiSekmesi(icerik) {
-  const [r, trend] = await Promise.all([rpcVeri('stok_farki', { p_sayim: secilenSayim }), rpcVeri('acik_trendi', { p_adet: 8 })]);
+  const [r, trend, fk] = await Promise.all([rpcVeri('stok_farki', { p_sayim: secilenSayim }), rpcVeri('acik_trendi', { p_adet: 8 }),
+    rpcVeri('fiyat_kontrolleri').catch(() => [])]);
+  // Fiyatı doğrulanmayan malzeme: miktar farkı normal, TL son onaylı fiyatla "tahmini".
+  const kontrolde = new Set((fk ?? []).map((x) => x.malzeme_id));
   if (r.durum === 'sayim_yok') {
     icerik.innerHTML = `<div class="kart"><h2>Haftalık rapor</h2>
       <p class="bilgi">Henüz sayım yok. Rapor iki haftalık sayım arasında hesaplanır: ilk sayım başlangıç olur,
@@ -528,7 +605,10 @@ async function stokFarkiSekmesi(icerik) {
   const tamam = r.satirlar.filter((x) => x.durum === 'tamam');
   const ilk = r.satirlar.filter((x) => x.durum === 'ilk_sayim');
   const sayilmadi = r.satirlar.filter((x) => x.durum === 'sayilmadi');
-  tamam.forEach((x) => { x.renk = acikDurumu(x); });
+  tamam.forEach((x) => { x.renk = acikDurumu(x); x.tahmini = x.fark_tl != null && kontrolde.has(x.malzeme_id); });
+  // Onaylı fiyatı hiç olmayan: TL toplamına girmez, ayrı listelenir (miktar farkı yine hesaplanır).
+  const fiyatsiz = tamam.filter((x) => x.fark_tl == null && Number(x.fark) !== 0);
+  const tahminiSayi = tamam.filter((x) => x.tahmini).length;
   const buyukSayi = tamam.filter((x) => x.renk === 'buyuk').length;
   const tlHucre = (miktar, x) => {
     const t = miktarTl(miktar, x.birim, x.fiyat);
@@ -542,7 +622,8 @@ async function stokFarkiSekmesi(icerik) {
       <summary>
         <span class="ad"><b>${esc(x.ad)}</b><small><span class="nokta"></span>${DURUM_YAZI[x.renk]}${x.renk !== 'normal' && acikOrani(x)
           ? ` · kullanılanın ${acikOrani(x)} kadarı` : ''}</small></span>
-        <span class="deger"><b>${x.fark_tl != null ? tlYaz(x.fark_tl, { isaret: true }) : 'fiyat yok'}</b>
+        <span class="deger"><b>${x.fark_tl != null ? `${x.tahmini ? '≈ ' : ''}${tlYaz(x.fark_tl, { isaret: true })}` : 'fiyat yok'}</b>
+          ${x.tahmini ? '<small class="guven tahmin">Tahmini</small>' : ''}
           <small>${okunurMiktar(x.fark, x.birim, { isaret: true })}</small></span>
       </summary>
       <table class="tablo rapor-tablo">
@@ -581,7 +662,12 @@ async function stokFarkiSekmesi(icerik) {
       <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek açık var.` : 'Tüm malzemeler normal sınırda.'}</p>`
       : '<p class="bilgi">Bu, ilk sayım. Açık bir sonraki haftalık sayımda görünür.</p>'}
       ${r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u)}</span>`).join('')}</div>` : ''}
+      ${tahminiSayi ? `<p class="bilgi kucuk-yazi">${tahminiSayi} malzemenin fiyatı doğrulanmadı: TL'si son onaylı fiyatla tahmini (≈).</p>` : ''}
     </section>
+    ${fiyatsiz.length ? `<section class="kart"><h2>TL toplamına girmeyenler (${fiyatsiz.length})</h2>
+      <p class="bilgi">Onaylı fiyatı olmadığı için açık/fazla TL'ye çevrilmedi. Miktar farkı:</p>
+      ${fiyatsiz.map((x) => `<div class="cizgili-satir"><span>${esc(x.ad)}</span>
+        <span>${okunurMiktar(x.fark, x.birim, { isaret: true })}</span></div>`).join('')}</section>` : ''}
     ${trend.length > 1 ? `<section class="kart"><h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}</section>` : ''}
     ${tamam.length ? `<section class="kart liste-kart">
       <h2>Malzemeler</h2>
@@ -596,7 +682,7 @@ async function stokFarkiSekmesi(icerik) {
     ${sayilmadi.length ? `<section class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
       <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></section>` : ''}
     <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım gün
-      sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayıma dahildir. TL, malzemenin bugünkü fiyatıyla.</p>`;
+      sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayıma dahildir. TL, malzemenin bugünkü fiyatıyla (KDV dahil).</p>`;
   // Muhasebeci / ortak için: haftanın tablosu Excel'de açılan dosya olarak (cihazda üretilir, hiçbir yere gönderilmez).
   icerik.querySelector('#indir')?.addEventListener('click', () => {
     const blob = new Blob([raporCsv(r, mekanAdi)], { type: 'text/csv;charset=utf-8' });
@@ -684,15 +770,14 @@ async function malzemeleriGetir(fiyatli = true) {
 }
 
 // ---------- KDV ----------
-// Veritabanında: fiyat = KDV dahil, fiyat_haric + kdv_orani ayrı (fatura toplam kontrolü için).
-// Ekranlarda ve raporlarda her yerde KDV dahil tutar gösterilir.
-const KDV_ORANLARI = [0, 1, 10, 20];
-const oranYaz = (oran) => (oran == null ? 'oran yok' : `%${sayiYaz(Number(oran))}`);
-const yuvarla = (n, basamak = 2) => Math.round(n * 10 ** basamak) / 10 ** basamak;
+// Kimse KDV oranı / matrah görmez ya da girmez. Veritabanında fiyat KDV dahildir; faturadan okunan oran arka planda
+// saklanır (toplam kontrolü için). Ekranlarda her fiyat KDV dahildir ve yanında küçük "KDV dahil" yazar
+// (toptancılar çoğunlukla "+KDV" fiyat söyler; yanlış karşılaştırma olmasın).
+const KDV_DAHIL = '<small class="kdv-dahil">KDV dahil</small>';
 
-// "45,00 ₺ · KDV dahil · %1" gibi tek satırlık fiyat yazısı.
-function fiyatYazisi(dahil, oran) {
-  return `${tl.format(Number(dahil))} · KDV dahil · ${oranYaz(oran)}`;
+// "45,00 ₺ · KDV dahil" gibi tek satırlık fiyat yazısı.
+function fiyatYazisi(dahil) {
+  return `${tl.format(Number(dahil))} · KDV dahil`;
 }
 
 // Satır güncellendi mi kontrol eder (yetki yoksa veritabanı sessizce 0 satır günceller).
@@ -972,7 +1057,7 @@ async function fiyatGecmisiAc(det) {
   const kutu = det.querySelector('div');
   try {
     const { data, error } = await sb.from('fiyat_gecmisi')
-      .select('fiyat, fiyat_haric, kdv_orani, tarih, kaynak, degistiren_ad, giris_id')
+      .select('fiyat, tarih, kaynak, degistiren_ad, giris_id')
       .eq('malzeme_id', det.dataset.gecmis)
       .order('tarih', { ascending: false }).order('zaman', { ascending: false }).limit(100);
     if (error) throw error;
@@ -986,7 +1071,7 @@ async function fiyatGecmisiAc(det) {
     kutu.innerHTML = data.length ? data.map((f) => {
       const iptal = iptaller.has(f.giris_id);
       return `<div class="gecmis-satir${iptal ? ' iptal' : ''}">${tarihYaz(f.tarih)} ·
-        <b>${fiyatYazisi(f.fiyat, f.kdv_orani)}</b> · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</div>`;
+        <b>${fiyatYazisi(f.fiyat)}</b> · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</div>`;
     }).join('') : '<p class="bilgi">Henüz kayıt yok.</p>';
   } catch (err) {
     delete det.dataset.yuklendi;
@@ -1059,7 +1144,7 @@ async function girisSekmesi(icerik, user, patron) {
     const idler = girisler.slice(i, i + 100).map((g) => g.id);
     const [kr, br] = await Promise.all([
       sb.from('giris_kalemleri')
-        .select('giris_id, malzeme_id, urun_id, miktar, tutar, tutar_kdv_haric, kdv_orani, stok_disi, satir_metni')
+        .select('giris_id, malzeme_id, urun_id, miktar, tutar, stok_disi, satir_metni, uyarilar')
         .in('giris_id', idler).order('id'),
       sb.from('giris_belgeleri').select('giris_id, yol, tur').in('giris_id', idler).order('id'),
     ]);
@@ -1082,8 +1167,9 @@ async function girisSekmesi(icerik, user, patron) {
   const urunBul = new Map(ur.data.map((u) => [u.id, u]));
   const ctx = { user, patron, malzemeler, malzemeBul, urunler: ur.data.sort(adaGore), urunBul };
 
-  // Fatura satırında tutar: KDV dahil + oran.
-  const tutarYaz = (k) => (k.tutar == null ? '' : ` · ${tl.format(Number(k.tutar))} (${oranYaz(k.kdv_orani)})`);
+  // Fatura satırında tutar (KDV dahil). Fiyatı doğrulanmadıysa küçük not.
+  const tutarYaz = (k) => (k.uyarilar?.includes('fiyat_kontrol') ? ' · <i>fiyat kontrol bekliyor</i>'
+    : k.tutar == null ? '' : ` · ${tl.format(Number(k.tutar))}`);
   const kalemYaz = (k) => {
     if (k.stok_disi) return `${esc(k.satir_metni)} <i>(stoğa eklenmedi)</i>${tutarYaz(k)}`;
     if (k.urun_id) return `${esc(urunBul.get(k.urun_id)?.ad ?? '?')} × ${sayiYaz(Number(k.miktar))}`;
@@ -1785,6 +1871,16 @@ async function aiIleOku(bloblar, model = undefined) {
   };
 }
 
+// XML / metinli PDF / telefondaki OCR satırlarını AI'ya yalnız METİN olarak eşleştirtir (fotoğraf gitmez, fiyat
+// gitmez; ucuz). Marka, boyut, ambalaj farkını AI anlar ("Coca Cola 330ml 24'lü koli" → Kola). Hata olursa fırlatır.
+async function aiIleEslestir(satirlar) {
+  const { data, error } = await sb.functions.invoke('fatura-oku', {
+    body: { satirlar: satirlar.map((s) => ({ metin: s.metin, miktar: s.miktar, birim: s.birim })) } });
+  if (error) throw error;
+  const sonuc = new Map((data?.sonuc?.satirlar ?? []).map((x) => [x.sira, x.eslesme]));
+  return satirlar.map((_, i) => sonuc.get(i + 1) ?? null);
+}
+
 // Bu fatura (karekod / e-fatura kimliği) mekanda zaten kayıtlı mı? Kontrol yapılamazsa null: akış durmaz,
 // sunucu kayıt sırasında ayrıca kontrol eder.
 async function mukerrerMi({ ettn = null, no = null, vkn = null } = {}) {
@@ -1979,8 +2075,29 @@ async function malGeldi(kutu, user, bitti) {
     if (sonuc.notlar?.includes('fatura_degil')) return sorunEkrani(OKUNAMADI.fatura_degil, true, true);
     if (sonuc.notlar?.includes('satir_karisik')) return sorunEkrani(OKUNAMADI.satir_karisik, true, true);
     await okumayiDogrula();
+    await metinleEslestir();
     siniflandirHepsi();
     soruSirasi();
+  };
+
+  // Fotoğraf okunmadıysa (XML, PDF, yedek OCR) defterde olmayan satırlar AI'ya metin olarak eşleştirtilir.
+  // Olmazsa (internet, sınır) kurallar çalışır; akış durmaz.
+  const metinleEslestir = async () => {
+    if (sonuc.kaynak === 'ai') return;
+    const defterde = (s) => (dr.data ?? []).some((d) => d.metin_anahtar === (anahtar(s.metin) || '-') && d.birim === (s.birim || 'diger'));
+    const sorulacak = sonuc.satirlar.filter((s) => !s.ai && !defterde(s));
+    if (!sorulacak.length) return;
+    bekleEkrani('Ürünler eşleştiriliyor…');
+    try {
+      const t = performance.now();
+      const sonuclar = await Promise.race([aiIleEslestir(sorulacak),
+        sureBekle(15000).then(() => { throw new Error('zaman aşımı'); })]);
+      sorulacak.forEach((s, i) => { s.ai = sonuclar[i]; });
+      olcum.metin_eslesme_ms = ms(t, performance.now());
+    } catch (e) {
+      console.warn('Metinle eşleştirme olmadı, kurallar kullanılıyor:', e);
+      olcum.metin_eslesme_hata = String(e?.message ?? e).slice(0, 100);
+    }
   };
 
   // ---------- Okuma doğrulama ----------
@@ -2032,7 +2149,7 @@ async function malGeldi(kutu, user, bitti) {
       siniflandirHepsi();
       if (hepsiKuruluma) {
         sonuc.satirlar.forEach((s) => {
-          s.karar = { sinif: 'belirsiz', aday_malzeme_id: s.karar.aday_malzeme_id ?? s.karar.malzeme_id ?? null };
+          s.karar = { sinif: 'kurulum', aday_malzeme_id: s.karar.aday_malzeme_id ?? s.karar.malzeme_id ?? null };
         });
       }
       soruSirasi();
@@ -2053,26 +2170,35 @@ async function malGeldi(kutu, user, bitti) {
   const tedarikciAnahtari = () => sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '';
   const siniflandirHepsi = () => {
     const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari(), tedarikciAdi: sonuc.tedarikci };
-    const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
-    sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); s.cevap = null; });
+    // Defter önce; AI kararı varsa (fotoğraf ya da metin eşleştirmesi) o, yoksa kurallar.
+    sonuc.satirlar.forEach((s) => { s.karar = aiIleSiniflandir(s, ctx); s.cevap = null; });
   };
 
   // ---------- Kör sayım ----------
   // Stoğa girecek her satır (defterden bilinen ya da baristaya sorulan) sayılır; faturadaki miktar gösterilmez.
   const stokAdayi = (s) => s.karar.sinif === 'eslesti' || s.karar.sinif === 'soru';
   const OLCU = { kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' };
+  // Paket içi bilinmiyorsa (stokBirimi) barista malzemenin kendi biriminde sayar: kg / litre / adet.
+  const STOK_SAYIM = { g: ['kg', 1000], ml: ['litre', 1000], adet: ['adet', 1] };
   const sayimBirimi = (s, m) => {
+    if (s.karar.stokBirimi) return STOK_SAYIM[m.birim][0];
     if (s.birim === 'diger' || (s.birim === 'adet' && m.birim === 'adet' && s.karar.carpan > 1)) return 'paket';
     return { adet: 'adet', ...OLCU }[s.birim] ?? 'paket';
   };
-  const kurulumaGonder = (s, m) => {
+  // "Bu ürün X değil": stok listesinde karşılığı yok sayılır, stoğa girmeden sessizce geçilir.
+  const gec = (s, m) => {
     s.karar = { sinif: 'belirsiz', aday_malzeme_id: m.id };
+    s.cevap = 'hayir';
+  };
+  // Paket içi bilinmeyen satır şu an sayılamıyorsa stoğa tahminle girmez, kurulum bakar.
+  const kuruluma = (s, m) => {
+    s.karar = { sinif: 'kurulum', aday_malzeme_id: m.id };
     s.cevap = 'hayir';
   };
 
   const sayimEkrani = (s, m, { tekrar = false, hata = '' } = {}) => {
     const b = sayimBirimi(s, m);
-    const paketYazisi = (b === 'paket' || b === 'adet') && Number(s.karar.carpan) !== 1
+    const paketYazisi = !s.karar.stokBirimi && (b === 'paket' || b === 'adet') && Number(s.karar.carpan) !== 1
       ? `<p class="buyuk-yazi">1 ${b} = ${buyukMiktar(s.karar.carpan, m.birim)}</p>` : '';
     const sira = sonuc.satirlar.filter(stokAdayi);
     const no = sira.indexOf(s) + 1;
@@ -2096,12 +2222,13 @@ async function malGeldi(kutu, user, bitti) {
           <input id="not" maxlength="300" placeholder="Örn. bir koli hasarlı geldi" value="${esc(s.barista_notu ?? '')}"></label>` : ''}
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev evet" id="sayim-tamam">Tamam ✓</button>
-        <button class="dev ikincil" id="sayilamiyor">${OLCU[s.birim] ? 'Tartamıyorum' : 'Şu an sayamıyorum'} — faturadaki gibi al</button>
+        <button class="dev ikincil" id="sayilamiyor">${s.karar.stokBirimi ? 'Şu an sayamıyorum'
+          : `${OLCU[s.birim] ? 'Tartamıyorum' : 'Şu an sayamıyorum'} — faturadaki gibi al`}</button>
         <button class="metin-dugme" id="hayir">Bu ürün ${esc(m.ad)} değil</button></div>`;
     const girdi = kutu.querySelector('#sayim');
     const toplamYaz = () => {
       const n = sayiOku(girdi.value);
-      kutu.querySelector('#sayim-toplam').textContent = Number.isFinite(n) && n > 0 && !OLCU[b === 'litre' ? 'lt' : b]
+      kutu.querySelector('#sayim-toplam').textContent = !s.karar.stokBirimi && Number.isFinite(n) && n > 0 && !OLCU[b === 'litre' ? 'lt' : b]
         ? `= ${buyukMiktar(n * s.karar.carpan, m.birim)} ${m.ad}` : '';
     };
     // Yazarken toplamı göster: paket yerine adet yazılırsa (1000 paket) barista hemen görür.
@@ -2116,20 +2243,29 @@ async function malGeldi(kutu, user, bitti) {
       if (!Number.isFinite(n) || n < 0) return sayimEkrani(s, m, { tekrar, hata: `Kaç ${b} geldiğini yaz. Hiç gelmediyse 0 yaz.` });
       s.barista_notu = kutu.querySelector('#not')?.value.trim() || s.barista_notu || null;
       // İlk sayım faturayla uyuşmuyorsa bir kez daha saydırılır (faturadaki sayı yine gösterilmez).
-      if (!tekrar && s.miktar != null && !ayniMiktar(n, s.miktar)) return sayimEkrani(s, m, { tekrar: true });
+      if (!tekrar && !s.karar.stokBirimi && s.miktar != null && !ayniMiktar(n, s.miktar)) return sayimEkrani(s, m, { tekrar: true });
       sayimBitir(s, n);
     };
     kutu.querySelector('#sayilamiyor').onclick = () => {
-      Object.assign(s, { sayim: 'sayilmadi', gelen_miktar: null, teslimat: null, cevap: 'evet' });
+      if (s.karar.stokBirimi) kuruluma(s, m);
+      else Object.assign(s, { sayim: 'sayilmadi', gelen_miktar: null, teslimat: null, cevap: 'evet' });
       soruSirasi();
     };
-    kutu.querySelector('#hayir').onclick = () => { kurulumaGonder(s, m); soruSirasi(); };
+    kutu.querySelector('#hayir').onclick = () => { gec(s, m); soruSirasi(); };
     girdi.focus();
   };
 
   // Son sayım: tam mı, okuma hatası mı, teslimat farkı mı? (Fotoğrafta ikinci okumaya bakılır.)
   const sayimBitir = async (s, n) => {
     Object.assign(s, { sayim: 'sayildi', gelen_miktar: n, cevap: 'evet' });
+    if (s.karar.stokBirimi) {
+      // Paket içi bilinmiyordu: sayılan (kg / litre / adet) esas. Faturadaki satır tutarı bu miktarın tutarıdır;
+      // teslimat farkı bu satırda ölçülemez. Çarpan sayımdan çıktığı için deftere yazılmaz (sunucu).
+      const m = malzemeBul.get(s.karar.malzeme_id);
+      Object.assign(s, { okunan_miktar: s.miktar, miktar: n, birim_fiyat: null, teslimat: 'tam' });
+      s.karar = { ...s.karar, carpan: STOK_SAYIM[m.birim][1] };
+      return soruSirasi();
+    }
     let k;
     if (s.miktar == null) {
       k = { karar: 'okuma_hatasi' };                      // miktar okunamamıştı: sayılan esas
@@ -2161,8 +2297,8 @@ async function malGeldi(kutu, user, bitti) {
 
   const ozetEkrani = (hata = '') => {
     const stokta = sonuc.satirlar.filter((s) => stokAdayi(s) && s.cevap === 'evet');
-    const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'belirsiz' || (stokAdayi(s) && s.cevap === 'hayir'));
-    const disi = sonuc.satirlar.filter((s) => s.karar.sinif === 'takip_disi');
+    // Stok listesinde karşılığı olmayan satırlar (deterjan, peçete…) sessizce geçilir; burada gösterilmez.
+    const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'kurulum');
     const toplamVar = sonuc.toplamlar.genel != null;
     const kontrol = toplamVar ? toplamKontrol(sonuc) : { tutuyor: false, sebep: 'toplam_yok' };
     const tutmuyor = toplamVar && !kontrol.tutuyor;
@@ -2178,7 +2314,7 @@ async function malGeldi(kutu, user, bitti) {
             ${s.sayim === 'sayilmadi' ? '<small>Sayılmadı · faturadaki gibi alındı</small>' : ''}
             ${farkli ? `<small>Faturada ${buyukMiktar(Number(s.miktar) * c, m.birim)} · ${buyukMiktar(Math.abs(fark), m.birim)}
               ${fark > 0 ? 'eksik' : 'fazla'} geldi, patrona iletilecek</small>` : ''}</span>
-          <span class="kalem-durum" aria-hidden="true">${tutmuyor ? '⏳' : farkli ? '⚠️' : '✓'}</span></li>`;
+          <span class="kalem-durum" aria-hidden="true">${tutmuyor && s.sayim !== 'sayildi' ? '⏳' : farkli ? '⚠️' : '✓'}</span></li>`;
     };
     kutu.innerHTML = `<div class="sade-ekran">
         <h2>📦 ${esc(sonuc.tedarikci ?? 'Fatura')}</h2>
@@ -2186,7 +2322,6 @@ async function malGeldi(kutu, user, bitti) {
             <button class="dev ikincil" id="tekrar-cek">📷 Tekrar çek</button></div>` : ''}
         <ul class="kabul-liste">${stokta.map(kalem).join('')}</ul>
         ${bekleyen.length ? `<p class="buyuk-yazi">⏳ ${bekleyen.length} kalem sonra kontrol edilecek</p>` : ''}
-        ${disi.length ? `<p class="bilgi">— ${disi.length} kalem takip dışı (${disi.slice(0, 3).map((s) => esc(s.metin)).join(', ')}${disi.length > 3 ? '…' : ''})</p>` : ''}
         ${toplamVar ? '' : `<p class="buyuk-yazi">Faturanın en altındaki toplam?</p>${rakamKutusu('TL')}`}
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev" id="kaydet">Kaydet ✓</button>
@@ -2241,8 +2376,9 @@ async function malGeldi(kutu, user, bitti) {
         const evet = stokAdayi(s) && s.cevap === 'evet';
         return {
           metin: s.metin, miktar: s.miktar, birim: s.birim, birim_fiyat: s.birim_fiyat ?? null,
-          tutar_haric: s.tutar_haric, kdv_orani: s.kdv_orani,
-          sinif: evet ? 'eslesti' : s.karar.sinif === 'takip_disi' ? 'takip_disi' : 'belirsiz',
+          tutar_haric: s.tutar_haric ?? null, kdv_orani: s.kdv_orani ?? null, tutar_dahil: s.tutar_dahil ?? null,
+          sinif: evet ? 'eslesti' : ['takip_disi', 'kurulum'].includes(s.karar.sinif) ? s.karar.sinif : 'belirsiz',
+          carpan_sayimdan: evet && s.karar.stokBirimi === true,
           malzeme_id: evet ? s.karar.malzeme_id : null, carpan: evet ? s.karar.carpan : null,
           barista_onayi: evet && s.karar.sinif === 'soru',
           aday_malzeme_id: s.karar.aday_malzeme_id ?? null,
@@ -2355,13 +2491,13 @@ async function kurulumEkrani(kutu) {
     const onizleme = () => {
       const m = malzemeler.find((x) => x.id === sec.value);
       const f = Object.fromEntries(new FormData(form));
-      const [carpan, miktar, tutar, oran] = [f.carpan, f.miktar, f.tutar, f.oran].map((v) => sayiOku(String(v ?? '')));
+      const [carpan, miktar, tutar] = [f.carpan, f.miktar, f.tutar].map((v) => sayiOku(String(v ?? '')));
       const kutu = form.querySelector('.onizleme');
       if (!m || !(carpan > 0) || !(miktar > 0)) { kutu.textContent = ''; return; }
       const stok = miktar * carpan;
       const b = BIRIMLER[m.birim];
       kutu.textContent = `Stoğa girecek: ${buyukMiktar(stok, m.birim)}`
-        + (tutar >= 0 && oran >= 0 ? ` · birim fiyat ${tl.format((tutar * (1 + oran / 100) / stok) * b.bolen)}/${b.fiyatBirimi} (KDV dahil)` : '');
+        + (tutar >= 0 ? ` · birim fiyat ${tl.format((tutar / stok) * b.bolen)}/${b.fiyatBirimi} (KDV dahil)` : ' · fiyat kontrol bekleyecek');
     };
     const birimYaz = () => {
       const m = malzemeler.find((x) => x.id === sec.value);
@@ -2378,11 +2514,17 @@ async function kurulumEkrani(kutu) {
       const sayi = (v) => (String(v ?? '').trim() ? sayiOku(v) : null);
       try {
         if (sonucTur === 'malzeme' && !f.malzeme) throw new Error('Malzeme seç.');
-        await rpcVeri('kurulum_satir_coz', {
-          p_satir: Number(form.dataset.satir), p_sonuc: sonucTur, p_malzeme: f.malzeme || null,
-          p_carpan: sayi(f.carpan), p_miktar: sayi(f.miktar), p_tutar_haric: sayi(f.tutar), p_kdv_orani: sayi(f.oran),
-          p_deftere_yaz: f.defter === 'on', p_onay: f.onay === 'on',
-        });
+        if (sonucTur === 'malzeme') {
+          await rpcVeri('kurulum_satir_bagla', {
+            p_satir: Number(form.dataset.satir), p_malzeme: f.malzeme, p_carpan: sayi(f.carpan), p_miktar: sayi(f.miktar),
+            p_tutar_dahil: sayi(f.tutar), p_deftere_yaz: f.defter === 'on', p_onay: f.onay === 'on',
+          });
+        } else {
+          await rpcVeri('kurulum_satir_coz', {
+            p_satir: Number(form.dataset.satir), p_sonuc: sonucTur, p_malzeme: null, p_carpan: null, p_miktar: null,
+            p_tutar_haric: null, p_kdv_orani: null, p_deftere_yaz: f.defter === 'on', p_onay: false,
+          });
+        }
         yenile();
       } catch (err) { hataGoster(err); }
     };
@@ -2478,7 +2620,7 @@ function belgeKarti(k, b) {
         <button class="ikincil kucuk" type="button" data-rapor-tamam data-id="${esc(b.id)}">Patron girdi, yalnız işaretle</button></div>
     </form>`;
   }
-  const satirToplam = b.satirlar.reduce((t, s) => t + Number(s.tutar_haric ?? 0) * (1 + Number(s.kdv_orani ?? 0) / 100), 0);
+  const satirToplam = b.satirlar.reduce((t, s) => t + Number(s.tutar_dahil ?? 0), 0);
   const bekleyen = b.satirlar.filter((s) => s.durum === 'bekliyor');
   const eslesmeBekleyen = bekleyen.filter((s) => s.sebep === 'eslesme');
   const malzemelerJson = esc(JSON.stringify(k.malzemeler));
@@ -2488,11 +2630,11 @@ function belgeKarti(k, b) {
     <small class="bilgi">${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}</small>
     <p class="${b.toplam_tutuyor ? 'tamam' : 'hata'}">Genel toplam ${b.genel_toplam != null ? tl.format(b.genel_toplam) : '?'} ·
       satırlar ${tl.format(satirToplam)}${Number(b.indirim) ? ` · indirim ${tl.format(b.indirim)}` : ''}
-      ${b.toplam_tutuyor ? '✓' : '✗ tutmuyor'}</p>
+      ${b.toplam_tutuyor ? '✓' : '✗ toplam tutmuyor, fotoğrafı kontrol et'}</p>
     ${dosyaDugmesi}
     ${b.satirlar.map((s) => s.durum !== 'bekliyor'
       ? `<div class="kurulum-satir cozuldu">${s.durum === 'stokta' ? '✓' : '—'} ${esc(s.metin)}
-          <small>${s.miktar ?? '?'} ${BELGE_BIRIM[s.birim] ?? ''} · ${s.tutar_haric != null ? tl.format(s.tutar_haric) : '?'}
+          <small>${s.miktar ?? '?'} ${BELGE_BIRIM[s.birim] ?? ''} · ${s.tutar_dahil != null ? tl.format(s.tutar_dahil) : 'tutar yok'}
           ${s.durum === 'takip_disi' ? ' · takip dışı' : ''}</small></div>`
       : `<form class="kurulum-satir" data-satir="${s.id}" data-birim="${esc(s.birim ?? 'diger')}" data-metin="${esc(s.metin)}"
             data-malzemeler="${malzemelerJson}" onsubmit="return false">
@@ -2502,8 +2644,7 @@ function belgeKarti(k, b) {
               `<option value="${esc(m.id)}" ${(s.malzeme_id ?? s.aday_malzeme_id) === m.id ? 'selected' : ''}>${esc(m.ad)}</option>`).join('')}</select></label>
             <label>1 ${BELGE_BIRIM[s.birim] ?? 'birim'} = <span class="yan"><input name="carpan" inputmode="decimal" value="${s.carpan ?? ''}"><span class="carpan-birim"></span></span></label>
             <label>Miktar (${BELGE_BIRIM[s.birim] ?? '?'})<input name="miktar" inputmode="decimal" value="${s.miktar ?? ''}"></label>
-            <label>Tutar (KDV hariç)<input name="tutar" inputmode="decimal" value="${s.tutar_haric ?? ''}"></label>
-            <label>KDV %<input name="oran" inputmode="decimal" value="${s.kdv_orani ?? ''}"></label>
+            <label>Tutar (KDV dahil, boşsa fiyat kontrol bekler)<input name="tutar" inputmode="decimal" value="${s.tutar_dahil ?? ''}"></label>
           </div>
           <p class="bilgi onizleme"></p>
           <label class="onay-kutu"><input type="checkbox" name="defter" ${['eslesme', 'donusum'].includes(s.sebep) ? 'checked' : ''}>

@@ -70,6 +70,18 @@ const SEMA = {
   },
 };
 
+const ESLESTIRME = `EŞLEŞTİRME (takip edilen malzeme listesi verilecek):
+- Ürün açıkça listedeki bir malzemeyse (marka, kısaltma, yazım farkı olabilir: "ACIFTLIK T.YAG SUT 1LT" → Süt; "MNN KRML SRP 70CL" → Karamel şurubu):
+  karar "malzeme", malzeme_id, ve stok_miktari = malzemenin kendi biriminde (g / ml / adet) TOPLAM miktar.
+  Örnek: 12 AD × 1LT süt → 12000 (ml); 3 AD × 1KG kahve → 3000 (g); 4 PK × 50'Lİ bardak → 200 (adet); 2 KOLİ × 12'Lİ 1L süt → 24000 (ml).
+  Paket/koli içi miktar yazmıyorsa stok_miktari null ve güveni düşür.
+- Ürünün TÜRÜ malzemeyle birebir aynı olmalı. Aynı kelimeyi taşıyan başka ürünler malzeme DEĞİLDİR: krema ≠ süt,
+  bitkisel (badem, yulaf, soya…) ya da aromalı/çeşnili süt ≠ süt, sos ≠ şurup, başka çeşnide şurup ≠ o şurup,
+  Türk kahvesi / kakao / hazır kahve ≠ çekirdek ya da filtre kahve, kapak / tutucu / altlık / karıştırıcı ≠ bardak,
+  filtre kâğıdı ≠ filtre kahve, ekipman (sürahi, fincan…) ≠ içindeki malzeme.
+- Ürün listedeki hiçbir malzeme değilse (peçete, deterjan; listede yoksa şeker, kakao…): karar "takip_disi".
+- Emin değilsen: karar "emin_degil". Güveni dürüst ver; yanlış eşleştirme stok hesabını bozar.`;
+
 const TALIMAT = `Sen Türkiye'deki tedarikçi faturalarını ve market fişlerini okuyan bir asistansın. Bir kafe için stok kaydı yapılıyor.
 BELGE:
 - belge_turu: "fatura" (fatura, e-arşiv, irsaliyeli fatura), "fis" (yazar kasa fişi, toptancının satış/teslim fişi),
@@ -91,34 +103,44 @@ KURALLAR:
 - İade satırı (İADE, eksi tutar): miktar ve tutar EKSİ yazılır. İndirim/iskonto satırı ürün satırı değildir.
 - tutar: satırın tutarı, yazdığı gibi. tutarlar_kdv_dahil: satır tutarları KDV dahilse true.
 - Toplam, iskonto, KDV satırlarını ürün satırı sayma. metin: yalnız ürün adı, faturada yazdığı gibi.
-EŞLEŞTİRME (takip edilen malzeme listesi verilecek):
-- Ürün açıkça listedeki bir malzemeyse (marka, kısaltma, yazım farkı olabilir: "ACIFTLIK T.YAG SUT 1LT" → Süt; "MNN KRML SRP 70CL" → Karamel şurubu):
-  karar "malzeme", malzeme_id, ve stok_miktari = malzemenin kendi biriminde (g / ml / adet) TOPLAM miktar.
-  Örnek: 12 AD × 1LT süt → 12000 (ml); 3 AD × 1KG kahve → 3000 (g); 4 PK × 50'Lİ bardak → 200 (adet); 2 KOLİ × 12'Lİ 1L süt → 24000 (ml).
-  Paket/koli içi miktar yazmıyorsa stok_miktari null ve güveni düşür.
-- Ürünün TÜRÜ malzemeyle birebir aynı olmalı. Aynı kelimeyi taşıyan başka ürünler malzeme DEĞİLDİR: krema ≠ süt,
-  bitkisel (badem, yulaf, soya…) ya da aromalı/çeşnili süt ≠ süt, sos ≠ şurup, başka çeşnide şurup ≠ o şurup,
-  Türk kahvesi / kakao / hazır kahve ≠ çekirdek ya da filtre kahve, kapak / tutucu / altlık / karıştırıcı ≠ bardak,
-  filtre kâğıdı ≠ filtre kahve, ekipman (sürahi, fincan…) ≠ içindeki malzeme.
-- Ürün listedeki hiçbir malzeme değilse (peçete, deterjan; listede yoksa şeker, kakao…): karar "takip_disi".
-- Emin değilsen: karar "emin_degil". Güveni dürüst ver; yanlış eşleştirme stok hesabını bozar.`;
+${ESLESTIRME}`;
+
+// METİN MODU: XML / metinli PDF / telefondaki OCR satırları (fotoğraf yok). Yalnız eşleştirme yapılır; ucuz model yeter.
+const ESLEME_SEMA = {
+  type: 'object', additionalProperties: false, required: ['satirlar'],
+  properties: {
+    satirlar: { type: 'array', items: {
+      type: 'object', additionalProperties: false, required: ['sira', 'eslesme'],
+      properties: { sira: { type: 'integer' }, eslesme: SATIR.properties.eslesme },
+    } },
+  },
+};
+const ESLEME_TALIMAT = `Bir kafenin tedarikçi faturasındaki ürün satırlarını (metin olarak verilir: sira, metin, miktar, birim)
+kafenin stokta takip ettiği malzemelerle eşleştir. Her satır için bir sonuç ver (aynı sira).
+${ESLESTIRME}`;
+const ESLEME_SINIRI = 120;
 
 // OpenAI'a fotoğraf(lar)ı ve malzeme listesini gönderir; yapılandırılmış sonucu döner.
 async function openaiOku(anahtar: string, model: string, liste: unknown[], gorseller: string[],
-                         fiyatlar: Record<string, [number, number]>) {
+                         fiyatlar: Record<string, [number, number]>, metinSatirlari: unknown[] | null = null) {
   const ai0 = Date.now();
   const kes = new AbortController();
   const zaman = setTimeout(() => kes.abort(), 30000);
   const istek: Record<string, unknown> = {
     model,
-    messages: [
+    messages: metinSatirlari ? [
+      { role: 'system', content: ESLEME_TALIMAT },
+      { role: 'user', content: `Takip edilen malzemeler (JSON): ${JSON.stringify(liste)}\nFatura satırları (JSON): ${JSON.stringify(metinSatirlari)}` },
+    ] : [
       { role: 'system', content: TALIMAT },
       { role: 'user', content: [
         { type: 'text', text: `Takip edilen malzemeler (JSON): ${JSON.stringify(liste)}` },
         ...gorseller.map((g) => ({ type: 'image_url', image_url: { url: g, detail: 'high' } })),
       ] },
     ],
-    response_format: { type: 'json_schema', json_schema: { name: 'fatura', strict: true, schema: SEMA } },
+    response_format: { type: 'json_schema', json_schema: metinSatirlari
+      ? { name: 'esleme', strict: true, schema: ESLEME_SEMA }
+      : { name: 'fatura', strict: true, schema: SEMA } },
     max_completion_tokens: 6000,
   };
   if (model.startsWith('gpt-5')) istek.reasoning_effort = 'minimal';
@@ -201,10 +223,18 @@ Deno.serve(async (req) => {
   const sunucu = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const modeller = (Deno.env.get('AI_MODELLER') ?? 'gpt-4.1-mini,gpt-4.1-nano,gpt-4.1').split(',').map((m) => m.trim()).filter(Boolean);
 
-  let govde: { gorseller?: string[]; model?: string };
+  let govde: { gorseller?: string[]; model?: string; satirlar?: unknown[] };
   try { govde = await req.json(); } catch { return cevap({ hata: 'GECERSIZ', mesaj: 'Geçersiz istek.' }, 400); }
+  // Metin modu: yalnız satır metni, miktarı ve birimi (fiyat gönderilmez).
+  const metinSatirlari = Array.isArray(govde.satirlar) ? govde.satirlar.slice(0, ESLEME_SINIRI).map((x, i) => {
+    const r = (x ?? {}) as Record<string, unknown>;
+    return { sira: i + 1, metin: String(r.metin ?? '').slice(0, 200),
+             miktar: typeof r.miktar === 'number' ? r.miktar : null, birim: String(r.birim ?? '').slice(0, 10) };
+  }) : null;
   const gorseller = Array.isArray(govde.gorseller) ? govde.gorseller : [];
-  if (!gorseller.length || gorseller.length > 4
+  if (metinSatirlari) {
+    if (!metinSatirlari.length) return cevap({ hata: 'GECERSIZ', mesaj: 'Satır yok.' }, 400);
+  } else if (!gorseller.length || gorseller.length > 4
       || gorseller.some((g) => typeof g !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(g) || g.length > 4_500_000)) {
     return cevap({ hata: 'GECERSIZ', mesaj: 'Fotoğraf geçersiz ya da çok büyük.' }, 400);
   }
@@ -228,7 +258,7 @@ Deno.serve(async (req) => {
     const mz = await kullanici.from('malzemeler').select('id, ad, birim, aktif');
     if (mz.error) throw new Error(mz.error.message);
     const liste = mz.data.filter((m) => m.aktif).map((m) => ({ id: m.id, ad: m.ad, birim: m.birim }));
-    const r = await openaiOku(anahtar, model, liste, gorseller, fiyatlar);
+    const r = await openaiOku(anahtar, model, liste, gorseller, fiyatlar, metinSatirlari);
     const b = await bitir('tamam', { sonuc: r.sonuc, giris: r.giris, cikis: r.cikis, maliyet: r.maliyet });
     if (b.error) throw new Error(b.error.message);
     return cevap({ okuma_id: okumaId, model, sonuc: r.sonuc, token: { giris: r.giris, cikis: r.cikis }, maliyet_usd: r.maliyet,

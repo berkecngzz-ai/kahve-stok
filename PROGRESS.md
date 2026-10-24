@@ -25,6 +25,25 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
+## KDV gizlendi + ürün eşleme (2026-10-24) · CANLIDA (sql/23 + fatura-oku işlevi + ön yüz)
+
+Yedek: `Desktop/kahve-stok-yedek/2026-10-24_kdv-eslesme-oncesi` (21 tablo, 59 işlev). Geri dönüş: `scripts/geri-al-23.sql`
+(canlı yedekten üretildi; test zincirinde denendi). Kararlar:
+- **KDV kimseye sorulmaz/gösterilmez.** Fiyatlar her yerde KDV dahil + küçük "KDV dahil" ibaresi. Okunan oran arka planda saklanır;
+  belirsizse **uydurulmaz** (eski "%0 say" ve elle girişteki "malzemenin oranı" varsayımı kaldırıldı).
+- KDV dahil tutarı bilinmeyen tanınmış satır **stoğa girer**, fiyatı "kontrol bekliyor" (`giris_kalemleri.uyarilar 'fiyat_kontrol'`);
+  malzeme fiyatı değişmez. Toplam tutmayan faturada **sayılan** satırlar girer (fiyat kontrol), sayılmayanlar kurulumu bekler.
+- Toplam kontrolü: genel toplam tutuyor YA DA (oran belirsizken) hariç toplam tutuyor. Karekoddaki oran sessizce kullanılır
+  (tek oran → tüm satırlar; çok oran → yalnız tek çözüm varsa).
+- Patron Özet: "X kalemin fiyatı doğrulanmadı" → kart: faturadaki tutar (KDV dahil) ya da "kayıtlı fiyat doğru". Rapor/Stok'ta
+  bu malzemelerin TL'si "≈ tahmini"; onaylı fiyatı hiç olmayanlar TL toplamına girmez, ayrı listelenir.
+- **Eşleme:** listedeki ürünle eşleşen satır birim dönüşümüyle stoğa; **karşılığı yoksa sessizce geçilir** (`cozen='eslesmedi'`,
+  kurulum geri alabilir). Otomatik yeni malzeme YOK. XML/PDF/OCR satırları da AI'ya metin olarak eşleştirilir (fatura-oku metin modu,
+  fotoğraf/fiyat gitmez). Belirsiz aday → barista sayar ya da "Bu ürün X değil" der; koli içi bilinmiyorsa kg/litre/adet olarak sayar
+  (bu çarpan deftere yazılmaz). Tamlama türevleri (süt kreması, bardak kapağı) geçilir; -lı/-li sıfatlılar baristaya sorulur.
+- Bilinçli riskler: stok biriminde sayılan satırda teslimat farkı ölçülemez; "değil" denen gerçek ürün stoğa girmez (kurulum
+  listesinde görünür); metin eşleme günlük AI sınırından düşer.
+
 ## Sadeleştirme + Faz 2/3/4 (2026-10-24) · CANLIDA (sql/22 + ön yüz 6b03ff1)
 
 Canlıya alma: yedek `Desktop/kahve-stok-yedek/2026-10-24_sadelestirme-oncesi` (21 tablo, 55 işlev) → 22 yalnız YENİ işlev
