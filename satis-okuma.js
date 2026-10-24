@@ -51,11 +51,19 @@ const tokens=v=>v.split(/[^a-z0-9]+/).filter(Boolean);
 // ("latte buyuk", "ice latte", "karamel latte (b)" → ilgili ürün). "Chai Latte", "Double Espresso" önerilmez (tarif farklı).
 const BOY=new Set(['buyuk','kucuk','orta','b','k','o','l','m','s','xl','large','small','medium','regular','grande','tall','venti',
  'boy','ice','iced','buzlu','soguk','sicak','hot','cold']);
+// Yazım farkı toleransı: "cappucino" ≈ "cappuccino" (5+ harfte 1, 8+ harfte 2 harf farkı).
+function lev(a,b){
+ if(Math.abs(a.length-b.length)>2)return 9;
+ let prev=[...Array(b.length+1).keys()];
+ for(let i=1;i<=a.length;i++){const cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur;}
+ return prev[b.length];
+}
+const benzer=(a,b)=>a===b||(Math.min(a.length,b.length)>=5&&lev(a,b)<=(Math.min(a.length,b.length)>=8?2:1));
 function suggest(key,active){
- const kt=tokens(key),ks=new Set(kt);let best=null,bestLen=0,tie=false;
+ const kt=tokens(key);let best=null,bestLen=0,tie=false;
  for(const p of active){
-  const pt=tokens(normalize(p.ad));if(!pt.length||!pt.every(t=>ks.has(t)))continue;
-  if(!kt.every(t=>pt.includes(t)||BOY.has(t)))continue;
+  const pt=tokens(normalize(p.ad));if(!pt.length||!pt.every(t=>kt.some(k=>benzer(k,t))))continue;
+  if(!kt.every(t=>pt.some(x=>benzer(t,x))||BOY.has(t)))continue;
   if(pt.length>bestLen){best=p;bestLen=pt.length;tie=false;}else if(pt.length===bestLen)tie=true;
  }
  return best&&!tie?best.id:null;

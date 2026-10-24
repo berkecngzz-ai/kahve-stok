@@ -118,3 +118,8 @@ test('örnek kasa raporları (4 biçim) aynı toplamı verir',async()=>{
  }
  assert.deepEqual(toplamlar,[1845,1845,1845,1845]);
 });
+test('menüde yazım hatası olan ürün sessizce atlanmaz, öneri olarak gelir; farklı ürünler karışmaz',()=>{
+ const p=[{id:'C',ad:'cappucino'},{id:'L',ad:'Latte'},{id:'M',ad:'Matcha'}];
+ const r=matchSales([['Ürün','Adet'],['Cappuccino','91'],['Mocha','4'],['Chai Latte','2'],['Lattee','3']],p);
+ assert.deepEqual(Object.fromEntries(r.unmatched.map(x=>[x.name,x.suggestion])),{Cappuccino:'C',Mocha:null,'Chai Latte':null,Lattee:'L'});
+});
