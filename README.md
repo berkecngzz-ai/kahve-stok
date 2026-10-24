@@ -1,4 +1,4 @@
-# Kahve Stok
+# CoffeeStock
 
 Kahve dükkanları için stok açığı takibi. Barista gelen malı, satışları, sayımı ve fireyi girer; patron haftalık açığı miktar ve TL olarak görür.
 

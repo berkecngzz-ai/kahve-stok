@@ -4,7 +4,7 @@ Bu metin yayımlanmadan önce köşeli parantezli alanlar doldurulmalı. Henüz 
 
 ## Kullanıcıya gösterilecek metin
 
-Kahve Stok, işletmenizin malzemelerini, tariflerini, faturalarını, satış adetlerini, fire ve sayım kayıtlarını stok takibi yapmak için işler. Hesap bilgileriniz de giriş ve yetkilendirme için kullanılır.
+CoffeeStock, işletmenizin malzemelerini, tariflerini, faturalarını, satış adetlerini, fire ve sayım kayıtlarını stok takibi yapmak için işler. Hesap bilgileriniz de giriş ve yetkilendirme için kullanılır.
 
 **Veriler nerede durur?**
 Kayıtlar Supabase veritabanında, yüklediğiniz belgeler Supabase'in özel dosya alanında saklanır. Başka işletmelerin bu kayıtlara erişimini engelleyen yetki kontrolleri vardır. Sunucu ülkesi ve bölgesi: [SUNUCU BÖLGESİ].
