@@ -380,3 +380,12 @@ programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
   "Piliç baget"e bağladı (0,95 güven) → baş isim koruması kuruluma attı. Latte süt/kahveye bağlanmadı.
   Asıl zayıflık: AI'nın 0,7–0,75 güvenli "takip dışı" kararları (Cemilusta, ekmek, soğan, latte) 0,8 eşiğinin
   altında kalıp kuruluma düşüyor → patrona gereksiz iş.
+
+## Satış yalnız kasa raporuyla — 2026-10-25 (CANLIDA: sql/25 + ön yüz)
+- Elle satış kapandı: `giris_kaydet`/`giris_kaydet_tek` 'satis' reddeder ("Satış elle girilmez…").
+- Patron Girişler → "Satış raporu yükle": XLSX / CSV / HTML-Excel (Windows-1254 dahil) cihazda okunur; eşleşmeyen kasa adı
+  bir kez seçilir (öneri ön seçili), `satis_eslesmeleri`'nde hatırlanır; "Tarifi yok" = stoktan düşme. `satis_raporu_isle`.
+- Fotoğraf / PDF / ikili .xls → kurulum kuyruğu (eskisi gibi). Barista sayım sonrası yüklediği Excel/CSV'yi patron Özet'ten işler.
+- Aynı güne ikinci satış reddedilir (istemci önceden sorar). Yedek: `kahve-stok-yedek/2026-10-24_satis-rapor-oncesi`.
+  Geri alma: `scripts/geri-al-25.sql` (zincirde test edildi).
+- Doğrulanmadı: gerçek kasa programı dosyası; barista yüklemesinin patron tarafından depodan açılması (demoda depo içerik saklamıyor).
