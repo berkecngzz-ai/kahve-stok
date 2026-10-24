@@ -25,7 +25,15 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
-## Sadeleştirme + Faz 2/3/4 (2026-10-24, kullanıcı yokken; kullanıcı onayıyla canlıya)
+## Sadeleştirme + Faz 2/3/4 (2026-10-24) · CANLIDA (sql/22 + ön yüz 6b03ff1)
+
+Canlıya alma: yedek `Desktop/kahve-stok-yedek/2026-10-24_sadelestirme-oncesi` (21 tablo, 55 işlev) → 22 yalnız YENİ işlev
+ekler (mevcut hiçbirini değiştirmez; canlıda yoktukları doğrulandı) → tek işlemde uygulandı → patron rolüyle salt-okuma
+doğrulama (gunluk_kontrol, fiyat_degisimleri, barista_durumu çalışıyor; anon kapalı) → push → Pages'te yeni app.js,
+giriş sayfası konsol hatasız. Giriş yapılmış ekranlar canlıda görülmedi (şifre gerekir); demoda hepsi denendi.
+
+**Sıradaki adım (kullanıcı):** telefonda patron ve barista hesabıyla Özet / Stok / Girişler'e bak; ilk gerçek imzalı
+faturayla Mal geldi (karekod + kör sayım); bir market fişini "Elle gir" ile dene.
 
 Kullanıcı kararları: market fişi nadir → okuma kuralı eklenmez, **barista elle girer (tutar dahil, sorun yok)**;
 uygulama içi okuma testi kaldırılsın; gereksiz ne varsa sadeleştirilsin.
