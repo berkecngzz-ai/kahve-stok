@@ -25,7 +25,14 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
-## FAZ 1 — Mal kabul (2026-10-24) · YEREL, CANLIDA DEĞİL, push yok
+## FAZ 1 — Mal kabul (2026-10-24) · CANLIDA (sql/21 + ön yüz 7764268)
+
+**Canlıya alma (2026-10-24):** yedek `Desktop/kahve-stok-yedek/2026-10-24_faz1-oncesi` (19 tablo, 47 işlev, 24 politika) →
+belge_kaydet / belge_satiri_stokla / kurulum_satir_coz canlıda depoyla birebir doğrulandı → sql/21 tek işlemde uygulandı →
+doğrulandı (2 tablo RLS açık, anon yetkisi yok, iç işlevler çağrılamaz, 5 sütun + 4 tetikleyici, 40 belge satırı yerinde;
+gerçek patron/barista rolüyle salt-okuma deneme: patron görev listesi [], barista farkı/geçmişi göremiyor) → push →
+Pages'te karekod.js / jsQR / yeni app.js 200, giriş sayfası konsol hatasız. Giriş yapılmış ekranlar canlıda görülmedi
+(şifre gerekir). Gerçek imzalı e-fatura ile ilk mal kabul HENÜZ YAPILMADI.
 
 Zincir: faturada 24 L → barista faturayı görmeden 22 L sayar → (uyuşmazsa bir kez daha sayar; fotoğrafta ikinci
 okuma) → stok 22 L artar, fiyat faturadaki 24 L'den → patronun Özet'inde "Teslimat kontrolü" görevi (faturanın
@@ -59,9 +66,9 @@ fotoğrafı + barista notu) → patron kapatır (iade / sonraki teslimatta geldi
   e-fatura kâğıdı ve karekodu · canlı veritabanı.
 - Kapsam dışı bırakılan (kullanıcı kararı): indirim satırı ve tartılı ürün okuma düzeltmeleri (market fişi sorunları).
 
-### Canlıya alma (kullanıcı onayıyla)
-1. Kullanıcının imzalı e-fatura PDF'i/fotoğrafıyla telefonda deneme (karekod + kör sayım) — OpenAI ≈ 0,003–0,013 $.
-2. Yedek (`node scripts/yedek-al.mjs <klasör>`) → Supabase'de `sql/21_mal_kabul.sql` → SONRA ön yüz push.
+### Canlıya alma — YAPILDI (yukarıda). Kalan:
+1. Kullanıcının imzalı e-fatura PDF'i/fotoğrafıyla telefonda ilk gerçek mal kabul (karekod + kör sayım + Özet görevi).
+2. (yapıldı) Yedek (`node scripts/yedek-al.mjs <klasör>`) → Supabase'de `sql/21_mal_kabul.sql` → SONRA ön yüz push.
    (Ön yüz önce giderse: eski sunucu sayılan miktarı yok sayardı → sessiz yanlış. Bu yüzden Mal geldi açılırken
    \`belge_kayitli_mi\` yoksa "Uygulama güncelleniyor" deyip sayımı BAŞLATMAZ; Özet açılır, görev kartı görünmez.
    Eski sunucu + yeni ön yüz ile denendi.)
