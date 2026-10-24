@@ -24,7 +24,7 @@ const NAME_EXACT=['urun adi','urun','product','product name','item','item name']
 const QTY_EXACT=['adet','miktar','quantity','qty','satis adedi'];
 const nameScore=v=>NAME_EXACT.includes(v)?3:/\b(kod|kodu|code|id|no|barkod|barcode|grup|grubu|group|kategori|category)\b/.test(v)?0
  :/\b(urun|product|item|stok|menu)\b/.test(v)&&/\b(adi|ad|name|aciklama|aciklamasi|tanim|tanimi)\b|^(urun|product|item)\b/.test(v)?2:0;
-const qtyScore=v=>QTY_EXACT.includes(v)?3:/\b(tutar|fiyat|fiyati|price|amount|ciro|total|toplam|birim|unit|kdv|tax)\b/.test(v)?0
+const qtyScore=v=>QTY_EXACT.includes(v)?3:/\b(tutar|fiyat|fiyati|price|amount|ciro|kdv|tax|iade|return|tl|try)\b/.test(v)?0
  :/\b(adet|adedi|miktar|miktari|quantity|qty|satilan)\b/.test(v)?2:0;
 function bestColumn(cells,score){
  const p=cells.map(score),max=Math.max(0,...p);if(!max)return -1;
@@ -32,29 +32,80 @@ function bestColumn(cells,score){
 }
 // "TOPLAM", "Ara Toplam", "GENEL TOPLAM:", "Total (TL)" gibi özet satırları ürün değildir.
 const isTotalRow=v=>/^(ara |genel |gun |grand |sub)?(toplam|total|subtotal)\b/.test(v);
-export function matchSales(rows,products){
+// Kasa raporundaki adet: "12", "12,00", "1.250" (TR binlik), "1.250,00", "12 adet", "-2" (iade). Boş → null; bozuk → NaN.
+export function parseQty(v){
+ let s=String(v??'').trim().replace(/\s*(adet|ad|pcs|pc|x)\.?$/i,'').replace(/\s/g,'');
+ if(!s)return null;
+ const neg=s.startsWith('-');if(neg)s=s.slice(1);
+ let n;
+ if(/^\d+$/.test(s))n=Number(s);
+ else if(/^\d{1,3}(\.\d{3})+(,0+)?$/.test(s))n=Number(s.replace(/,0+$/,'').replace(/\./g,''));
+ else if(/^\d+[.,]0{1,3}$/.test(s))n=Number(s.split(/[.,]/)[0]);
+ else return NaN;
+ return neg?-n:n;
+}
+// Kasa adının anahtarı (hafıza ve eşleşme): küçük harf, aksansız, "(ikram)" eki atılır.
+export const salesKey=raw=>normalize(raw).replace(/\s*\(ikram\)\s*$/,'').trim().slice(0,200);
+const tokens=v=>v.split(/[^a-z0-9]+/).filter(Boolean);
+// Eşleşmeyen kasa adına öneri: adındaki bütün kelimeler kasa adında geçen en uzun ürün ("latte buyuk" → Latte).
+function suggest(key,active){
+ const kt=new Set(tokens(key));let best=null,bestLen=0,tie=false;
+ for(const p of active){
+  const pt=tokens(normalize(p.ad));if(!pt.length||!pt.every(t=>kt.has(t)))continue;
+  if(pt.length>bestLen){best=p;bestLen=pt.length;tie=false;}else if(pt.length===bestLen)tie=true;
+ }
+ return best&&!tie?best.id:null;
+}
+// memory: Map(kasa anahtarı → urun_id | null). null: "tarifi yok, stoktan düşme" (atlanır, ignored'a yazılır).
+// Boş adetli satır (kategori başlığı) atlanır; iade (eksi) aynı ürünün toplamından düşer.
+export function matchSales(rows,products,memory=new Map()){
  let header=-1,ni=-1,qi=-1;
  for(let i=0;i<Math.min(rows.length,20);i++){
   const r=rows[i].map(normalize),n=bestColumn(r,nameScore),q=bestColumn(r,qtyScore);
   if(n>=0&&q>=0&&n!==q){header=i;ni=n;qi=q;break;}
  }
  if(header<0)throw Error('Ürün adı ve adet sütunları bulunamadı.');
- const totals=new Map(),unmatched=[];
+ const active=products.filter(p=>p.aktif!==false),activeIds=new Set(active.map(p=>p.id));
+ const totals=new Map(),unmatched=new Map(),ignored=new Map();
+ const add=(map,k,v,amount)=>{const x=map.get(k)||{...v,quantity:0};x.quantity+=amount;map.set(k,x);};
  for(let i=header+1;i<rows.length;i++){
   const r=rows[i];if(!r.some(v=>String(v??'').trim()))continue;
-  const raw=String(r[ni]??'').trim();if(isTotalRow(normalize(raw)))continue;
-  const value=String(r[qi]??'').trim();
-  if(!raw||!/^\d+(?:[.,]0{1,2})?$/.test(value))throw Error(`${i+1}. satırın ürün adı veya adedi geçersiz.`);
-  const amount=Number(value.replace(',','.'));if(!Number.isSafeInteger(amount)||amount<0||amount>100000)throw Error(`${i+1}. satırın adedi geçersiz.`);
+  const raw=String(r[ni]??'').trim();if(!raw||isTotalRow(normalize(raw)))continue;
+  const amount=parseQty(r[qi]);
+  if(amount===null)continue;
+  if(!Number.isSafeInteger(amount))throw Error(`${i+1}. satırın adedi okunamadı ("${String(r[qi]).trim()}").`);
+  if(Math.abs(amount)>100000)throw Error(`${i+1}. satırın adedi geçersiz.`);
   if(!amount)continue;
-  const key=normalize(raw).replace(/\s*\(ikram\)\s*$/,'').trim();
-  const found=products.filter(p=>p.aktif!==false&&normalize(p.ad)===key);
-  if(found.length!==1){unmatched.push({name:raw,quantity:amount,row:i+1});continue;}
-  const id=found[0].id;const sum=(totals.get(id)||0)+amount;if(sum>100000)throw Error('Bir ürün için toplam adet 100000 sınırını aşıyor.');totals.set(id,sum);
+  const key=salesKey(raw);
+  let id;
+  if(memory.has(key)){
+   id=memory.get(key);
+   if(id===null){add(ignored,key,{name:raw,key},amount);continue;}
+   if(!activeIds.has(id))id=undefined;
+  }
+  if(id===undefined){const found=active.filter(p=>normalize(p.ad)===key);if(found.length===1)id=found[0].id;}
+  if(id===undefined){add(unmatched,key,{name:raw,key,row:i+1,suggestion:suggest(key,active)},amount);continue;}
+  const sum=(totals.get(id)||0)+amount;if(sum>100000)throw Error('Bir ürün için toplam adet 100000 sınırını aşıyor.');totals.set(id,sum);
  }
- if(!totals.size&&!unmatched.length)throw Error('Raporda tüketim adedi bulunamadı.');
- return {matched:[...totals].map(([urun_id,miktar])=>({urun_id,miktar})),unmatched};
+ const matched=[...totals].filter(([,m])=>m>0).map(([urun_id,miktar])=>({urun_id,miktar}));
+ const un=[...unmatched.values()].filter(x=>x.quantity>0);
+ if(!matched.length&&!un.length&&!ignored.size)throw Error('Raporda satış adedi bulunamadı.');
+ return {matched,unmatched:un,ignored:[...ignored.values()]};
 }
+// Bazı kasa programları "Excel" diye HTML tablo verir (.xls / .htm). Hücre metinleri satır satır.
+export function htmlRows(text){
+ const decode=t=>t.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+  .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).replace(/&amp;/g,'&').trim();
+ const rows=[];
+ for(const tr of String(text).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){
+  rows.push([...tr[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(c=>decode(c[1])));
+  if(rows.length>10001)throw Error('Raporda en fazla 10000 satır olabilir.');
+ }
+ if(!rows.length)throw Error('Raporda tablo bulunamadı.');
+ return rows;
+}
+// Cihazda okunamayan rapor (fotoğraf, PDF, eski ikili .xls): kurulum ekibi işler.
+export class KurulumIsler extends Error{}
 // Bounded ZIP/OpenXML reader: one visible worksheet, no formula evaluation or external links.
 export async function xlsxRows(buffer,Parser=globalThis.DOMParser){
  const data=new Uint8Array(buffer),v=new DataView(data.buffer,data.byteOffset,data.byteLength),decoder=new TextDecoder();
@@ -104,12 +155,20 @@ export async function xlsxRows(buffer,Parser=globalThis.DOMParser){
  }
  return result;
 }
-export async function readSalesFile(file,products,Parser){
+export async function readSalesFile(file,products,Parser,memory){
  const extension=file.name.toLowerCase().split('.').pop();
  if(file.size>5*1024*1024)throw Error('Dosya en fazla 5 MB olabilir.');
- const rows=extension==='xlsx'?await xlsxRows(await file.arrayBuffer(),Parser):['csv','txt','tsv'].includes(extension)?csvRows(await file.text()):null;
- if(!rows)throw Error('XLSX veya CSV dosyası seç.');
- return matchSales(rows,products);
+ if(!['xlsx','xls','csv','txt','tsv','htm','html'].includes(extension))throw new KurulumIsler('Bu rapor türü cihazda okunamaz.');
+ const buffer=await file.arrayBuffer(),head=new Uint8Array(buffer.slice(0,4));
+ let rows;
+ if(head[0]===0x50&&head[1]===0x4b)rows=await xlsxRows(buffer,Parser);                      // XLSX (zip)
+ else if(head[0]===0xd0&&head[1]===0xcf)throw new KurulumIsler('Eski Excel (.xls) biçimi cihazda okunamaz.');
+ else{
+  // Türk kasa programları CSV'yi çoğu zaman Windows-1254 ile yazar; UTF-8 değilse ona göre çözülür.
+  let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(buffer);}catch{text=new TextDecoder('windows-1254').decode(buffer);}
+  rows=/<table\b/i.test(text)?htmlRows(text):csvRows(text);
+ }
+ return matchSales(rows,products,memory);
 }
 
 

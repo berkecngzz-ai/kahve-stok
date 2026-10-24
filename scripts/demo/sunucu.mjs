@@ -35,7 +35,9 @@ for (const d of ['sql/13_rapor_uyarilari.sql', 'sql/14_fatura_patron_yetkisi.sql
 // Mal kabul demosu (eksik teslimat görevi) yalnız 21 kuruluysa
 const EK = SEMA.includes('sql/21_mal_kabul.sql') && existsSync(join(KOK, 'scripts/demo/demo-mal-kabul.sql'))
   ? ['scripts/demo/demo-mal-kabul.sql'] : [];
-const db = await veritabani([...SEMA, VERI, ...EK], { sessiz: true });
+// 25 (elle satış kapalı) demo verisinden SONRA: demo-veri.sql geçmiş haftaların satışını eski yoldan yazar.
+const SON = existsSync(join(KOK, 'sql/25_satis_yalniz_rapor.sql')) ? ['sql/25_satis_yalniz_rapor.sql'] : [];
+const db = await veritabani([...SEMA, VERI, ...EK, ...SON], { sessiz: true });
 // Demo hesapları: demo-veri.sql "-- hesap: e-posta şifre" satırlarıyla tanımlar (yalnız bu yerel demo için).
 const HESAPLAR = new Map([...readFileSync(join(KOK, VERI), 'utf8').matchAll(/^-- hesap: (\S+) (\S+)/gm)]
   .map((m) => [m[1], m[2]]));

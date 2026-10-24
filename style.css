@@ -751,3 +751,8 @@ body.sade { font-size: 18px; }
 .karsilama p { color: var(--soluk); font-size: 16px; margin: 0; max-width: 32ch; }
 .sayac input, .rakam-kutu input { font-family: var(--rakam); font-weight: 600; letter-spacing: -.02em; }
 @media (prefers-color-scheme: dark) { .kahraman, .buyuk-dugmeler button:first-child { border: 1px solid rgba(255, 255, 255, .07); } }
+/* Satış raporu: kasa adı → menü ürünü */
+.eslesme-satir { display: grid; grid-template-columns: 1fr minmax(0, 1.2fr); gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--cizgi); }
+.eslesme-satir small { display: block; color: var(--soluk); font-size: 13px; }
+.eslesme-satir select { padding: 10px; font-size: 15px; }
+label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
