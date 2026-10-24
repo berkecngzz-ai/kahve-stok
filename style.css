@@ -756,3 +756,6 @@ body.sade { font-size: 18px; }
 .eslesme-satir small { display: block; color: var(--soluk); font-size: 13px; }
 .eslesme-satir select { padding: 10px; font-size: 15px; }
 label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
+.takip-disi { margin-top: 12px; padding: 10px 14px; border-radius: 14px; background: var(--kahve-acik); }
+.takip-disi p { margin: 0; }
+.takip-disi details { margin-top: 8px; border-top: 1px solid var(--cizgi); }

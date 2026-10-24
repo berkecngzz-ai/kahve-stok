@@ -1,0 +1,47 @@
+<html><head><meta charset="utf-8"></head><body><h3>Ürün Satış Raporu</h3><p>18.10.2026 - 24.10.2026</p>
+<table border="1"><tr><th>Ürün</th><th>Miktar</th><th>Tutar</th></tr>
+<tr><td colspan="3"><b>SICAK KAHVELER</b></td></tr>
+<tr><td>Espresso</td><td>58</td><td>6.380,00</td></tr>
+<tr><td>Double Espresso</td><td>34</td><td>4.760,00</td></tr>
+<tr><td>Americano</td><td>126</td><td>17.640,00</td></tr>
+<tr><td>Filtre Kahve</td><td>118</td><td>15.340,00</td></tr>
+<tr><td>Latte</td><td>131</td><td>21.615,00</td></tr>
+<tr><td>Latte Büyük</td><td>33</td><td>6.270,00</td></tr>
+<tr><td>Cappuccino</td><td>92</td><td>14.720,00</td></tr>
+<tr><td>Flat White</td><td>47</td><td>7.990,00</td></tr>
+<tr><td>Cortado</td><td>21</td><td>3.150,00</td></tr>
+<tr><td>Mocha</td><td>29</td><td>5.365,00</td></tr>
+<tr><td>Karamel Latte</td><td>38</td><td>7.030,00</td></tr>
+<tr><td>Vanilya Latte</td><td>26</td><td>4.810,00</td></tr>
+<tr><td>Türk Kahvesi</td><td>74</td><td>8.140,00</td></tr>
+<tr><td>Türk Kahvesi (İkram)</td><td>6</td><td>0,00</td></tr>
+<tr><td>Latte</td><td>-2</td><td>-330,00</td></tr>
+<tr><td>Cappuccino</td><td>-1</td><td>-160,00</td></tr>
+<tr><td colspan="3"><b>SOĞUK KAHVELER</b></td></tr>
+<tr><td>Ice Americano</td><td>61</td><td>9.455,00</td></tr>
+<tr><td>Ice Latte</td><td>88</td><td>15.840,00</td></tr>
+<tr><td>Cold Brew</td><td>33</td><td>5.775,00</td></tr>
+<tr><td>Ice Karamel Latte</td><td>19</td><td>3.705,00</td></tr>
+<tr><td colspan="3"><b>ÇAY VE DIĞER</b></td></tr>
+<tr><td>Çay</td><td>212</td><td>8.480,00</td></tr>
+<tr><td>Bitki Çayı</td><td>27</td><td>2.430,00</td></tr>
+<tr><td>Chai Latte</td><td>22</td><td>3.850,00</td></tr>
+<tr><td>Sıcak Çikolata</td><td>18</td><td>3.060,00</td></tr>
+<tr><td>Ev Yapımı Limonata</td><td>31</td><td>4.030,00</td></tr>
+<tr><td colspan="3"><b>TATLILAR</b></td></tr>
+<tr><td>San Sebastian Cheesecake</td><td>46</td><td>11.040,00</td></tr>
+<tr><td>Brownie</td><td>28</td><td>4.480,00</td></tr>
+<tr><td>Çikolatalı Cookie</td><td>41</td><td>4.920,00</td></tr>
+<tr><td>Tiramisu</td><td>17</td><td>3.740,00</td></tr>
+<tr><td>Havuçlu Kek</td><td>23</td><td>3.450,00</td></tr>
+<tr><td colspan="3"><b>ATIŞTIRMALIK</b></td></tr>
+<tr><td>Kruvasan</td><td>26</td><td>3.640,00</td></tr>
+<tr><td>Kaşarlı Tost</td><td>33</td><td>6.270,00</td></tr>
+<tr><td>Avokadolu Sandviç</td><td>14</td><td>3.640,00</td></tr>
+<tr><td colspan="3"><b>PAKETLI İÇECEK</b></td></tr>
+<tr><td>Su 0,5 L</td><td>143</td><td>4.290,00</td></tr>
+<tr><td>Soda</td><td>52</td><td>2.600,00</td></tr>
+<tr><td colspan="3"><b>EKSTRALAR</b></td></tr>
+<tr><td>Ekstra Shot</td><td>37</td><td>1.480,00</td></tr>
+<tr><td>Yulaf Sütü (+)</td><td>44</td><td>1.320,00</td></tr>
+<tr><td><b>Toplam</b></td><td><b>1845</b></td><td><b>230.215,00</b></td></tr></table></body></html>

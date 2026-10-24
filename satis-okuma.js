@@ -47,11 +47,15 @@ export function parseQty(v){
 // Kasa adının anahtarı (hafıza ve eşleşme): küçük harf, aksansız, "(ikram)" eki atılır.
 export const salesKey=raw=>normalize(raw).replace(/\s*\(ikram\)\s*$/,'').trim().slice(0,200);
 const tokens=v=>v.split(/[^a-z0-9]+/).filter(Boolean);
-// Eşleşmeyen kasa adına öneri: adındaki bütün kelimeler kasa adında geçen en uzun ürün ("latte buyuk" → Latte).
+// Eşleşmeyen kasa adına öneri: ürün adının bütün kelimeleri kasa adında geçiyor VE fark yalnız boy / sıcaklık
+// ("latte buyuk", "ice latte", "karamel latte (b)" → ilgili ürün). "Chai Latte", "Double Espresso" önerilmez (tarif farklı).
+const BOY=new Set(['buyuk','kucuk','orta','b','k','o','l','m','s','xl','large','small','medium','regular','grande','tall','venti',
+ 'boy','ice','iced','buzlu','soguk','sicak','hot','cold']);
 function suggest(key,active){
- const kt=new Set(tokens(key));let best=null,bestLen=0,tie=false;
+ const kt=tokens(key),ks=new Set(kt);let best=null,bestLen=0,tie=false;
  for(const p of active){
-  const pt=tokens(normalize(p.ad));if(!pt.length||!pt.every(t=>kt.has(t)))continue;
+  const pt=tokens(normalize(p.ad));if(!pt.length||!pt.every(t=>ks.has(t)))continue;
+  if(!kt.every(t=>pt.includes(t)||BOY.has(t)))continue;
   if(pt.length>bestLen){best=p;bestLen=pt.length;tie=false;}else if(pt.length===bestLen)tie=true;
  }
  return best&&!tie?best.id:null;
@@ -77,14 +81,13 @@ export function matchSales(rows,products,memory=new Map()){
   if(Math.abs(amount)>100000)throw Error(`${i+1}. satırın adedi geçersiz.`);
   if(!amount)continue;
   const key=salesKey(raw);
-  let id;
-  if(memory.has(key)){
-   id=memory.get(key);
-   if(id===null){add(ignored,key,{name:raw,key},amount);continue;}
-   if(!activeIds.has(id))id=undefined;
-  }
-  if(id===undefined){const found=active.filter(p=>normalize(p.ad)===key);if(found.length===1)id=found[0].id;}
-  if(id===undefined){add(unmatched,key,{name:raw,key,row:i+1,suggestion:suggest(key,active)},amount);continue;}
+  // Sıra: hatırlanan ürün → menüde birebir aynı ad → hatırlanan "takip edilmiyor" → seçim. (Takip dışı bırakılan ürün
+  // sonradan menüye aynı adla eklenirse kendiliğinden sayılmaya başlar.)
+  let id=memory.get(key);
+  if(id&&!activeIds.has(id))id=undefined;
+  if(!id){const found=active.filter(p=>normalize(p.ad)===key);id=found.length===1?found[0].id:undefined;}
+  if(!id&&memory.get(key)===null){add(ignored,key,{name:raw,key},amount);continue;}
+  if(!id){add(unmatched,key,{name:raw,key,row:i+1,suggestion:suggest(key,active)},amount);continue;}
   const sum=(totals.get(id)||0)+amount;if(sum>100000)throw Error('Bir ürün için toplam adet 100000 sınırını aşıyor.');totals.set(id,sum);
  }
  const matched=[...totals].filter(([,m])=>m>0).map(([urun_id,miktar])=>({urun_id,miktar}));

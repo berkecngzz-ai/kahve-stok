@@ -97,3 +97,24 @@ test('dosya içeriğine göre okuma: XLSX, HTML-xls, Windows-1254 CSV; fotoğraf
  const r=await readSalesFile(dosya('kasa.xlsx',new Uint8Array(xlsx)),products,DOMParser);
  assert.equal(r.matched.reduce((a,b)=>a+b.miktar,0),537);
 });
+test('öneri yalnız boy / sıcaklık farkında; tarifi farklı türev önerilmez; takip dışı ürün sonradan menüye eklenince sayılır',()=>{
+ const p=[{id:'L',ad:'Latte'},{id:'E',ad:'Espresso'},{id:'K',ad:'Karamel Latte'}];
+ const r=matchSales([['Ürün','Adet'],['Ice Latte','8'],['Latte Büyük','3'],['Chai Latte','2'],['Double Espresso','4'],['Ice Karamel Latte','1'],['San Sebastian Cheesecake','5']],p);
+ assert.deepEqual(Object.fromEntries(r.unmatched.map(x=>[x.name,x.suggestion])),
+  {'Ice Latte':'L','Latte Büyük':'L','Chai Latte':null,'Double Espresso':null,'Ice Karamel Latte':'K','San Sebastian Cheesecake':null});
+ const hafiza=new Map([['san sebastian cheesecake',null]]);
+ assert.deepEqual(matchSales([['Ürün','Adet'],['San Sebastian Cheesecake','5']],p,hafiza).ignored.map(x=>x.quantity),[5]);
+ const yeni=[...p,{id:'S',ad:'San Sebastian Cheesecake'}];
+ assert.deepEqual(matchSales([['Ürün','Adet'],['San Sebastian Cheesecake','5']],yeni,hafiza).matched,[{urun_id:'S',miktar:5}]);
+});
+test('örnek kasa raporları (4 biçim) aynı toplamı verir',async()=>{
+ const menu=['Espresso','Americano','Latte','Cappuccino','Flat White','Karamel Latte','Vanilya Latte','Mocha','Filtre Kahve','Çay','Sıcak Çikolata'].map((ad,i)=>({id:'u'+i,ad}));
+ const toplamlar=[];
+ for(const f of ['1-bulut-adisyon_urun-satis.xlsx','2-muhasebe-erp_satis.csv','3-masaustu-pos_urun-satis.xls','4-yabanci-pos_item-sales.csv']){
+  const b=readFileSync(new URL('../../ornek-kasa-raporlari/'+f,import.meta.url));
+  const r=await readSalesFile({name:f,size:b.length,arrayBuffer:async()=>b.buffer.slice(b.byteOffset,b.byteOffset+b.length)},menu,DOMParser);
+  toplamlar.push([...r.matched.map(x=>x.miktar),...r.unmatched.map(x=>x.quantity)].reduce((a,c)=>a+c,0));
+  assert.ok(r.unmatched.some(x=>/san sebastian/.test(x.key)&&x.suggestion===null),f+': San Sebastian takip dışı olmalı');
+ }
+ assert.deepEqual(toplamlar,[1845,1845,1845,1845]);
+});

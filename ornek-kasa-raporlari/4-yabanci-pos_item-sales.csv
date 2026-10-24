@@ -1,0 +1,38 @@
+Category,Item,Variation,Qty Sold,Gross Sales
+"Sıcak Kahveler","Espresso","Regular",58,6380.00
+"Sıcak Kahveler","Double Espresso","Regular",34,4760.00
+"Sıcak Kahveler","Americano","Regular",126,17640.00
+"Sıcak Kahveler","Filtre Kahve","Regular",118,15340.00
+"Sıcak Kahveler","Latte","Regular",131,21615.00
+"Sıcak Kahveler","Latte","Large",33,6270.00
+"Sıcak Kahveler","Cappuccino","Regular",92,14720.00
+"Sıcak Kahveler","Flat White","Regular",47,7990.00
+"Sıcak Kahveler","Cortado","Regular",21,3150.00
+"Sıcak Kahveler","Mocha","Regular",29,5365.00
+"Sıcak Kahveler","Karamel Latte","Regular",38,7030.00
+"Sıcak Kahveler","Vanilya Latte","Regular",26,4810.00
+"Sıcak Kahveler","Türk Kahvesi","Regular",74,8140.00
+"Sıcak Kahveler","Türk Kahvesi (İkram)","Regular",6,0.00
+"Soğuk Kahveler","Ice Americano","Regular",61,9455.00
+"Soğuk Kahveler","Ice Latte","Regular",88,15840.00
+"Soğuk Kahveler","Cold Brew","Regular",33,5775.00
+"Soğuk Kahveler","Ice Karamel Latte","Regular",19,3705.00
+"Çay ve Diğer","Çay","Regular",212,8480.00
+"Çay ve Diğer","Bitki Çayı","Regular",27,2430.00
+"Çay ve Diğer","Chai Latte","Regular",22,3850.00
+"Çay ve Diğer","Sıcak Çikolata","Regular",18,3060.00
+"Çay ve Diğer","Ev Yapımı Limonata","Regular",31,4030.00
+"Tatlılar","San Sebastian Cheesecake","Regular",46,11040.00
+"Tatlılar","Brownie","Regular",28,4480.00
+"Tatlılar","Çikolatalı Cookie","Regular",41,4920.00
+"Tatlılar","Tiramisu","Regular",17,3740.00
+"Tatlılar","Havuçlu Kek","Regular",23,3450.00
+"Atıştırmalık","Kruvasan","Regular",26,3640.00
+"Atıştırmalık","Kaşarlı Tost","Regular",33,6270.00
+"Atıştırmalık","Avokadolu Sandviç","Regular",14,3640.00
+"Paketli İçecek","Su 0,5 L","Regular",143,4290.00
+"Paketli İçecek","Soda","Regular",52,2600.00
+"Ekstralar","Ekstra Shot","Regular",37,1480.00
+"Ekstralar","Yulaf Sütü (+)","Regular",44,1320.00
+"Sıcak Kahveler","Latte","Regular",-2,-330.00
+"Sıcak Kahveler","Cappuccino","Regular",-1,-160.00

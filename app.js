@@ -1592,29 +1592,40 @@ async function satisRaporuEkrani(kutu, { bitti, belge = null }) {
     const bugun = bugunStr();
     const enEski = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
     const secenekler = (oneri) => `<option value="">Seç…</option>
-      <option value="-">Tarifi yok · stoktan düşme</option>
+      <option value="-" ${oneri === '-' ? 'selected' : ''}>Takip etmiyoruz · stoktan düşme</option>
       ${urunler.map((u) => `<option value="${esc(u.id)}" ${u.id === oneri ? 'selected' : ''}>${esc(u.ad)}</option>`).join('')}`;
+    const secimSatiri = (x, oneri) => `<div class="eslesme-satir">
+      <span><b>${esc(x.name)}</b><small>${sayiYaz(x.quantity)} adet</small></span>
+      <select data-anahtar="${esc(x.key)}" data-miktar="${x.quantity}" aria-label="${esc(x.name)} menüde hangisi">${secenekler(oneri)}</select>
+    </div>`;
+    // Benzeri menüde olan (boy / buzlu farkı) onaya gelir; menüde karşılığı olmayan (San Sebastian, su…) sorulmadan
+    // takip dışı kalır ve hatırlanır. Menüdeki bir ürünse patron listeyi açıp değiştirebilir.
+    const onayli = unmatched.filter((x) => x.suggestion);
+    const disarida = unmatched.filter((x) => !x.suggestion);
+    const disariAdet = disarida.reduce((t, x) => t + x.quantity, 0) + ignored.reduce((t, x) => t + x.quantity, 0);
     kutu.innerHTML = `<form class="kart" id="satis-rapor">
         <h2>Satış raporu</h2>
         <p class="bilgi kucuk-yazi">${esc(dosya.name)}</p>
         <div class="uc-rakam">
-          <div><div class="etiket">Tanınan ürün</div><div class="orta-rakam">${matched.length}</div></div>
-          <div><div class="etiket">Toplam adet</div><div class="orta-rakam">${sayiYaz(toplam)}</div></div>
-          <div><div class="etiket">Seçim bekleyen</div><div class="orta-rakam ${unmatched.length ? 'uyari' : ''}">${unmatched.length}</div></div>
+          <div><div class="etiket">Stoktan düşülecek</div><div class="orta-rakam">${matched.length + onayli.length} ürün</div></div>
+          <div><div class="etiket">Toplam adet</div><div class="orta-rakam">${sayiYaz(toplam + onayli.reduce((t, x) => t + x.quantity, 0))}</div></div>
+          <div><div class="etiket">Takip edilmeyen</div><div class="orta-rakam">${disarida.length + ignored.length}</div></div>
         </div>
         <label for="s-tarih">Rapor hangi güne kadar?</label>
         <input id="s-tarih" name="tarih" type="date" value="${bugun}" max="${bugun}" min="${enEski}" required>
-        ${unmatched.length ? `<h3>Bunlar menüde hangisi?</h3>
-          <p class="bilgi kucuk-yazi">Kasadaki adı menüdeki ürünle bir kez eşleştir; sonraki raporlarda hatırlanır.
-            Su, hazır kek gibi tarifsiz ürünler için "Tarifi yok" seç.</p>
-          ${unmatched.map((x) => `<div class="eslesme-satir">
-            <span><b>${esc(x.name)}</b><small>${sayiYaz(x.quantity)} adet</small></span>
-            <select data-anahtar="${esc(x.key)}" data-miktar="${x.quantity}" aria-label="${esc(x.name)} menüde hangisi">${secenekler(x.suggestion)}</select>
-          </div>`).join('')}` : ''}
+        ${onayli.length ? `<h3>Bunlar doğru mu?</h3>
+          <p class="bilgi kucuk-yazi">Kasadaki ad menüde biraz farklı. Önerimiz seçili; yanlışsa değiştir. Bir kez onaylarsın, sonra hatırlanır.</p>
+          ${onayli.map((x) => secimSatiri(x, x.suggestion)).join('')}` : ''}
         ${matched.length ? `<details class="taninan"><summary>Tanınan ürünler (${matched.length})</summary>
           ${matched.map((x) => `<div class="cizgili-satir"><span>${esc(ad(x.urun_id))}</span><b>${sayiYaz(x.miktar)}</b></div>`).join('')}
         </details>` : ''}
-        ${ignored.length ? `<p class="bilgi kucuk-yazi">Stoktan düşülmeyenler (tarifi yok): ${ignored.map((x) => `${esc(x.name)} ${sayiYaz(x.quantity)}`).join(', ')}.</p>` : ''}
+        ${disarida.length || ignored.length ? `<div class="takip-disi">
+          <p class="bilgi kucuk-yazi"><b>Takip edilmeyenler</b> (${sayiYaz(disariAdet)} adet, stoktan düşülmez):
+            ${[...disarida, ...ignored].map((x) => esc(x.name)).join(', ')}.</p>
+          ${disarida.length ? `<details><summary>Aralarında takip ettiğin bir ürün var mı?</summary>
+            <p class="bilgi kucuk-yazi">Menüde tarifi olan bir ürünse karşısından seç.</p>
+            ${disarida.map((x) => secimSatiri(x, '-')).join('')}</details>` : ''}
+        </div>` : ''}
         <p class="mesaj"></p>
         <button class="tam" type="submit">Kaydet</button>
         <button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>
