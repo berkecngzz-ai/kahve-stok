@@ -605,8 +605,8 @@ async function stokSekmesi(icerik) {
 let secilenSayim = null;   // Raporda seçili sayım (yoksa en son)
 
 async function stokFarkiSekmesi(icerik) {
-  const [r, trend, fk] = await Promise.all([rpcVeri('stok_farki', { p_sayim: secilenSayim }), rpcVeri('acik_trendi', { p_adet: 8 }),
-    rpcVeri('fiyat_kontrolleri').catch(() => [])]);
+  const [r, trend, fk, stok] = await Promise.all([rpcVeri('stok_farki', { p_sayim: secilenSayim }), rpcVeri('acik_trendi', { p_adet: 8 }),
+    rpcVeri('fiyat_kontrolleri').catch(() => []), rpcVeri('stok_durumu').catch(() => null)]);
   // Fiyatı doğrulanmayan malzeme: miktar farkı normal, TL son onaylı fiyatla "tahmini".
   const kontrolde = new Set((fk ?? []).map((x) => x.malzeme_id));
   if (r.durum === 'sayim_yok') {
@@ -657,6 +657,19 @@ async function stokFarkiSekmesi(icerik) {
     </details>`;
   };
   const donem = r.baslangic ? donemYaz(r.baslangic, r.bitis) : kisaTarih(r.bitis);
+  // En son sayım seçiliyse: o sayımdan bugüne ne geldi, ne kullanıldı, elde ne var (sayım beklemeden görünür).
+  const sonSayimSecili = r.sayimlar?.[0]?.id === r.sayim_id;
+  const hareketli = sonSayimSecili && stok ? stok.malzemeler.filter((m) => m.simdi != null) : [];
+  const topla = (f) => hareketli.reduce((t, m) => t + (f(m) ?? 0), 0);
+  const gelenTl = topla((m) => miktarTl(m.gelen, m.birim, m.fiyat));
+  const fireTl = topla((m) => miktarTl(m.fire, m.birim, m.fiyat));
+  const eldeTl = topla((m) => Number(m.deger_tl) || 0);
+  const bugundenBeri = hareketli.length ? `
+      <div class="uc-rakam">
+        <div><div class="etiket">Gelen mal</div><div class="orta-rakam">${tlYaz(gelenTl)}</div></div>
+        <div><div class="etiket">Fire</div><div class="orta-rakam ${fireTl > 0 ? 'uyari' : ''}">${tlYaz(fireTl)}</div></div>
+        <div><div class="etiket">Elde (tahmini)</div><div class="orta-rakam">${tlYaz(eldeTl)}</div></div>
+      </div>` : '';
   const yaklasik = tahminiSayi ? '≈ ' : '';
   const ozet = tamam.length ? `
       <div class="iki-rakam">
@@ -684,6 +697,8 @@ async function stokFarkiSekmesi(icerik) {
       ${ozet}
       ${uyariKutusu}
     </section>
+    ${bugundenBeri ? `<section class="kart"><h2>${esc(kisaTarih(r.bitis))} sayımından bu yana</h2>${bugundenBeri}
+      <p class="bilgi kucuk-yazi">Kayıp (açık), bir sonraki sayımda burada çıkar.</p></section>` : ''}
     ${tamam.length ? `<section class="kart">
       <h2>En çok açık verenler</h2>
       ${enCok.length ? enCok.map((x) => `<div class="cizgili-satir ${x.renk}"><span><span class="nokta ${x.renk}"></span>${esc(x.ad)}</span>
@@ -715,9 +730,21 @@ async function stokFarkiSekmesi(icerik) {
       <p class="bilgi kucuk-yazi">Onaylı fiyatı olmadığı için TL'ye çevrilmedi. Miktar farkı:</p>
       ${fiyatsiz.map((x) => `<div class="cizgili-satir"><span>${esc(x.ad)}</span>
         <span>${okunurMiktar(x.fark, x.birim, { isaret: true })}</span></div>`).join('')}` : ''}
-    ${ilk.length ? `<h2>İlk kez sayılanlar</h2>
-      <p class="bilgi kucuk-yazi">Açıkları bir sonraki sayımda çıkar.</p>
-      <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p>` : ''}
+    ${bugundenBeri ? `<h2>${esc(kisaTarih(r.bitis))} sayımından bu yana</h2>${bugundenBeri}
+      <table class="tablo rapor-tablo">
+        <thead><tr><th>Malzeme</th><th>Gelen</th><th>Kullanılan</th><th>Elde</th></tr></thead>
+        <tbody>${hareketli.map((m) => `<tr><td>${esc(m.ad)}</td>
+          <td>${Number(m.gelen) ? okunurMiktar(m.gelen, m.birim) : '—'}</td>
+          <td>${Number(m.satis) + Number(m.fire) ? okunurMiktar(Number(m.satis) + Number(m.fire), m.birim) : '—'}</td>
+          <td><b>${okunurMiktar(Math.max(0, m.simdi), m.birim)}</b></td></tr>`).join('')}</tbody>
+      </table>
+      <p class="bilgi kucuk-yazi">Kullanılan: satış + fire. "Elde" sayım + gelen − kullanılan; bir sonraki sayımda kesinleşir.</p>` : ''}
+    ${ilk.length ? `<h2>${tamam.length ? 'İlk kez sayılanlar' : `${esc(kisaTarih(r.bitis))} sayımı`}</h2>
+      <table class="tablo rapor-tablo">
+        <thead><tr><th>Malzeme</th><th>Sayılan</th><th>TL</th></tr></thead>
+        <tbody>${ilk.map((x) => `<tr><td>${esc(x.ad)}</td><td>${okunurMiktar(x.sayilan, x.birim)}</td><td>${tlHucre(x.sayilan, x)}</td></tr>`).join('')}</tbody>
+      </table>
+      ${tamam.length ? '<p class="bilgi kucuk-yazi">Bunların açığı bir sonraki sayımda çıkar.</p>' : ''}` : ''}
     ${sayilmadi.length ? `<h2>Bu sayımda sayılmayanlar</h2><p>${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p>` : ''}
     ${trend.length > 1 ? `<h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}` : ''}
     <footer class="belge-dip">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım

@@ -512,3 +512,6 @@ body.belge-acik { overflow: hidden; }
   .belge h2 { break-after: avoid; }
 }
 .belge details.rapor-satir.normal > summary { border-left-color: transparent; }
+.uc-rakam { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0 6px; }
+.uc-rakam .orta-rakam { font-size: 17px; }
+.orta-rakam.uyari { color: var(--kirmizi); }
