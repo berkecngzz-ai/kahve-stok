@@ -27,7 +27,8 @@ const SEMA = [
   'sql/09_olagandisi_miktar.sql', 'sql/10_sifir_fiyat.sql', 'sql/11_acik_yetkiler.sql', 'sql/12_stok_duzeltmeleri.sql',
 ];
 for (const d of ['sql/13_rapor_uyarilari.sql', 'sql/14_fatura_patron_yetkisi.sql', 'sql/15_satis_excel_dosya.sql',
-  'sql/20_patron_ekranlari.sql', 'sql/21_mal_kabul.sql', 'sql/22_gunluk_kontrol.sql', 'sql/23_kdv_sade_eslesme.sql']) {
+  'sql/20_patron_ekranlari.sql', 'sql/21_mal_kabul.sql', 'sql/22_gunluk_kontrol.sql', 'sql/23_kdv_sade_eslesme.sql',
+  'sql/24_sade_metinler.sql']) {
   if (existsSync(join(KOK, d))) SEMA.push(d);
 }
 

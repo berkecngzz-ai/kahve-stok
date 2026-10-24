@@ -465,3 +465,13 @@ button.kontrol-madde { cursor: pointer; }
 
 /* "KDV dahil" ibaresi: fiyatların yanında küçük ve sade */
 .kdv-dahil { font-size: 12px; font-weight: 400; color: var(--soluk, #777); margin-left: 4px; }
+
+/* Telefonda dokunma alanı: küçük düğmeler ve filtreler de en az 44 px (parmakla rahat basılsın). */
+@media (pointer: coarse) {
+  button.kucuk, .suzgec button { min-height: 44px; }
+  .metin-dugme { min-height: 44px; }
+  .kurulum-alanlar input, .kurulum-alanlar select { font-size: 16px; }
+}
+
+/* hidden özniteliği her zaman gizler (kart vb. display kuralları ezmesin) */
+[hidden] { display: none !important; }

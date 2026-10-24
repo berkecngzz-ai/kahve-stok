@@ -32,10 +32,22 @@ function hataMetni(err) {
     ['Bucket not found', 'Belge deposu henüz kurulmamış. Patrona haber ver.'],
     ['row-level security', 'Bu işlemi yapma yetkin yok.'],
     ['permission denied', 'Bu işlemi yapma yetkin yok.'],
-    ['Could not find the function', 'Bu ekran için sunucu güncellemesi henüz yapılmamış. Lütfen destek ekibine haber ver.'],
+    ['Could not find the function', 'Uygulama güncelleniyor. Birkaç dakika sonra tekrar dene.'],
+    ['JWT expired', 'Oturumun süresi doldu. Çıkış yapıp tekrar giriş yap.'],
+    ['NetworkError', 'İnternet bağlantısı yok. Bağlantını kontrol edip tekrar dene.'],
+    ['Load failed', 'İnternet bağlantısı yok. Bağlantını kontrol edip tekrar dene.'],
+    ['timeout', 'Sunucu geç cevap verdi. Tekrar dene.'],
+    ['aborted', 'Sunucu geç cevap verdi. Tekrar dene.'],
+    ['duplicate key', 'Bu kayıt zaten var.'],
   ];
   const bulunan = tablo.find(([en]) => m.toLowerCase().includes(en.toLowerCase()));
-  return bulunan ? bulunan[1] : m;
+  if (bulunan) return bulunan[1];
+  // Kendi mesajlarımız Türkçedir; teknik (İngilizce) bir hata ekrana olduğu gibi yazılmaz.
+  if (/violates|constraint|syntax|column|relation|null value|invalid input|TypeError|Cannot read|undefined|status code/i.test(m)) {
+    console.error(err);
+    return 'Bir şey ters gitti, kayıt yapılmadı. Tekrar dene; sürerse patrona haber ver.';
+  }
+  return m;
 }
 
 if (!SUPABASE_URL.startsWith('https://')) {
@@ -65,6 +77,7 @@ function formBagla(form, isle) {
 }
 
 async function cikis() {
+  uyeOnbellek = null;
   aktifSekme = 'ozet';
   // Seçimler mekana özel: aynı telefonda başka mekanın hesabı açılınca eski hafta/ay seçili kalmasın.
   secilenSayim = null; secilenAy = null; girisTuru = 'hepsi'; ayarSekme = 'malzeme';
@@ -482,9 +495,9 @@ async function ozetSekmesi(icerik) {
 
   icerik.innerHTML = `
     ${gunlukKontrolKarti({ kontrol, fiyatlar, eksik: eksikler?.[0], son })}
+    ${kahraman}
     ${teslimatKarti(gorevler ?? [])}
     ${fiyatKontrolKarti(fiyatKontrol)}
-    ${kahraman}
     ${kontrol ? '' : bekleyenUyarisi(eksikler?.[0])}
     ${son ? `<section class="kart">
       <h2>En çok açık veren malzemeler</h2>
@@ -579,8 +592,9 @@ async function stokSekmesi(icerik) {
       ${tahminiDeger ? `<p class="bilgi kucuk-yazi">${tahminiDeger} malzemenin fiyatı doğrulanmadı; değer son onaylı fiyatla tahmini.</p>` : ''}
       ${fiyatsiz.length ? `<p class="bilgi kucuk-yazi">Fiyatı olmadığı için değere girmeyenler: ${fiyatsiz.map((m) => esc(m.ad)).join(', ')}.</p>` : ''}
       <p class="bilgi kucuk-yazi">${sayilan.length ? `${sayilan.length} malzeme${azSayi
-        ? ` · <span class="uyari">${azSayi} tanesi 2 gün yetmeyebilir</span>` : ''}. ` : ''}Son sayım + sonra gelen − satılan − fire.
-        ${tahminSayi ? `<b>${tahminSayi} malzemenin rakamı tahmini</b> (etiketine bak); ` : ''}bir sonraki sayımda kesinleşir. "Gün", son ${r.kullanim_gun || 28} günün ortalama kullanımına göre tahmindir.</p>
+        ? ` · <span class="uyari">${azSayi} tanesi 2 günden az yeter</span>` : ''}. ` : ''}Son sayımdan sonra gelen eklendi,
+        satılan ve fire düşüldü.${tahminSayi ? ` <b>${tahminSayi} malzemenin rakamı tahmini</b>, bir sonraki sayımda kesinleşir.` : ''}
+        "Gün": son ${(r.kullanim_gun || 28) >= 14 ? `${Math.round((r.kullanim_gun || 28) / 7)} haftanın` : `${r.kullanim_gun} günün`} ortalama kullanımına göre.</p>
     </section>
     ${sayilan.length ? `<section class="kart liste-kart">${sayilan.map(satir).join('')}</section>` : ''}
     ${sayilmayan.length ? `<section class="kart"><h2>Henüz sayılmayanlar (${sayilmayan.length})</h2>
@@ -671,18 +685,20 @@ async function stokFarkiSekmesi(icerik) {
     ${trend.length > 1 ? `<section class="kart"><h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}</section>` : ''}
     ${tamam.length ? `<section class="kart liste-kart">
       <h2>Malzemeler</h2>
-      <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: kayıp, kullanılanın %${ACIK_ORAN_ESIGI * 100}'ünden fazla ve
-        ${ACIK_TL_ESIGI} TL'den büyük. <span class="nokta fazla"></span>Sarı: sayılan fazla çıktı (satış ya da fire eksik girilmiş,
-        fatura iki kez girilmiş ya da sayım yanlış olabilir). Ayrıntı için malzemeye dokun.</p>
-      ${tamam.map(satir).join('')}
+      <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: normalden fazla kayıp.
+        <span class="nokta fazla"></span>Sarı: sayılan, olması gerekenden fazla (satış ya da fire eksik girilmiş olabilir).
+        Ayrıntı için malzemeye dokun.</p>
+      ${tamam.filter((x) => Number(x.fark) !== 0).map(satir).join('')}
+      ${tamam.some((x) => Number(x.fark) === 0) ? `<p class="bilgi kucuk-yazi">Farkı olmayanlar: ${tamam.filter((x) => Number(x.fark) === 0)
+        .map((x) => esc(x.ad)).join(', ')}.</p>` : ''}
       <button class="ikincil tam" id="indir">Raporu indir (Excel)</button></section>` : ''}
     ${ilk.length ? `<section class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
       <p class="bilgi">Daha önce sayılmadıkları için açık bir sonraki sayımda çıkar.</p>
       <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></section>` : ''}
     ${sayilmadi.length ? `<section class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
       <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></section>` : ''}
-    <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım gün
-      sonu kabul edilir: sayım günündeki satış, fire ve faturalar o sayıma dahildir. TL, malzemenin bugünkü fiyatıyla (KDV dahil).</p>`;
+    <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım
+      günündeki satış, fire ve mal girişleri o haftaya dahil. TL, bugünkü fiyatla (KDV dahil).</p>`;
   // Muhasebeci / ortak için: haftanın tablosu Excel'de açılan dosya olarak (cihazda üretilir, hiçbir yere gönderilmez).
   icerik.querySelector('#indir')?.addEventListener('click', () => {
     const blob = new Blob([raporCsv(r, mekanAdi)], { type: 'text/csv;charset=utf-8' });
@@ -725,6 +741,7 @@ async function mekanSekmesi(icerik, user, uye, patron) {
     if (!confirm('Davet kodu yenilensin mi? Eski kod artık çalışmayacak.')) return;
     e.target.disabled = true;
     const { error } = await sb.rpc('davet_kodu_yenile');
+    uyeOnbellek = null;
     if (error) { alert(hataMetni(error)); e.target.disabled = false; return; }
     goster();
   });
@@ -796,7 +813,7 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
     <div class="satir">
       <div class="genis">${esc(m.ad)}
         <small>${Number(m.fiyat) > 0
-          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))}`
+          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))} · KDV dahil`
           : '<span class="uyari">Fiyat girilmemiş</span>'}</small>
         <details class="gecmis" data-gecmis="${esc(m.id)}"><summary>Fiyat geçmişi</summary>
           <div><p class="bilgi">Yükleniyor…</p></div></details></div>
@@ -809,7 +826,8 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
 
   icerik.innerHTML = `
     ${patron ? `
-    <form class="kart" id="malzeme-form">
+    ${d || !aktifler.length ? '' : '<button class="tam" type="button" id="yeni-malzeme">+ Yeni malzeme ekle</button><p></p>'}
+    <form class="kart" id="malzeme-form" ${d || !aktifler.length ? '' : 'hidden'}>
       <h2>${d ? 'Malzemeyi düzenle' : 'Yeni malzeme'}</h2>
       <label for="m-ad">Adı</label>
       <input id="m-ad" name="ad" maxlength="60" required value="${esc(d?.ad)}" placeholder="Örn. Tam yağlı süt">
@@ -846,6 +864,11 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
   birimSec.addEventListener('change', etiketYaz);
   etiketYaz();
   form.querySelector('#vazgec')?.addEventListener('click', () => malzemeSekmesi(icerik, patron).catch(hataGoster));
+  icerik.querySelector('#yeni-malzeme')?.addEventListener('click', (e) => {
+    e.currentTarget.remove();
+    form.hidden = false;
+    form.querySelector('#m-ad').focus();
+  });
   formBagla(form, async ({ ad, birim, fiyat }) => {
     const f = sayiOku(fiyat);
     if (!Number.isFinite(f) || f >= 10000000) throw new Error('Fiyatı sayı olarak yaz. Örn. 42,50');
@@ -1205,7 +1228,7 @@ async function girisSekmesi(icerik, user, patron) {
         <summary>
           <span class="giris-tarih"><b>${t.getDate()}</b><small>${t.toLocaleDateString('tr-TR', { month: 'short' })}</small></span>
           <span class="giris-orta"><b>${TURLER[g.tur].ad}</b>${g.iptal_zamani ? ' <span class="etiket-kutu az">İptal</span>' : ''}
-            <small>${esc(g.aciklama || g.giren_ad)}${fatura && !gBelgeler.length ? ' · belge yok' : ''}</small></span>
+            <small>${esc(g.aciklama || g.giren_ad)}${fatura && gBelgeler.length ? ' · 📄' : ''}</small></span>
           <span class="giris-tutar">${girisTutari(g, satirlar)}</span>
         </summary>
         <ul>${satirlar.map((k) => `<li>${kalemYaz(k)}</li>`).join('')}</ul>
@@ -1221,7 +1244,7 @@ async function girisSekmesi(icerik, user, patron) {
     eksik?.bekleyen_satis_raporu ? `${eksik.bekleyen_satis_raporu} satış raporu` : '',
   ].filter(Boolean).join(', ');
   icerik.innerHTML = `
-    ${eksikMetni ? `<div class="sade-uyari">⚠️ ${eksikMetni} kontrol bekliyor; raporlar eksik olabilir.</div>` : ''}
+    ${eksikMetni ? `<div class="sade-uyari">⏳ ${eksikMetni} henüz işlenmedi. İşlenince rakamlar biraz değişebilir.</div>` : ''}
     <div class="buyuk-dugmeler yatay">
       <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
       <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
@@ -1540,12 +1563,15 @@ async function fireVar(kutu, user, bitti) {
     kutu.innerHTML = `<div class="sade-ekran">
         <h2>🗑️ Ne gitti?</h2>
         ${secenekler.length > 10 ? `<input id="ara" class="buyuk-giris" placeholder="🔍 Ara" value="${esc(ara)}">` : ''}
-        <div class="kartlar">${liste.map((s, i) => `<button class="kart-dugme" data-i="${secenekler.indexOf(s)}">
-          ${s.tur === 'u' ? '☕ ' : ''}${esc(s.ad)}</button>`).join('') || '<p class="bilgi">Bulunamadı.</p>'}</div>
+        <div class="kartlar">${liste.map((s) => `<button class="kart-dugme ikonlu" data-i="${secenekler.indexOf(s)}">
+          <span aria-hidden="true">${s.tur === 'u' ? '☕' : malzemeIkonu(s.m)}</span>${esc(s.ad)}</button>`).join('') || '<p class="bilgi">Bulunamadı.</p>'}</div>
         <button class="dev ikincil" id="geri">◀ Ana ekran</button></div>`;
     kutu.querySelector('#geri').onclick = () => bitti();
     const ar = kutu.querySelector('#ara');
-    if (ar) { ar.oninput = () => { neEkrani(ar.value); }; ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }
+    if (ar) {
+      ar.oninput = () => { neEkrani(ar.value); };
+      if (ara) { ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }   // yazarken odak kalsın
+    }
     kutu.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => { secim = secenekler[b.dataset.i]; nekadarEkrani(); });
   };
 
@@ -1626,7 +1652,10 @@ async function elleGiris(kutu, user, bitti) {
         <button class="dev ikincil" id="geri">◀ ${sepet.length ? 'Listeye dön' : 'Vazgeç'}</button></div>`;
     kutu.querySelector('#geri').onclick = () => (sepet.length ? listeEkrani() : bitti());
     const ar = kutu.querySelector('#ara');
-    if (ar) { ar.oninput = () => neEkrani(ar.value); ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }
+    if (ar) {
+      ar.oninput = () => neEkrani(ar.value);
+      if (ara) { ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }   // ilk açılışta klavye açılmaz
+    }
     kutu.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => miktarEkrani(malzemeler.find((m) => m.id === b.dataset.m)));
   };
 
@@ -2661,20 +2690,32 @@ function belgeKarti(k, b) {
     </div></div>`;
 }
 
+// Üyelik bilgisi oturum boyunca bir kez alınır: her sekme geçişinde iki sorgu daha az (sekmeler hızlı açılır).
+// Çıkışta ve davet kodu yenilenince sıfırlanır; mekana bağlı değilken (katılma/oluşturma ekranı) tutulmaz.
+let uyeOnbellek = null;   // { userId, ur, kurulumcu }
+
 // Giriş durumuna göre doğru ekranı açar.
 async function goster() {
   try {
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) return girisEkrani();
+    if (!session) { uyeOnbellek = null; return girisEkrani(); }
     ustSag.innerHTML = '<button class="kucuk">Çıkış</button>';
     ustSag.querySelector('button').onclick = cikis;
-    const [ur, kr] = await Promise.all([
-      sb.from('uyeler').select('rol, ad, mekan_id, mekanlar(ad, davet_kodu)')
-        .eq('user_id', session.user.id).maybeSingle(),
-      sb.rpc('kurulumcu_muyum'),
-    ]);
-    if (ur.error) throw ur.error;
-    kurulumcu = kr.data === true;
+    let ur;
+    if (uyeOnbellek?.userId === session.user.id) {
+      ({ ur } = uyeOnbellek);
+      kurulumcu = uyeOnbellek.kurulumcu;
+    } else {
+      const [u, kr] = await Promise.all([
+        sb.from('uyeler').select('rol, ad, mekan_id, mekanlar(ad, davet_kodu)')
+          .eq('user_id', session.user.id).maybeSingle(),
+        sb.rpc('kurulumcu_muyum'),
+      ]);
+      if (u.error) throw u.error;
+      ur = u;
+      kurulumcu = kr.data === true;
+      uyeOnbellek = ur.data ? { userId: session.user.id, ur, kurulumcu } : null;
+    }
     document.body.classList.toggle('sade', ur.data?.rol === 'barista');
     document.body.classList.toggle('patron', ur.data?.rol === 'patron');
     if (!ur.data) return kurulumcu ? kurulumEkrani(app) : mekanSecEkrani(session.user);

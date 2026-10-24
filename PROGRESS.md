@@ -25,6 +25,14 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
+## Kullanıcı dostu sadeleştirme (2026-10-24) · CANLIDA (sql/24 + ön yüz)
+Yeni özellik yok; KDV/eşleme kuralları değişmedi. sql/24 yalnız rapor uyarı YAZILARI (geri dönüş: sql/13'ü yeniden çalıştır;
+canlı = sql/13 doğrulandı). Ön yüz: Özet'te haftanın açığı görevlerin üstünde; teknik İngilizce hata ekrana çıkmaz (sade
+mesaj); rapor farkı 0 olanları tek satırda toplar; Stok/Rapor/Girişler metinleri sadeleşti ("belge yok" kalktı);
+malzeme ekleme formu düğme arkasında; Fire/elle girişte arama klavyeyi kendiliğinden açmaz, fire listesinde simgeler;
+telefonda küçük düğmeler 44 px; üyelik bilgisi oturumda bir kez alınır (her sekme geçişinde 2 sorgu az).
+Sıradaki: telefonda patron ve barista hesabıyla bak; ilk gerçek faturayla Mal geldi (XML/PDF artık AI ile eşleşir).
+
 ## KDV gizlendi + ürün eşleme (2026-10-24) · CANLIDA (sql/23 + fatura-oku işlevi + ön yüz)
 
 Yedek: `Desktop/kahve-stok-yedek/2026-10-24_kdv-eslesme-oncesi` (21 tablo, 59 işlev). Geri dönüş: `scripts/geri-al-23.sql`
