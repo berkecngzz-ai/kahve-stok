@@ -24,3 +24,18 @@ reset role;
 update public.malzeme_hareketleri h set miktar = h.miktar + 22000
   from public.girisler g
   where g.id = h.giris_id and g.tur = 'sayim' and g.tarih = public.bugun() and h.malzeme_id = :'sut';
+
+-- Demo: espresso çekirdeği bugün %8 zamlı geldi (barista market fişini elle girdi) → patronun Özet'inde fiyat uyarısı.
+reset role;
+select m.id as kahve, round(coalesce(m.fiyat, 1100) * 1.08, 2) as zamli
+  from public.malzemeler m join public.mekanlar k on k.id = m.mekan_id
+  where k.ad = 'Demo Kafe' and m.ad like 'Espresso çek%' order by m.ad limit 1 \gset
+select set_config('request.jwt.claim.sub', 'd0000000-0000-4000-8000-000000000002', false),
+       set_config('request.jwt.claim.email', 'barista@demo.kafe', false);
+set role authenticated;
+select public.elle_mal_kabul(gen_random_uuid(), 'Kahveci toptan', jsonb_build_array(
+  jsonb_build_object('malzeme_id', :'kahve', 'miktar', 1000, 'tutar', :zamli)));
+reset role;
+update public.malzeme_hareketleri h set miktar = h.miktar + 1000
+  from public.girisler g
+  where g.id = h.giris_id and g.tur = 'sayim' and g.tarih = public.bugun() and h.malzeme_id = :'kahve';

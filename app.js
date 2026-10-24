@@ -5,7 +5,6 @@ import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, t
 import { anahtar, siniflandir, aiIleSiniflandir, carpanBul } from './eslestirme.js';
 import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js';
 import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js';
-import { cevapAnahtariniOku, anahtarBelgesi, karsilastir } from './okuma-testi.js';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
   ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
 
@@ -296,11 +295,83 @@ function teslimatKartiBagla(icerik, yenile) {
   });
 }
 
+// ---------- Bugünkü kontrol: patron yalnız dikkat etmesi gerekeni görür; sorun yoksa yeşil ----------
+const gunFarki = (a, b) => Math.round((new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)) / 864e5);
+const birimFiyatAdi = (birim) => ({ g: 'kg', ml: 'litre', adet: 'adet' }[birim] ?? birim);
+
+function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son }) {
+  if (!kontrol) return '';
+  const maddeler = [];     // [renk, ikon, başlık, açıklama, git]
+  if (Number(kontrol.acik_teslimat)) {
+    maddeler.push(['kirmizi', '🚚', `${kontrol.acik_teslimat} teslimatta fark var`,
+      `${Number(kontrol.acik_teslimat_tl) ? `≈ ${tlYaz(kontrol.acik_teslimat_tl)} eksik mal · ` : ''}aşağıda karar ver`, '#teslimat-gorevleri']);
+  }
+  if (son?.buyuk) {
+    maddeler.push(['kirmizi', '📉', `Geçen haftanın açığı yüksek: ${tlYaz(son.acik_tl)}`, 'Hangi malzemede olduğunu raporda gör', 'rapor']);
+  }
+  for (const f of (fiyatlar ?? []).filter((x) => x.uyari)) {
+    maddeler.push(['sari', '📈', `${f.ad} %${String(f.degisim_yuzde).replace('.', ',')} pahalandı`,
+      `${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)} · ayda ≈ ${tlYaz(f.aylik_etki)} ek maliyet`, '#fiyatlar']);
+  }
+  for (const e of kontrol.elle_fiyat_kontrol ?? []) {
+    maddeler.push(['sari', '✍️', `Elle girilen fiyat kontrol bekliyor: ${e.malzeme}`,
+      `${buyukMiktar(e.miktar, e.birim)} · ${tlYaz(e.tutar)} · ${e.giren_ad}. Fiyat güncellenmedi; doğruysa malzemeden düzelt.`, 'ayar']);
+  }
+  const sayimGun = kontrol.son_sayim ? gunFarki(kontrol.bugun, kontrol.son_sayim) : null;
+  if (sayimGun == null) maddeler.push(['sari', '📋', 'Henüz sayım yok', 'Takip ilk haftalık sayımla başlar', null]);
+  else if (sayimGun > 8) maddeler.push(['sari', '📋', `Haftalık sayım gecikti`, `Son sayım ${sayimGun} gün önce`, null]);
+  const satisBekliyor = Number(eksik?.bekleyen_satis_raporu) > 0;
+  if (kontrol.son_sayim && !satisBekliyor && (!kontrol.son_satis || gunFarki(kontrol.son_sayim, kontrol.son_satis) > 3)) {
+    maddeler.push(['sari', '💰', 'Son haftanın satış raporu girilmedi', 'Stok ve açık rakamları tahmini kalır', 'giris']);
+  }
+  if (Number(eksik?.bekleyen_fatura) || satisBekliyor) {
+    maddeler.push(['bilgi', '⏳', `${[eksik.bekleyen_fatura ? `${eksik.bekleyen_fatura} fatura` : '', satisBekliyor
+      ? `${eksik.bekleyen_satis_raporu} satış raporu` : ''].filter(Boolean).join(' ve ')} işleniyor`,
+      'Fotoğraftan okunamadı, ekibimiz işliyor; rakamlar sonra değişebilir', null]);
+  }
+  if (!maddeler.length) {
+    return `<section class="kart kontrol-kart yesil"><h2>Bugünkü kontrol</h2>
+      <p class="hepsi-tamam">✓ Her şey yolunda</p>
+      <p class="bilgi kucuk-yazi">Teslimatlar tam, faturalar işlendi, sayım güncel.</p></section>`;
+  }
+  const kirmizi = maddeler.some(([r]) => r === 'kirmizi');
+  return `<section class="kart kontrol-kart ${kirmizi ? 'kirmizi' : 'sari'}">
+    <h2>Bugünkü kontrol <span class="rozet">${maddeler.length}</span></h2>
+    ${maddeler.map(([renk, ikon, baslik, alt, git]) => `<${git ? 'button' : 'div'} class="kontrol-madde ${renk}"
+        ${git ? `data-kontrol-git="${esc(git)}"` : ''}>
+      <span class="kontrol-ikon" aria-hidden="true">${ikon}</span>
+      <span class="kontrol-metin"><b>${esc(baslik)}</b><small>${esc(alt)}</small></span>
+      ${git ? '<span class="kontrol-ok" aria-hidden="true">›</span>' : ''}</${git ? 'button' : 'div'}>`).join('')}
+  </section>`;
+}
+
+// Son fiyat değişimleri: önceki → son fatura fiyatı ve 90 günlük ağırlıklı ortalama. Kullanım verisi yoksa TL etkisi yazılmaz.
+function fiyatKarti(fiyatlar) {
+  const liste = (fiyatlar ?? []).filter((f) => Math.abs(Number(f.degisim_yuzde)) >= 1).slice(0, 6);
+  if (!liste.length) return '';
+  const enBuyuk = Math.max(...liste.map((f) => Math.abs(Number(f.degisim_yuzde))), 1);
+  return `<section class="kart" id="fiyatlar"><h2>Fiyat değişimleri</h2>
+    ${liste.map((f) => {
+      const art = Number(f.degisim_yuzde) > 0;
+      return `<div class="fiyat-satir ${f.uyari ? 'uyari-satir' : ''}">
+        <div class="fiyat-ust"><b>${esc(f.ad)}</b>
+          <span class="fiyat-oran ${art ? 'artti' : 'azaldi'}">${art ? '▲' : '▼'} %${String(Math.abs(f.degisim_yuzde)).replace('.', ',')}</span></div>
+        <div class="fiyat-cubuk ${art ? 'artti' : 'azaldi'}"><span style="width:${(Math.abs(f.degisim_yuzde) / enBuyuk * 100).toFixed(0)}%"></span></div>
+        <small>${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)}${f.ortalama != null ? ` · 90 gün ortalaması ${tlYaz(f.ortalama)}` : ''}
+          ${f.aylik_etki != null ? ` · ayda ${tlYaz(f.aylik_etki, { isaret: true })}` : ' · kullanım verisi yok, aylık etki hesaplanmadı'}</small>
+      </div>`;
+    }).join('')}
+    <p class="bilgi kucuk-yazi">Uyarı: %5'ten fazla artış ve ayda 250 TL'den fazla ek maliyet. Ortalama, alınan miktara göre.</p>
+  </section>`;
+}
+
 async function ozetSekmesi(icerik) {
-  const [trend, eksikler, stok, gorevler] = await Promise.all([
+  // Yeni işlevler (sql/21, 22) sunucuda yoksa ilgili kart görünmez; Özet yine açılır.
+  const yoksa = (deger) => (e) => { console.warn('Özet verisi alınamadı:', e); return deger; };
+  const [trend, eksikler, stok, gorevler, kontrol, fiyatlar] = await Promise.all([
     rpcVeri('acik_trendi', { p_adet: 8 }), rpcVeri('eksik_belge_ozeti'), rpcVeri('stok_durumu'),
-    // Sunucu güncellemesi (sql/21) yoksa kart görünmez; Özet yine açılır.
-    rpcVeri('teslimat_gorevleri').catch((e) => { console.warn('Teslimat görevleri alınamadı:', e); return []; })]);
+    rpcVeri('teslimat_gorevleri').catch(yoksa([])), rpcVeri('gunluk_kontrol').catch(yoksa(null)),
+    rpcVeri('fiyat_degisimleri').catch(yoksa([]))]);
   trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
   const [son, onceki] = trend;
   const azalan = stok.malzemeler.filter((m) => ['az', 'dikkat'].includes(yeterDurumu(m.yeter_gun)));
@@ -345,9 +416,10 @@ async function ozetSekmesi(icerik) {
   }
 
   icerik.innerHTML = `
+    ${gunlukKontrolKarti({ kontrol, fiyatlar, eksik: eksikler?.[0], son })}
     ${teslimatKarti(gorevler ?? [])}
     ${kahraman}
-    ${bekleyenUyarisi(eksikler?.[0])}
+    ${kontrol ? '' : bekleyenUyarisi(eksikler?.[0])}
     ${son ? `<section class="kart">
       <h2>En çok açık veren malzemeler</h2>
       ${son.en_cok_acik.length ? `<ol class="sirali">${son.en_cok_acik.map((x) => `
@@ -366,8 +438,17 @@ async function ozetSekmesi(icerik) {
       ${azalan.slice(0, 5).map((m) => `<div class="cizgili-satir"><span>${esc(m.ad)}</span>
         <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
-    </section>` : ''}`;
+    </section>` : ''}
+    ${fiyatKarti(fiyatlar)}`;
   teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
+  icerik.querySelectorAll('[data-kontrol-git]').forEach((b) => b.addEventListener('click', () => {
+    const git = b.dataset.kontrolGit;
+    if (git.startsWith('#')) { icerik.querySelector(git)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    aktifSekme = git;
+    if (git === 'ayar') ayarSekme = 'malzeme';
+    window.scrollTo(0, 0);
+    goster();
+  }));
   icerik.querySelectorAll('[data-ayar-git]').forEach((b) => b.addEventListener('click', () => {
     aktifSekme = 'ayar';
     ayarSekme = b.dataset.ayarGit;
@@ -384,24 +465,39 @@ async function ozetSekmesi(icerik) {
 
 // ---------- Stok: şu an elde ne var (son sayım + sonraki hareketler) ----------
 
+// Rakamın güvenilirliği: bugün sayıldıysa doğrulanmış; sayımdan sonra satış girilmediyse tahmini (satış raporu haftalık);
+// eksi çıktıysa ya da okunmayı bekleyen fatura varsa kontrol gerekli.
+function stokGuveni(m, bugun, faturaBekliyor) {
+  if (Number(m.simdi) < 0) return ['kontrol', 'Kontrol gerekli', 'Hesap eksiye düştü: bir giriş eksik olabilir'];
+  if (faturaBekliyor && Number(m.gelen) === 0 && m.sayim_tarih !== bugun) return ['kontrol', 'Kontrol gerekli', 'Okunmayı bekleyen fatura var'];
+  if (m.sayim_tarih === bugun) return ['dogru', 'Bugün sayıldı', ''];
+  if (Number(m.satis) === 0) return ['tahmin', 'Tahmini', 'Sayımdan sonraki satışlar henüz girilmedi'];
+  return ['dogru', 'Güncel', ''];
+}
+
 async function stokSekmesi(icerik) {
-  const r = await rpcVeri('stok_durumu');
+  const [r, eksikler] = await Promise.all([rpcVeri('stok_durumu'), rpcVeri('eksik_belge_ozeti')]);
+  const faturaBekliyor = Number(eksikler?.[0]?.bekleyen_fatura) > 0;
   const sayilan = r.malzemeler.filter((m) => m.simdi != null);
   const sayilmayan = r.malzemeler.filter((m) => m.simdi == null);
   const deger = sayilan.reduce((t, m) => t + Number(m.deger_tl || 0), 0);
   const azSayi = sayilan.filter((m) => yeterDurumu(m.yeter_gun) === 'az').length;
+  const tahminSayi = sayilan.filter((m) => stokGuveni(m, r.tarih, faturaBekliyor)[0] !== 'dogru').length;
   const satir = (m) => {
     const durum = yeterDurumu(m.yeter_gun);
+    const [guven, guvenAd, guvenNeden] = stokGuveni(m, r.tarih, faturaBekliyor);
+    const doluluk = m.yeter_gun == null ? null : Math.max(4, Math.min(100, (Number(m.yeter_gun) / 14) * 100));
     const kullanilan = Number(m.satis) + Number(m.fire);
     const hareket = [Number(m.gelen) ? `${okunurMiktar(m.gelen, m.birim)} geldi` : '',
       kullanilan ? `${okunurMiktar(kullanilan, m.birim)} kullanıldı` : ''].filter(Boolean).join(', ');
     return `<div class="stok-satir ${durum || ''}">
-      <div class="sol"><b>${esc(m.ad)}</b>
+      <div class="sol"><b>${esc(m.ad)}</b>${guven !== 'dogru' ? ` <span class="guven ${guven}">${guvenAd}</span>` : ''}
         <small>${hareket ? `${esc(kisaTarih(m.sayim_tarih))} sayımı ${okunurMiktar(m.sayilan, m.birim)}; sonra ${hareket}`
           : `${m.sayim_tarih === r.tarih ? 'Bugün' : esc(kisaTarih(m.sayim_tarih))} sayıldı`}</small></div>
       <div class="sag"><span class="orta-rakam">${okunurMiktar(Math.max(0, m.simdi), m.birim)}</span>
         ${m.yeter_gun != null ? `<span class="etiket-kutu ${durum}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün`}</span>` : ''}
-        ${Number(m.simdi) < 0 ? '<small class="uyari">Kayıt eksik olabilir</small>' : ''}</div>
+        ${guvenNeden ? `<small class="guven-neden">${esc(guvenNeden)}</small>` : ''}</div>
+      ${doluluk != null ? `<div class="yeter-cubuk ${durum || ''}" aria-hidden="true"><span style="width:${doluluk.toFixed(0)}%"></span></div>` : ''}
     </div>`;
   };
   icerik.innerHTML = `
@@ -410,7 +506,7 @@ async function stokSekmesi(icerik) {
       <div class="buyuk-rakam">${sayilan.length ? tlYaz(deger) : '—'}</div>
       <p class="bilgi kucuk-yazi">${sayilan.length ? `${sayilan.length} malzeme${azSayi
         ? ` · <span class="uyari">${azSayi} tanesi 2 gün yetmeyebilir</span>` : ''}. ` : ''}Son sayım + sonra gelen − satılan − fire.
-        Bir sonraki sayımda kesinleşir. "Gün", son ${r.kullanim_gun || 28} günün ortalama kullanımına göre tahmindir.</p>
+        ${tahminSayi ? `<b>${tahminSayi} malzemenin rakamı tahmini</b> (etiketine bak); ` : ''}bir sonraki sayımda kesinleşir. "Gün", son ${r.kullanim_gun || 28} günün ortalama kullanımına göre tahmindir.</p>
     </section>
     ${sayilan.length ? `<section class="kart liste-kart">${sayilan.map(satir).join('')}</section>` : ''}
     ${sayilmayan.length ? `<section class="kart"><h2>Henüz sayılmayanlar (${sayilmayan.length})</h2>
@@ -911,8 +1007,33 @@ const TURLER = {
 // Gösterim: g/ml veritabanında, ekranda kg/litre.
 const buyukMiktar = (miktar, birim) =>
   `${sayiYaz(Number(miktar) / BIRIMLER[birim].bolen)} ${BIRIMLER[birim].fiyatBirimi}`;
-// Ekrandan gelen kg/litre/adet miktarını g/ml/adet'e çevirir.
-const kucukMiktar = (miktar, birim) => Math.round(miktar * BIRIMLER[birim].bolen * 1000) / 1000;
+
+// Sayılan / elle girilen birim: adında paket boyu yazan g/ml malzeme ("Vanilya şurubu 700 ml") şişe/paket olarak
+// sayılır (3 şişe = 2,1 litre). Diğerleri kg / litre / adet; yarım şişe 0,5 yazılır. kat: 1 birim = kaç g/ml/adet.
+function sayimBirimiBul(m) {
+  const paket = m.birim !== 'adet' ? carpanBul('adet', m.birim, m.ad) : null;
+  if (paket > 1) return { ad: 'şişe / paket', ipucu: `1 şişe/paket = ${sayiYaz(paket)} ${m.birim}. Açık olanı yarım (0,5) say.`, kat: paket };
+  const b = BIRIMLER[m.birim];
+  return { ad: b.fiyatBirimi, kat: b.bolen,
+    ipucu: { g: 'Kilogram yaz: 500 g = 0,5 · 250 g = 0,25', ml: 'Litre yaz: 750 ml = 0,75 · 200 ml = 0,2', adet: 'Tane say.' }[m.birim] };
+}
+
+// + / − düğmeli büyük sayı kutusu (sayım, elle giriş). Bağlamak için sayacBagla(kutu).
+const sayacKutusu = (birim, deger = '') => `<div class="sayac">
+    <button type="button" class="sayac-dugme" data-adim="-1" aria-label="Bir azalt">−</button>
+    <input id="rakam" inputmode="decimal" autocomplete="off" value="${esc(deger)}" aria-label="Miktar">
+    <button type="button" class="sayac-dugme" data-adim="1" aria-label="Bir artır">+</button>
+  </div><p class="sayim-birim">${esc(birim)}</p>`;
+function sayacBagla(kutu, degisti = () => {}) {
+  const inp = kutu.querySelector('#rakam');
+  kutu.querySelectorAll('.sayac-dugme').forEach((d) => d.addEventListener('click', () => {
+    const n = sayiOku(inp.value);
+    inp.value = String(Math.max(0, (Number.isFinite(n) ? n : 0) + Number(d.dataset.adim))).replace('.', ',');
+    degisti();
+  }));
+  inp.addEventListener('input', degisti);
+  return inp;
+}
 
 let secilenAy = null;   // Geçmişte gösterilen ay (YYYY-AA)
 let girisTuru = 'hepsi';   // Geçmiş girişlerde gösterilen tür
@@ -1021,7 +1142,7 @@ async function girisSekmesi(icerik, user, patron) {
       <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
     </div>
     <div class="izgara">
-      <button class="ikincil" data-yeni="fatura">🧾 Fatura elle gir</button>
+      <button class="ikincil" data-is="elle">✍️ Elle mal girişi</button>
       <button class="ikincil" data-yeni="satis">💰 Satış gir</button>
     </div>
     <div class="kart liste-kart">
@@ -1035,9 +1156,14 @@ async function girisSekmesi(icerik, user, patron) {
         : '<p class="bilgi">Bu ayda giriş yok.</p>'}
       <p class="bilgi bos-suzgec" hidden>Bu ayda bu türde giriş yok.</p>
       ${girisler.length === 1000 ? '<p class="uyari">Bu ayda çok fazla giriş var; yalnızca son 1000 tanesi gösteriliyor.</p>' : ''}
-    </div>`;
+    </div>
+    ${patron ? `<details class="kart" id="islem-gecmisi"><summary><b>İşlem geçmişi</b>
+      <small class="bilgi"> · kim, ne zaman, ne yaptı (silinemez)</small></summary><div class="gecmis-liste"><p class="bilgi">Yükleniyor…</p></div></details>` : ''}`;
 
   const yenile = () => girisSekmesi(icerik, user, patron).catch(hataGoster);
+  icerik.querySelector('#islem-gecmisi')?.addEventListener('toggle', (e) => {
+    if (e.target.open) islemGecmisiGoster(e.target.querySelector('.gecmis-liste'));
+  });
   const suz = () => {
     let gorunen = 0;
     icerik.querySelectorAll('.giris-satiri').forEach((d) => {
@@ -1057,12 +1183,7 @@ async function girisSekmesi(icerik, user, patron) {
   icerik.querySelectorAll('[data-is]').forEach((b) => b.addEventListener('click', () =>
     isBaslat(icerik, b.dataset.is, user, yenile)));
   icerik.querySelectorAll('[data-yeni]').forEach((b) => b.addEventListener('click', async () => {
-    if (b.dataset.yeni === 'fatura') {
-      b.disabled = true;
-      try { await faturaFormu(icerik, ctx, yenile); } catch (err) { hataGoster(err); b.disabled = false; return; }
-    } else {
-      satisFormu(icerik, ctx, yenile);
-    }
+    satisFormu(icerik, ctx, yenile);
     window.scrollTo(0, 0);
   }));
   // Belgeler, kayıt ilk açıldığında geçici (1 saatlik) bağlantılarla yüklenir.
@@ -1078,7 +1199,30 @@ async function girisSekmesi(icerik, user, patron) {
   }));
 }
 
-// Satış formu: gün sonu kasa raporundaki ürün adetleri. (Fatura: faturaFormu; fire ve sayım barista akışlarından)
+// İşlem geçmişi: mal kabul, girişler, iptaller, teslimat farkları ve patronun kararları (son 60).
+const ISLEM_ADI = {
+  giris: (a) => [{ fatura: '📦', satis: '💰', fire: '🗑️', sayim: '📋' }[a.tur] ?? '•',
+    a.tur === 'fatura' ? 'Mal girişi' : `${TURLER[a.tur]?.ad ?? 'Giriş'} girildi`, a.aciklama ?? ''],
+  giris_iptal: (a) => ['↩', `${TURLER[a.tur]?.ad ?? 'Giriş'} iptal edildi`, a.tarih ? kisaTarih(a.tarih) : ''],
+  belge_iptal: (a) => ['↩', 'Fatura iptal edildi', [a.tedarikci, a.fatura_no].filter(Boolean).join(' · ')],
+  mal_kabul: (a) => ['📦', 'Mal kabul (sayımla)', `${a.tedarikci ?? ''}${(a.kalemler ?? []).length ? ` · ${a.kalemler.length} kalem sayıldı` : ''}`],
+  teslimat_farki: (a) => ['🚚', `Teslimat farkı: ${a.malzeme ?? ''}`, a.fark_tl != null ? `≈ ${tlYaz(Math.abs(a.fark_tl))} ${a.fark_tl > 0 ? 'eksik' : 'fazla'}` : ''],
+  fark_cozuldu: (a) => ['✓', `Fark kapatıldı: ${a.malzeme ?? ''}`, [COZUMLER.find(([k]) => k === a.cozum)?.[1], a.not].filter(Boolean).join(' · ')],
+};
+async function islemGecmisiGoster(kutu) {
+  if (!kutu || kutu.dataset.yuklendi) return;
+  kutu.dataset.yuklendi = '1';
+  const { data, error } = await sb.from('islem_gecmisi').select('zaman, kullanici_ad, tur, ayrinti')
+    .order('zaman', { ascending: false }).limit(60);
+  if (error) { delete kutu.dataset.yuklendi; kutu.innerHTML = `<p class="hata">${esc(hataMetni(error))}</p>`; return; }
+  kutu.innerHTML = data.length ? data.map((x) => {
+    const [ikon, baslik, alt] = (ISLEM_ADI[x.tur] ?? (() => ['•', x.tur, '']))(x.ayrinti ?? {});
+    return `<div class="gecmis-satir"><span class="gecmis-ikon" aria-hidden="true">${ikon}</span>
+      <span class="gecmis-metin"><b>${esc(baslik)}</b><small>${esc([alt, x.kullanici_ad, zamanYaz(x.zaman)].filter(Boolean).join(' · '))}</small></span></div>`;
+  }).join('') : '<p class="bilgi">Henüz kayıt yok.</p>';
+}
+
+// Satış formu: gün sonu kasa raporundaki ürün adetleri. (Mal girişi, fire ve sayım barista akışlarından)
 function satisFormu(icerik, ctx, bitti) {
   const { urunler, urunBul } = ctx;
   const liste = urunler.filter((u) => u.aktif);
@@ -1129,13 +1273,9 @@ function satisFormu(icerik, ctx, bitti) {
   });
 }
 
-// ---------- Fatura: belge + KDV'li satırlar + kontroller + onay ----------
+// ---------- Belgeler (fatura fotoğrafı / PDF) ----------
 
 const BELGE_KOVASI = 'fatura-belgeleri';
-const MAX_BELGE = 5;
-// Uyarı eşikleri: birim fiyat son fiyattan %30'dan fazla farklı; miktar normalin 3 katı / üçte biri
-// (en az 3 geçmiş fatura varsa). Toplam payı veritabanıyla aynı: 1 TL ya da satır başına 1 kuruş.
-const ESIK = { fiyatFarki: 0.30, miktarKat: 3, minFatura: 3 };
 
 // Fotoğrafı telefonda küçültür (uzun kenar en fazla 2000 piksel, JPEG). Böylece yükleme hızlı, depo küçük kalır.
 async function fotoKucult(dosya, enUzun = 2000, kalite = 0.8) {
@@ -1178,375 +1318,6 @@ async function belgeleriGoster(kutu, liste) {
   }
 }
 
-async function faturaFormu(icerik, ctx, bitti) {
-  const { malzemeler, malzemeBul } = ctx;
-  const aktifMalzemeler = malzemeler.filter((m) => m.aktif);
-  if (!aktifMalzemeler.length) {
-    icerik.innerHTML = `<div class="kart"><h2>Fatura gir</h2>
-      <p class="bilgi">Önce Malzeme sekmesinden malzeme eklenmeli.</p>
-      <button class="tam ikincil" id="vazgec">Geri</button></div>`;
-    icerik.querySelector('#vazgec').onclick = bitti;
-    return;
-  }
-  const { data: refler, error } = await sb.rpc('fatura_referanslari');
-  if (error) throw error;
-  const refBul = new Map(refler.map((r) => [r.malzeme_id, r]));
-
-  const bugun = bugunStr();
-  const enEski = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
-  const taslak = crypto.randomUUID();       // belgelerin depodaki klasörü
-  let belgeNo = 0;
-  const belgeler = [];                      // { no, tur: 'foto'|'pdf', blob, ad, onizleme, yol }
-  const yeniSatir = () => ({ secim: '', metin: '', miktar: '', tutar: '', oran: '', onay: {} });
-  const satirlar = [yeniSatir()];
-  let tutarlarDahil = false;                // satır tutarları KDV dahil mi yazılıyor
-  let denendi = false;                      // "Onayla"ya basıldı mı (boş alan hatalarını o zaman göster)
-
-  icerik.innerHTML = `
-    <form class="kart" id="fatura-form" novalidate>
-      <h2>Fatura gir</h2>
-      <p class="bilgi">Faturadaki satırları ve alt kısımdaki toplamları gir. Toplamlar tutmadan stoğa hiçbir şey eklenmez.</p>
-      <label for="f-tarih">Fatura tarihi</label>
-      <input id="f-tarih" name="tarih" type="date" value="${bugun}" max="${bugun}" min="${enEski}" required>
-      <label for="f-tedarikci">Tedarikçi (isteğe bağlı)</label>
-      <input id="f-tedarikci" name="tedarikci" maxlength="200" placeholder="Örn. Metro">
-
-      <h3>Belge (isteğe bağlı)</h3>
-      <div class="belge-dugmeler">
-        <label class="dugme ikincil">📷 Fotoğraf çek
-          <input type="file" accept="image/*" capture="environment" id="f-kamera" hidden></label>
-        <label class="dugme ikincil">📎 Dosya / PDF seç
-          <input type="file" accept="image/*,application/pdf" multiple id="f-dosya" hidden></label>
-      </div>
-      <div id="f-belgeler" class="belgeler"></div>
-
-      <h3>Satırlar</h3>
-      <label for="f-tutar-turu">Satır tutarlarını nasıl yazacaksın?</label>
-      <select id="f-tutar-turu">
-        <option value="haric">KDV hariç (faturalarda genelde böyle)</option>
-        <option value="dahil">KDV dahil</option>
-      </select>
-      <div id="f-satirlar"></div>
-      <button class="ikincil kucuk" type="button" id="f-satir-ekle">+ Satır ekle</button>
-
-      <h3>Faturanın alt kısmı</h3>
-      <label for="f-genel">Genel toplam (ödenecek tutar)</label>
-      <input id="f-genel" data-toplam="genel" inputmode="decimal" autocomplete="off" placeholder="Örn. 1.320,00">
-      <details class="ek-toplamlar"><summary>Faturada yazıyorsa: KDV hariç toplam, KDV, indirim</summary>
-        <label for="f-haric">KDV hariç toplam (mal/hizmet toplamı)</label>
-        <input id="f-haric" data-toplam="kdv_haric" inputmode="decimal" autocomplete="off">
-        <label for="f-kdv">Toplam KDV</label>
-        <input id="f-kdv" data-toplam="kdv" inputmode="decimal" autocomplete="off">
-        <label for="f-indirim">İndirim (KDV dahil)</label>
-        <input id="f-indirim" data-toplam="indirim" inputmode="decimal" autocomplete="off">
-      </details>
-
-      <div id="f-kontrol" class="kontrol"></div>
-      <button class="tam" type="submit" id="f-onayla">Onayla ve stoğa ekle</button>
-      <button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>
-      <p class="mesaj"></p>
-    </form>`;
-  const form = icerik.querySelector('form');
-  const satirKutu = form.querySelector('#f-satirlar');
-  const kontrolKutu = form.querySelector('#f-kontrol');
-  const onayla = form.querySelector('#f-onayla');
-  const mesaj = form.querySelector('.mesaj');
-  form.querySelector('#vazgec').onclick = () => {
-    if ((belgeler.length || satirlar.some(dokunuldu)) && !confirm('Girdiklerin kaydedilmeden çıkılsın mı?')) return;
-    bitti();
-  };
-
-  // ----- Belgeler -----
-  const belgeKutu = form.querySelector('#f-belgeler');
-  const belgeCiz = () => {
-    belgeKutu.innerHTML = belgeler.length ? belgeler.map((b, i) => `
-      <span class="belge-kucuk">
-        ${b.tur === 'pdf' ? `<span class="belge-pdf">📄 ${esc(b.ad)}</span>` : `<img src="${b.onizleme}" alt="Fatura fotoğrafı ${i + 1}">`}
-        <button class="ikincil kucuk" type="button" data-belge-sil="${i}" aria-label="Belgeyi kaldır">✕</button>
-      </span>`).join('')
-      : '<p class="bilgi">Belge eklenmedi. Fatura listede "📷 yok" olarak görünecek.</p>';
-    belgeKutu.querySelectorAll('[data-belge-sil]').forEach((b) => b.addEventListener('click', () => {
-      const [silinen] = belgeler.splice(Number(b.dataset.belgeSil), 1);
-      if (silinen.onizleme) URL.revokeObjectURL(silinen.onizleme);
-      belgeCiz();
-    }));
-  };
-  const belgeEkle = async (dosyalar) => {
-    for (const d of dosyalar) {
-      if (belgeler.length >= MAX_BELGE) { alert(`Bir faturaya en fazla ${MAX_BELGE} belge eklenebilir.`); break; }
-      const pdf = d.type === 'application/pdf' || /\.pdf$/i.test(d.name);
-      try {
-        if (pdf) {
-          if (d.size > 5 * 1024 * 1024) throw new Error('PDF en fazla 5 MB olabilir.');
-          belgeler.push({ no: ++belgeNo, tur: 'pdf', blob: d, ad: d.name });
-        } else {
-          const blob = await fotoKucult(d);
-          belgeler.push({ no: ++belgeNo, tur: 'foto', blob, onizleme: URL.createObjectURL(blob) });
-        }
-      } catch (err) { hataGoster(err); }
-    }
-    belgeCiz();
-  };
-  for (const id of ['#f-kamera', '#f-dosya']) {
-    const inp = form.querySelector(id);
-    inp.addEventListener('change', async () => {
-      const dosyalar = [...inp.files];
-      inp.value = '';
-      belgeKutu.innerHTML = '<p class="bilgi">Fotoğraf hazırlanıyor…</p>';
-      await belgeEkle(dosyalar);
-    });
-  }
-  belgeCiz();
-
-  // ----- Satırlar -----
-  const dokunuldu = (s) => Boolean(s.secim || s.metin.trim() || String(s.miktar).trim() || String(s.tutar).trim());
-
-  // Bir satırın hesabı: eksikler (kırmızı), uyarılar (sarı, kontrol gerektirir), tutarlar.
-  const satirHesap = (s) => {
-    const r = { hatalar: [], uyarilar: [] };
-    if (!s.secim) { r.hatalar.push('Malzeme seç ya da satırı sil.'); return r; }
-    r.stokDisi = s.secim === 'stokdisi';
-    if (r.stokDisi) {
-      if (!s.metin.trim()) r.hatalar.push('Ne olduğunu yaz (örn. Deterjan).');
-    } else {
-      r.m = malzemeBul.get(s.secim.slice(2));
-      const n = sayiOku(s.miktar);
-      if (!(n > 0)) r.hatalar.push('Miktarı yaz.');
-      else r.miktar = kucukMiktar(n, r.m.birim);
-    }
-    const t = sayiOku(s.tutar);
-    if (!Number.isFinite(t)) r.hatalar.push('Tutarı yaz (ücretsizse 0).');
-    if (s.oran === '') r.hatalar.push('KDV oranını seç.');
-    if (r.hatalar.length) return r;
-    r.oran = Number(s.oran);
-    r.haric = yuvarla(tutarlarDahil ? t / (1 + r.oran / 100) : t);
-    r.dahil = yuvarla(r.haric * (1 + r.oran / 100));
-    if (r.stokDisi) return r;
-
-    const b = BIRIMLER[r.m.birim];
-    if (r.haric === 0) {
-      r.uyarilar.push({ kod: 'ucretsiz', metin: 'Tutar 0. Ücretsiz / numune olarak geldiyse onayla.' });
-    } else if (Number(r.m.fiyat) > 0) {
-      const birim = (r.dahil / r.miktar) * b.bolen;
-      const fark = (birim - Number(r.m.fiyat)) / Number(r.m.fiyat);
-      if (Math.abs(fark) > ESIK.fiyatFarki) {
-        r.uyarilar.push({ kod: 'fiyat', metin: `Birim fiyat ${tl.format(birim)}/${b.fiyatBirimi} (KDV dahil); `
-          + `son kayıtlı fiyat ${tl.format(r.m.fiyat)}/${b.fiyatBirimi}. %${Math.round(Math.abs(fark) * 100)} `
-          + `${fark > 0 ? 'daha pahalı' : 'daha ucuz'}.` });
-      }
-    }
-    const ref = refBul.get(r.m.id);
-    const medyan = Number(ref?.medyan_miktar);
-    if (ref && ref.fatura_sayisi >= ESIK.minFatura && medyan > 0
-        && (r.miktar > medyan * ESIK.miktarKat || r.miktar < medyan / ESIK.miktarKat)) {
-      r.uyarilar.push({ kod: 'miktar', metin: `Genelde ${buyukMiktar(medyan, r.m.birim)} geliyor, `
-        + `bu sefer ${buyukMiktar(r.miktar, r.m.birim)}. Miktarı ve birimi kontrol et.` });
-    }
-    return r;
-  };
-
-  const secenekler = (secili) => `
-    <option value="">Malzeme seç</option>
-    ${aktifMalzemeler.map((m) => `<option value="m:${esc(m.id)}" ${secili === `m:${m.id}` ? 'selected' : ''}>${esc(m.ad)}</option>`).join('')}
-    <option value="stokdisi" ${secili === 'stokdisi' ? 'selected' : ''}>— Stoğa eklenmeyen kalem (deterjan, peçete…)</option>`;
-  const oranSecenekleri = (secili) => `<option value="">KDV %</option>
-    ${KDV_ORANLARI.map((o) => `<option value="${o}" ${secili !== '' && Number(secili) === o ? 'selected' : ''}>%${o}</option>`).join('')}`;
-
-  const satirlariCiz = () => {
-    satirKutu.innerHTML = satirlar.map((s, i) => {
-      const m = s.secim.startsWith('m:') ? malzemeBul.get(s.secim.slice(2)) : null;
-      return `
-        <div class="fatura-satir" data-satir="${i}">
-          <div class="satir-ust">
-            <select data-i="${i}" data-alan="secim" aria-label="Malzeme">${secenekler(s.secim)}</select>
-            <button class="ikincil kucuk" type="button" data-sil="${i}" aria-label="Satırı sil">✕</button>
-          </div>
-          ${s.secim === 'stokdisi'
-            ? `<input data-i="${i}" data-alan="metin" maxlength="200" placeholder="Ne? Örn. Deterjan" value="${esc(s.metin)}">`
-            : `<div class="giris-alt">
-                <input data-i="${i}" data-alan="miktar" inputmode="decimal" autocomplete="off" placeholder="Miktar"
-                  aria-label="Miktar" value="${esc(s.miktar)}">
-                <span class="birim">${m ? BIRIMLER[m.birim].fiyatBirimi : ''}</span></div>`}
-          <div class="giris-alt">
-            <input data-i="${i}" data-alan="tutar" inputmode="decimal" autocomplete="off"
-              placeholder="Tutar (${tutarlarDahil ? 'KDV dahil' : 'KDV hariç'})" aria-label="Satır tutarı" value="${esc(s.tutar)}">
-            <select data-i="${i}" data-alan="oran" aria-label="KDV oranı" class="oran">${oranSecenekleri(s.oran)}</select>
-          </div>
-          <div class="satir-durum"></div>
-        </div>`;
-    }).join('');
-    satirKutu.querySelectorAll('[data-alan]').forEach((el) => {
-      const olay = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(olay, () => {
-        const s = satirlar[el.dataset.i];
-        s[el.dataset.alan] = el.value;
-        s.onay = {};   // değer değişince eski onaylar geçersiz
-        if (el.dataset.alan === 'secim') {
-          const m = malzemeBul.get(el.value.slice(2));
-          if (m && s.oran === '') {
-            const o = refBul.get(m.id)?.son_kdv_orani ?? m.kdv_orani;
-            if (o != null) s.oran = String(Number(o));
-          }
-          satirlariCiz();
-          return;
-        }
-        kontrol();
-      });
-    });
-    satirKutu.querySelectorAll('[data-sil]').forEach((b) => b.addEventListener('click', () => {
-      satirlar.splice(Number(b.dataset.sil), 1);
-      if (!satirlar.length) satirlar.push(yeniSatir());
-      satirlariCiz();
-    }));
-    kontrol();
-  };
-
-  form.querySelector('#f-satir-ekle').addEventListener('click', () => {
-    satirlar.push(yeniSatir());
-    satirlariCiz();
-    satirKutu.lastElementChild?.querySelector('select')?.focus();
-  });
-  form.querySelector('#f-tutar-turu').addEventListener('change', (e) => {
-    tutarlarDahil = e.target.value === 'dahil';
-    satirlar.forEach((s) => { s.onay = {}; });
-    satirlariCiz();
-  });
-  form.querySelectorAll('[data-toplam]').forEach((inp) => inp.addEventListener('input', () => kontrol()));
-
-  // ----- Kontrol: her değişiklikte satır durumları + toplam kontrolü + onay düğmesi -----
-  const toplamOku = (alan) => {
-    const v = form.querySelector(`[data-toplam="${alan}"]`).value.trim();
-    if (!v) return null;
-    const n = sayiOku(v);
-    return Number.isFinite(n) ? n : NaN;
-  };
-  function kontrol() {
-    const engeller = [];
-    let sumH = 0, sumD = 0, eksikSatir = 0, bekleyenUyari = 0;
-    const oranlar = new Set();
-    const malzemeSayisi = new Map();
-    const hesaplar = satirlar.map((s, i) => {
-      const kutu = satirKutu.querySelector(`[data-satir="${i}"]`);
-      const durum = kutu.querySelector('.satir-durum');
-      if (!dokunuldu(s)) {
-        kutu.className = 'fatura-satir';
-        durum.innerHTML = denendi && satirlar.length === 1 ? '<span class="uyari">En az bir satır gir.</span>' : '';
-        return null;
-      }
-      const r = satirHesap(s);
-      if (r.hatalar.length) {
-        eksikSatir++;
-        kutu.className = `fatura-satir${denendi ? ' kirmizi' : ''}`;
-        durum.innerHTML = denendi ? r.hatalar.map((h) => `<span class="uyari">${h}</span>`).join(' ') : '';
-        return r;
-      }
-      sumH += r.haric; sumD += r.dahil; oranlar.add(r.oran);
-      if (r.m) malzemeSayisi.set(r.m.id, (malzemeSayisi.get(r.m.id) ?? 0) + 1);
-      const bekleyen = r.uyarilar.filter((u) => !s.onay[u.kod]).length;
-      bekleyenUyari += bekleyen;
-      kutu.className = `fatura-satir ${r.uyarilar.length ? (bekleyen ? 'sari' : 'onayli') : 'yesil'}`;
-      durum.innerHTML = `<small>${tl.format(r.dahil)} KDV dahil
-          ${r.m ? ` · stoğa: ${buyukMiktar(r.miktar, r.m.birim)}` : ' · stoğa eklenmez'}</small>
-        ${r.uyarilar.map((u) => `<label class="onay-kutu"><input type="checkbox" data-onay="${i}:${u.kod}"
-          ${s.onay[u.kod] ? 'checked' : ''}> ⚠️ ${esc(u.metin)} <b>Kontrol ettim, doğru.</b></label>`).join('')}`;
-      return r;
-    });
-    satirKutu.querySelectorAll('[data-onay]').forEach((cb) => cb.addEventListener('change', () => {
-      const [i, kod] = cb.dataset.onay.split(':');
-      satirlar[i].onay[kod] = cb.checked;
-      kontrol();
-    }));
-
-    const doluSayisi = hesaplar.filter(Boolean).length;
-    if (!doluSayisi) engeller.push('En az bir satır gir.');
-    if (eksikSatir) engeller.push(`${eksikSatir} satırda eksik bilgi var.`);
-    if (bekleyenUyari) engeller.push(`${bekleyenUyari} uyarı kontrol edilmedi (sarı satırlar).`);
-    if ([...malzemeSayisi.values()].some((n) => n > 1)) engeller.push('Aynı malzeme iki satırda var. Tek satırda topla.');
-
-    const T = { genel: toplamOku('genel'), kdv_haric: toplamOku('kdv_haric'), kdv: toplamOku('kdv'), indirim: toplamOku('indirim') };
-    if (Object.values(T).some((v) => Number.isNaN(v))) engeller.push('Alt kısımdaki rakamlardan biri sayı değil.');
-    const ind = T.indirim || 0;
-    const pay = Math.max(1, 0.01 * doluSayisi);
-    const satirKontrolleri = [];
-    if (T.genel == null || Number.isNaN(T.genel)) {
-      engeller.push('Faturanın genel toplamını yaz.');
-    } else if (!eksikSatir && doluSayisi) {
-      const fark = sumD - ind - T.genel;
-      satirKontrolleri.push({ ok: Math.abs(fark) <= pay,
-        metin: `Satırlar${ind ? ' − indirim' : ''}: ${tl.format(sumD - ind)} · Faturadaki genel toplam: ${tl.format(T.genel)}`
-          + (Math.abs(fark) > pay ? ` → <b>${tl.format(Math.abs(fark))} fark var.</b> Eksik ya da yanlış bir satır olabilir.` : '') });
-      if (T.kdv_haric != null && !Number.isNaN(T.kdv_haric)) {
-        const f = sumH - T.kdv_haric;
-        satirKontrolleri.push({ ok: Math.abs(f) <= pay,
-          metin: `Satırların KDV hariç toplamı: ${tl.format(sumH)} · Faturada: ${tl.format(T.kdv_haric)}` });
-      }
-      if (T.kdv != null && !Number.isNaN(T.kdv)) {
-        const f = (sumD - sumH) - T.kdv;
-        satirKontrolleri.push({ ok: Math.abs(f) <= pay * Math.max(1, oranlar.size),
-          metin: `Satırlardan hesaplanan KDV: ${tl.format(sumD - sumH)} · Faturada: ${tl.format(T.kdv)}`
-            + (Math.abs(f) > pay * Math.max(1, oranlar.size) ? ' → KDV oranlarını kontrol et.' : '') });
-      }
-      if (T.kdv_haric != null && T.kdv != null && !Number.isNaN(T.kdv_haric) && !Number.isNaN(T.kdv)) {
-        const f = T.kdv_haric + T.kdv - ind - T.genel;
-        satirKontrolleri.push({ ok: Math.abs(f) <= pay,
-          metin: 'Faturanın kendi alt toplamları (KDV hariç + KDV − indirim = genel toplam)' });
-      }
-      if (satirKontrolleri.some((k) => !k.ok)) engeller.push('Toplamlar tutmuyor.');
-    }
-
-    kontrolKutu.innerHTML = `
-      ${satirKontrolleri.map((k) => `<div class="${k.ok ? 'tamam' : 'hata'}">${k.ok ? '✓' : '✗'} ${k.metin}</div>`).join('')}
-      ${engeller.length ? `<div class="engeller"><b>Onaylamak için:</b><ul>${engeller.map((e) => `<li>${e}</li>`).join('')}</ul></div>`
-        : '<div class="tamam"><b>Her şey tutuyor. Onaylayınca stoğa eklenecek.</b></div>'}`;
-    onayla.disabled = engeller.length > 0;
-    return { engeller, hesaplar, T };
-  }
-
-  satirlariCiz();
-
-  // ----- Onay: önce belgeler yüklenir, sonra fatura tek seferde kaydedilir -----
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    denendi = true;
-    const { engeller, hesaplar, T } = kontrol();
-    if (engeller.length) return;
-    const tarih = form.querySelector('#f-tarih').value;
-    if (!tarih) { mesaj.className = 'mesaj hata'; mesaj.textContent = 'Fatura tarihini seç.'; return; }
-    onayla.disabled = true;
-    mesaj.className = 'mesaj'; mesaj.textContent = '';
-    try {
-      for (const [i, b] of belgeler.entries()) {
-        if (b.yol) continue;   // tekrar denemede yüklenmiş belgeyi yeniden yükleme
-        onayla.textContent = `Belgeler yükleniyor (${i + 1}/${belgeler.length})…`;
-        const yol = `${mekan.id}/${taslak}/${b.no}.${b.tur === 'pdf' ? 'pdf' : 'jpg'}`;
-        const { error: ye } = await sb.storage.from(BELGE_KOVASI).upload(yol, b.blob,
-          { contentType: b.tur === 'pdf' ? 'application/pdf' : 'image/jpeg', upsert: false });
-        if (ye && !/exists|duplicate/i.test(ye.message)) throw ye;
-        b.yol = yol;
-      }
-      onayla.textContent = 'Kaydediliyor…';
-      const kalemler = satirlar.map((s, i) => [s, hesaplar[i]]).filter(([, r]) => r).map(([s, r]) => (r.stokDisi
-        ? { stok_disi: true, satir_metni: s.metin.trim(), tutar_kdv_haric: r.haric, kdv_orani: r.oran }
-        : { malzeme_id: r.m.id, miktar: r.miktar, tutar_kdv_haric: r.haric, kdv_orani: r.oran,
-            uyarilar: r.uyarilar.map((u) => u.kod) }));
-      const toplamlar = Object.fromEntries(Object.entries(T).filter(([, v]) => v != null));
-      const { error: fe } = await sb.rpc('fatura_kaydet', {
-        p_tarih: tarih, p_tedarikci: form.querySelector('#f-tedarikci').value || null,
-        p_kalemler: kalemler, p_toplamlar: toplamlar, p_belgeler: belgeler.map((b) => b.yol),
-      });
-      if (fe) throw fe;
-      belgeler.forEach((b) => b.onizleme && URL.revokeObjectURL(b.onizleme));
-      secilenAy = tarih.slice(0, 7);
-      await bitti();
-    } catch (err) {
-      mesaj.className = 'mesaj hata';
-      mesaj.textContent = hataMetni(err);
-      onayla.textContent = 'Onayla ve stoğa ekle';
-      kontrol();
-    }
-  });
-}
-
 // =====================================================================================
 // BARİSTA: sade ekran — üç büyük düğme. Fiyat, KDV, eşleştirme, tarif, rapor yok.
 // (Patron da aynı akışları Girişler sekmesinden kullanır.)
@@ -1562,13 +1333,26 @@ function baristaEkrani(user, uye) {
       <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
       <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
     </div>
+    <p class="gorev-ipucu" id="ipucu" hidden></p>
     <p class="bilgi ortada">${esc(uye.ad)}</p>`;
   const ana = () => baristaEkrani(user, uye);
   app.querySelectorAll('[data-is]').forEach((b) => b.addEventListener('click', () => isBaslat(app, b.dataset.is, user, ana)));
+  // Sistem ne yapılacağını söyler: haftalık sayımın günü geldiyse sayım düğmesi öne çıkar. (Bilgi alınamazsa sessiz.)
+  rpcVeri('barista_durumu').then((d) => {
+    const ipucu = app.querySelector('#ipucu');
+    if (!d || !ipucu) return;
+    const gun = d.son_sayim ? Math.round((new Date(`${d.bugun}T12:00:00`) - new Date(`${d.son_sayim}T12:00:00`)) / 864e5) : null;
+    const metin = gun == null ? 'İlk sayımı yap: stok takibi sayımla başlar.'
+      : gun >= 7 ? `Bugün sayım günü · son sayım ${gun} gün önce` : null;
+    if (!metin) return;
+    ipucu.textContent = `📋 ${metin}`;
+    ipucu.hidden = false;
+    app.querySelector('[data-is="sayim"]')?.classList.add('one-cikan');
+  }).catch(() => {});
 }
 
 function isBaslat(kutu, is, user, bitti) {
-  const f = { mal: malGeldi, fire: fireVar, sayim: haftalikSayim }[is];
+  const f = { mal: malGeldi, fire: fireVar, sayim: haftalikSayim, elle: elleGiris }[is];
   window.scrollTo(0, 0);
   f(kutu, user, bitti).catch((err) => sadeHata(kutu, hataMetni(err), bitti));
 }
@@ -1735,20 +1519,101 @@ async function fireVar(kutu, user, bitti) {
   neEkrani();
 }
 
+// ---------- ✍️ Elle mal girişi: market fişi / faturasız mal (barista ve patron) ----------
+// Ne aldın? → kaç? (+ fişteki tutar, isteğe bağlı) → liste → kaydet. Fiş okunmaz. Tutar kayıtlı fiyattan çok
+// saparsa sunucu fiyatı değiştirmez, patronun kontrolüne düşürür (sql/22 elle_mal_kabul).
+async function elleGiris(kutu, user, bitti) {
+  const malzemeler = (await malzemeleriGetir(false)).filter((m) => m.aktif).sort(adaGore);
+  if (!malzemeler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
+  const sepet = [];            // { m, adet (sayım biriminde), tutar | null }
+  const istek = istekKimligi();
+  let nereden = '';
+
+  const neEkrani = (ara = '') => {
+    const k = anahtar(ara);
+    const liste = malzemeler.filter((m) => !k || anahtar(m.ad).includes(k));
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>✍️ Ne aldın?</h2>
+        ${malzemeler.length > 10 ? `<input id="ara" class="buyuk-giris" placeholder="🔍 Ara" value="${esc(ara)}">` : ''}
+        <div class="kartlar">${liste.map((m) => `<button class="kart-dugme ikonlu" data-m="${esc(m.id)}">
+          <span aria-hidden="true">${malzemeIkonu(m)}</span>${esc(m.ad)}</button>`).join('') || '<p class="bilgi">Bulunamadı.</p>'}</div>
+        <button class="dev ikincil" id="geri">◀ ${sepet.length ? 'Listeye dön' : 'Vazgeç'}</button></div>`;
+    kutu.querySelector('#geri').onclick = () => (sepet.length ? listeEkrani() : bitti());
+    const ar = kutu.querySelector('#ara');
+    if (ar) { ar.oninput = () => neEkrani(ar.value); ar.focus(); ar.setSelectionRange(ar.value.length, ar.value.length); }
+    kutu.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => miktarEkrani(malzemeler.find((m) => m.id === b.dataset.m)));
+  };
+
+  const miktarEkrani = (m, hata = '') => {
+    const b = sayimBirimiBul(m);
+    kutu.innerHTML = `<div class="sade-ekran ortada">
+        <div class="sayim-ikon" aria-hidden="true">${malzemeIkonu(m)}</div>
+        <h2 class="soru">Kaç ${esc(b.ad)} <u>${esc(m.ad)}</u>?</h2>
+        ${sayacKutusu(b.ad)}
+        <p class="bilgi">${esc(b.ipucu)}</p>
+        <label class="not-alani">Fişteki tutar (TL, KDV dahil) — biliyorsan
+          <input id="tutar" inputmode="decimal" autocomplete="off" placeholder="Örn. 84,90"></label>
+        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
+        <button class="dev evet" id="ekle">Ekle ✓</button>
+        <button class="dev ikincil" id="geri">◀ Başka malzeme</button></div>`;
+    const inp = sayacBagla(kutu);
+    inp.focus();
+    kutu.querySelector('#geri').onclick = () => neEkrani();
+    kutu.querySelector('#ekle').onclick = () => {
+      const n = sayiOku(inp.value);
+      const tYazi = kutu.querySelector('#tutar').value.trim();
+      const tutar = tYazi ? sayiOku(tYazi) : null;
+      if (!(n > 0) || n >= 100000) return miktarEkrani(m, `Kaç ${b.ad} aldığını yaz.`);
+      if (tYazi && !(tutar >= 0)) return miktarEkrani(m, 'Tutarı rakamla yaz (örn. 84,90) ya da boş bırak.');
+      sepet.push({ m, adet: n, tutar });
+      listeEkrani();
+    };
+  };
+
+  const listeEkrani = (hata = '') => {
+    const toplam = sepet.reduce((t, s) => t + (s.tutar ?? 0), 0);
+    kutu.innerHTML = `<div class="sade-ekran">
+        <h2>✍️ Elle mal girişi</h2>
+        <ul class="kabul-liste">${sepet.map((s, i) => `<li class="kabul-kalem">
+            <span class="kalem-ikon" aria-hidden="true">${malzemeIkonu(s.m)}</span>
+            <span class="kalem-metin"><b>${sayiYaz(s.adet)} ${esc(sayimBirimiBul(s.m).ad)}</b> ${esc(s.m.ad)}
+              <small>${s.tutar != null ? tl.format(s.tutar) : 'Tutar yok'}</small></span>
+            <button class="metin-dugme" data-sil="${i}" aria-label="${esc(s.m.ad)} sil">Sil</button></li>`).join('')}</ul>
+        ${toplam ? `<p class="buyuk-yazi">Toplam ${tl.format(toplam)}</p>` : ''}
+        <button class="dev ikincil" id="daha">＋ Bir malzeme daha</button>
+        <label class="not-alani">Nereden aldın? (isteğe bağlı)
+          <input id="nereden" maxlength="60" placeholder="Örn. Market" value="${esc(nereden)}"></label>
+        <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
+        <button class="dev" id="kaydet" ${sepet.length ? '' : 'disabled'}>Kaydet ✓</button>
+        <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
+    const ner = kutu.querySelector('#nereden');
+    ner.oninput = () => { nereden = ner.value; };
+    kutu.querySelectorAll('[data-sil]').forEach((b) => b.onclick = () => { sepet.splice(Number(b.dataset.sil), 1); listeEkrani(); });
+    kutu.querySelector('#daha').onclick = () => neEkrani();
+    kutu.querySelector('#vazgec').onclick = () => { if (!sepet.length || confirm('Kaydedilmeden çıkılsın mı?')) bitti(); };
+    kutu.querySelector('#kaydet').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const id = await rpcVeri('elle_mal_kabul', { p_istek: istek, p_aciklama: nereden.trim() || null,
+          p_kalemler: sepet.map((s) => ({ malzeme_id: s.m.id, miktar: Math.round(s.adet * sayimBirimiBul(s.m).kat * 1000) / 1000,
+            tutar: s.tutar })) });
+        kaydedildi(kutu, { baslik: 'Stoğa eklendi', alt: `${sepet.length} kalem elle girildi.`, geriAl: geriAlIstegi('giris', id), bitti });
+      } catch (err) {
+        listeEkrani(/could not find the function/i.test(err.message ?? '')
+          ? 'Uygulama güncelleniyor. Birkaç dakika sonra tekrar dene.' : hataMetni(err));
+      }
+    };
+  };
+
+  neEkrani();
+}
+
 // ---------- 📋 Haftalık sayım: her ekranda tek malzeme (alfabetik) → özet → kaydet → satış raporu ----------
 
 async function haftalikSayim(kutu, user, bitti) {
   const malzemeler = (await malzemeleriGetir(false)).filter((m) => m.aktif);
   if (!malzemeler.length) return sadeHata(kutu, 'Henüz malzeme eklenmemiş. Patrona haber ver.', bitti);
-  // Sayım birimi: adında paket boyu yazan g/ml malzeme ("Vanilya şurubu 700 ml") şişe/paket olarak sayılır
-  // (barista şişe sayar; 3 şişe = 2,1 litre). Diğerleri kg / litre / adet; yarım şişe 0,5 yazılır.
-  const sayimBirimi = (m) => {
-    const paket = m.birim !== 'adet' ? carpanBul('adet', m.birim, m.ad) : null;
-    if (paket > 1) return { ad: 'şişe / paket', ipucu: `1 şişe/paket = ${sayiYaz(paket)} ${m.birim}. Açık olanı yarım (0,5) say.`, kat: paket };
-    const b = BIRIMLER[m.birim];
-    return { ad: b.fiyatBirimi, kat: b.bolen,
-      ipucu: { g: 'Kilogram yaz: 500 g = 0,5 · 250 g = 0,25', ml: 'Litre yaz: 750 ml = 0,75 · 200 ml = 0,2', adet: 'Tane say.' }[m.birim] };
-  };
+  const sayimBirimi = sayimBirimiBul;
   // Yarım kalan sayım telefonda saklanır (kilitlenme, müşteri…); kaldığı yerden devam edilir.
   // (Anahtar 2: birim kuralı değişti; eski yarım sayımdaki "litre" değerleri şişe sanılmasın.)
   const anahtarAd = `kahve-sayim2:${mekan.id}:${user.id}`;
@@ -1766,14 +1631,15 @@ async function haftalikSayim(kutu, user, bitti) {
     kutu.innerHTML = `<div class="sade-ekran">
         <p class="ilerleme">${t.i + 1} / ${malzemeler.length}</p>
         <div class="cubuk"><div style="width:${Math.round((t.i / malzemeler.length) * 100)}%"></div></div>
+        <div class="sayim-ikon" aria-hidden="true">${malzemeIkonu(m)}</div>
         <h2 class="malzeme-adi">${esc(m.ad)}</h2>
-        ${rakamKutusu(sayimB.ad, d === 'atla' || d == null ? '' : d)}
+        ${sayacKutusu(sayimB.ad, d === 'atla' || d == null ? '' : d)}
         <p class="bilgi ortada">${esc(sayimB.ipucu)}</p>
         <p class="mesaj"></p>
         <div class="iki-dugme"><button class="dev ikincil" id="geri">◀</button><button class="dev" id="ileri">Sonraki ▶</button></div>
         <button class="dev ikincil kucuk-dev" id="atla">Bilmiyorum, geç</button>
         <button class="metin-dugme" id="cik">Sonra devam et</button></div>`;
-    const inp = kutu.querySelector('#rakam');
+    const inp = sayacBagla(kutu);
     inp.focus();
     const ileri = () => {
       const n = sayiOku(inp.value);
@@ -1999,9 +1865,11 @@ async function malGeldi(kutu, user, bitti) {
         : `<label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="kamera" hidden></label>
           <label class="dev ikincil">📎 PDF / e-fatura seç<input type="file" accept="application/pdf,.pdf,.xml,application/xml,text/xml,image/*" id="dosya" hidden></label>`}
         <p class="bilgi">Faturanın tamamı, karekodu da görünecek şekilde çek.</p>
+        ${fotolar.length ? '' : '<button class="dev ikincil" id="elle">✍️ Market fişi / faturasız: elle gir</button>'}
         <p class="mesaj"></p>
         <button class="dev ikincil" id="geri">◀ Ana ekran</button></div>`;
     kutu.querySelector('#geri').onclick = () => { temizle(); bitti(); };
+    kutu.querySelector('#elle')?.addEventListener('click', () => { temizle(); isBaslat(kutu, 'elle', user, bitti); });
     kutu.querySelector('#oku')?.addEventListener('click', oku);
     const ekle = (inp) => inp && (inp.onchange = () => {
       const yeni = [...inp.files];
@@ -2444,7 +2312,6 @@ async function kurulumEkrani(kutu) {
   const yenile = () => kurulumEkrani(kutu).catch(hataGoster);
   const toplamBelge = kuyruk.reduce((t, k) => t + k.belgeler.length, 0);
   kutu.innerHTML = `
-    ${mekan.id ? '<button class="ikincil tam" id="okuma-testi">🧪 Okuma testi (cevap anahtarıyla)</button>' : ''}
     ${aiKullanim.length ? `<details class="kart"><summary><b>AI kullanımı (son 30 gün)</b></summary>
       <table class="tablo"><tr><th>Mekan</th><th>Model</th><th>Okuma</th><th>Hata</th><th>Ort. süre</th><th>Maliyet</th></tr>
       ${aiKullanim.map((x) => `<tr><td>${esc(x.mekan)}</td><td>${esc(x.model)}</td><td>${x.okuma}</td><td>${x.hata}</td>
@@ -2460,7 +2327,6 @@ async function kurulumEkrani(kutu) {
       Burada çözülen eşleşmeler deftere yazılır; aynı ürün sonraki faturalarda sorusuz geçer.</p>
     ${kuyruk.map((k) => `<h2>${esc(k.mekan)}</h2>${k.belgeler.map((b) => belgeKarti(k, b)).join('')}`).join('')}`;
 
-  kutu.querySelector('#okuma-testi')?.addEventListener('click', () => okumaTestiEkrani(kutu, yenile).catch(hataGoster));
   kutu.querySelectorAll('[data-disi-geri]').forEach((b) => b.addEventListener('click', async () => {
     b.disabled = true;
     try { await rpcVeri('kurulum_takip_disi_geri_al', { p_satir: Number(b.dataset.disiGeri) }); yenile(); }
@@ -2590,145 +2456,6 @@ async function kurulumEkrani(kutu) {
       } catch (err) { hataGoster(err); e.target.disabled = false; }
     };
   });
-}
-
-// ---------- 🧪 Okuma testi: dosyaları cevap anahtarıyla karşılaştırır (hiçbir şey kaydetmez) ----------
-const TEST_MODELLERI = ['gpt-4.1-mini', 'gpt-4.1-nano'];
-
-async function okumaTestiEkrani(kutu, geri) {
-  const [malzemeler, dr, durum] = await Promise.all([
-    malzemeleriGetir(false),
-    sb.from('eslestirme_defteri').select('tedarikci_anahtar, metin_anahtar, birim, sonuc, malzeme_id, carpan, guncelleme'),
-    rpcVeri('ai_okuma_durumu'),
-  ]);
-  if (dr.error) throw dr.error;
-  const malzemeAdi = new Map(malzemeler.map((m) => [m.id, m.ad]));
-  const kalan = durum?.[0] ? durum[0].sinir - durum[0].bugun : '?';
-  kutu.innerHTML = `
-    <button class="ikincil kucuk" id="geri">◀ Kurulum</button>
-    <h1>🧪 Okuma testi</h1>
-    <p class="bilgi">Dosyalar okunur ve cevap anahtarıyla karşılaştırılır. <b>Hiçbir şey kaydedilmez.</b>
-      Eşleştirme bu mekanın malzemeleri (${malzemeler.filter((m) => m.aktif).map((m) => esc(m.ad)).join(', ') || 'yok'})
-      ve defteriyle yapılır. Her fotoğraf × model bir AI okuması harcar (bugün kalan: ${kalan}).</p>
-    <div class="kart">
-      <label>Test dosyaları (fotoğraf, PDF, XML)<input type="file" id="t-dosyalar" multiple
-        accept="image/*,application/pdf,.pdf,.xml,text/xml,application/xml"></label>
-      <label>Cevap anahtarı (00_CEVAP_ANAHTARI.md)<input type="file" id="t-anahtar" accept=".md,text/markdown,text/plain"></label>
-      <p class="bilgi">Fotoğraf ve taranmış PDF için yöntemler:</p>
-      ${TEST_MODELLERI.map((m) => `<label class="onay-kutu"><input type="checkbox" data-model="${m}" checked> AI · ${m}</label>`).join('')}
-      <label class="onay-kutu"><input type="checkbox" id="t-ocr"> Telefondaki OCR (AI'sız, karşılaştırma için)</label>
-      <button class="tam" id="t-basla">Testi başlat</button>
-      <p class="mesaj"></p>
-    </div>
-    <div id="t-sonuc"></div>`;
-  kutu.querySelector('#geri').onclick = () => geri();
-  const sonucKutu = kutu.querySelector('#t-sonuc');
-  const mesaj = kutu.querySelector('.mesaj');
-
-  kutu.querySelector('#t-basla').onclick = async (e) => {
-    const dosyalar = [...kutu.querySelector('#t-dosyalar').files].sort((a, b) => a.name.localeCompare(b.name));
-    const anahtarDosya = kutu.querySelector('#t-anahtar').files[0];
-    const modeller = [...kutu.querySelectorAll('[data-model]:checked')].map((x) => x.dataset.model);
-    const ocrDe = kutu.querySelector('#t-ocr').checked;
-    if (!dosyalar.length || !anahtarDosya) { mesaj.className = 'mesaj hata'; mesaj.textContent = 'Dosyaları ve cevap anahtarını seç.'; return; }
-    e.target.disabled = true;
-    const anahtarlar = cevapAnahtariniOku(await anahtarDosya.text());
-    const raporlar = [];
-    sonucKutu.innerHTML = '';
-    const ekle = (r) => { raporlar.push(r); sonucKutu.insertAdjacentHTML('beforeend', testRaporuHtml(r)); };
-
-    for (const dosya of dosyalar) {
-      const beklenen = anahtarBelgesi(anahtarlar, dosya.name);
-      if (!beklenen?.satirlar.length) { ekle({ dosya: dosya.name, yontem: '-', atlandi: 'Cevap anahtarında bu dosya yok' }); continue; }
-      const tur = dosyaTuru(dosya);
-      // Okunacak görseller (fotoğraf / taranmış PDF) ya da doğrudan sonuç (XML / metinli PDF)
-      let gorseller = null;
-      const isler = [];
-      const t0 = performance.now();
-      if (tur === 'xml') isler.push(['XML (doğrudan)', async () => {
-        const t = performance.now(); const s = await xmlDosyaOku(dosya); return { sonuc: s, olcum: { okuma_ms: ms(t, performance.now()) } };
-      }]);
-      else if (tur === 'pdf') {
-        const p = await pdfOku(dosya);
-        const pdfMs = ms(t0, performance.now());
-        if (p.taranmis) gorseller = p.sayfalar;
-        else isler.push(['PDF metni (doğrudan)', async () => ({ sonuc: p, olcum: { okuma_ms: pdfMs } })]);
-      } else if (tur === 'foto') gorseller = [dosya];
-      if (gorseller) {
-        for (const m of modeller) isler.push([`AI · ${m}`, () => aiIleOku(gorseller, m)]);
-        if (ocrDe) isler.push(['OCR (telefon)', async () => { const t = performance.now(); const s = await fotolariOku(gorseller); return { sonuc: s, olcum: { ocr_ms: ms(t, performance.now()) } }; }]);
-      }
-      for (const [yontem, is] of isler) {
-        mesaj.className = 'mesaj'; mesaj.textContent = `${dosya.name} · ${yontem} okunuyor…`;
-        const t = performance.now();
-        try {
-          const { sonuc, olcum } = await is();
-          const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: sonuc.tedarikci_vkn || anahtar(sonuc.tedarikci) || '', tedarikciAdi: sonuc.tedarikci };
-          const sinifla = sonuc.kaynak === 'ai' ? aiIleSiniflandir : siniflandir;
-          sonuc.satirlar.forEach((s) => { s.karar = sinifla(s, ctx); });
-          ekle({ dosya: dosya.name, yontem, sure_ms: Math.max(ms(t, performance.now()), olcum.okuma_ms ?? 0), olcum, maliyet: sonuc.maliyet_usd ?? null,
-                 toplamTutuyor: toplamKontrol(sonuc).tutuyor, sonuc, k: karsilastir(beklenen, sonuc, malzemeAdi) });
-        } catch (err) {
-          ekle({ dosya: dosya.name, yontem, hata: `${err.kod ?? ''} ${err.message ?? err}`.trim() });
-        }
-      }
-    }
-    mesaj.textContent = 'Bitti.';
-    sonucKutu.insertAdjacentHTML('afterbegin', `<div class="kart"><h2>Özet</h2>${testOzetiHtml(raporlar)}
-      <button class="ikincil kucuk" id="t-kopyala">📋 Sonucu kopyala (sohbete yapıştırmak için)</button></div>`);
-    sonucKutu.querySelector('#t-kopyala').onclick = async () => {
-      await navigator.clipboard.writeText(testRaporuMetni(raporlar));
-      mesaj.textContent = 'Kopyalandı.';
-    };
-    e.target.disabled = false;
-  };
-}
-
-const SONUC_SIMGE = { dogru: '✓', yanlis: '✗', kuyruk: '⏳', okunamadi: '—', bilinmiyor: '?' };
-const sn = (x) => (x == null ? '-' : `${(x / 1000).toFixed(1)} sn`);
-function olcumYazisi(o = {}) {
-  return [o.okuma_ms != null && `okuma ${sn(o.okuma_ms)}`, o.kucultme_ms != null && `küçültme ${sn(o.kucultme_ms)}`, o.gonderme_ms != null && `gönderme ${sn(o.gonderme_ms)}`,
-    o.ai_ms != null && `AI ${sn(o.ai_ms)}`, o.ocr_ms != null && `OCR ${sn(o.ocr_ms)}`,
-    o.boyut_kb != null && `${o.boyut_kb} KB`].filter(Boolean).join(' · ');
-}
-function testRaporuHtml(r) {
-  if (r.atlandi || r.hata) return `<div class="kart"><b>${esc(r.dosya)}</b> · ${esc(r.yontem)} ·
-    <span class="uyari">${esc(r.atlandi ?? `Hata: ${r.hata}`)}</span></div>`;
-  const o = r.k.ozet;
-  return `<div class="kart"><b>${esc(r.dosya)}</b> · ${esc(r.yontem)}
-    <p class="bilgi">Süre ${sn(r.sure_ms)} (${olcumYazisi(r.olcum)})${r.maliyet != null ? ` · $${r.maliyet.toFixed(5)}` : ''}
-      · Toplam: okunan ${r.k.genel.okunan ?? '?'} / beklenen ${r.k.genel.beklenen ?? '?'} ${r.k.genel.dogru ? '✓' : '✗'}
-      · kontrol ${r.toplamTutuyor ? 'tutuyor ✓' : 'tutmuyor ✗'}</p>
-    <p><b>✓ ${o.dogru}</b> doğru · <b>✗ ${o.yanlis}</b> yanlış · <b>⏳ ${o.kuyruk}</b> kuyruk · — ${o.okunamadi} okunamadı
-      (rakam okuması ${o.okuma_dogru}/${o.satir})</p>
-    <table class="tablo"><tr><th>Satır</th><th>Okuma</th><th>Sonuç</th></tr>
-    ${r.k.satirlar.map((x) => `<tr><td>${esc(x.beklenen.metin)}<br><small>beklenen: ${esc(x.beklenen.beklenen_yazi)}</small></td>
-      <td>${x.okuma === 'dogru' ? '✓' : x.okuma === 'yanlis' ? `✗ <small>${esc(x.okumaNotu)}</small>` : '—'}</td>
-      <td>${SONUC_SIMGE[x.sonuc] ?? ''} <small>${esc(x.aciklama)}</small></td></tr>`).join('')}</table>
-    ${r.k.fazla.length ? `<p class="bilgi">Anahtarda olmayan okunan satırlar: ${r.k.fazla.map(esc).join(', ')}</p>` : ''}</div>`;
-}
-function testOzetiHtml(raporlar) {
-  return `<table class="tablo"><tr><th>Dosya</th><th>Yöntem</th><th>✓</th><th>✗</th><th>⏳</th><th>Süre</th><th>Maliyet</th></tr>
-    ${raporlar.map((r) => `<tr><td>${esc(r.dosya)}</td><td>${esc(r.yontem)}</td>${r.k
-      ? `<td>${r.k.ozet.dogru}</td><td>${r.k.ozet.yanlis}</td><td>${r.k.ozet.kuyruk + r.k.ozet.okunamadi}</td>
-         <td>${sn(r.sure_ms)}</td><td>${r.maliyet != null ? '$' + r.maliyet.toFixed(5) : '-'}</td>`
-      : `<td colspan="5" class="uyari">${esc(r.atlandi ?? r.hata)}</td>`}</tr>`).join('')}</table>`;
-}
-function testRaporuMetni(raporlar) {
-  const satirlar = ['OKUMA TESTİ SONUCU', ''];
-  for (const r of raporlar) {
-    if (!r.k) { satirlar.push(`${r.dosya} | ${r.yontem} | ${r.atlandi ?? `HATA: ${r.hata}`}`); continue; }
-    const o = r.k.ozet;
-    satirlar.push(`## ${r.dosya} | ${r.yontem} | doğru ${o.dogru}, yanlış ${o.yanlis}, kuyruk ${o.kuyruk}, okunamadı ${o.okunamadi}`
-      + ` | süre ${sn(r.sure_ms)} (${olcumYazisi(r.olcum)}) | maliyet ${r.maliyet != null ? '$' + r.maliyet.toFixed(5) : '-'}`
-      + ` | toplam okunan ${r.k.genel.okunan} / beklenen ${r.k.genel.beklenen} | kontrol ${r.toplamTutuyor ? 'tutuyor' : 'TUTMUYOR'}`);
-    for (const x of r.k.satirlar) {
-      satirlar.push(`- ${x.beklenen.metin} → okuma ${x.okuma}${x.okumaNotu ? ` (${x.okumaNotu})` : ''} → ${x.sonuc}: ${x.aciklama}`);
-    }
-    if (r.k.fazla.length) satirlar.push(`- fazladan okunan: ${r.k.fazla.join(', ')}`);
-    satirlar.push(`- okunan ham: ${JSON.stringify(r.sonuc.satirlar.map((s) => [s.metin, s.miktar, s.birim, s.tutar_belge ?? s.tutar_haric, s.kdv_orani, s.ai?.karar, s.ai?.guven]))}`);
-  }
-  return satirlar.join('\n');
 }
 
 function belgeKarti(k, b) {

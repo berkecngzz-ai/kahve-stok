@@ -25,6 +25,30 @@ Kararlar (2026-10-23):
 - Satış raporu **haftada bir** (sayım günü) yüklenir → hafta içi stok miktarları tahmindir ve öyle etiketlenir.
 - Fiyat uyarısı: artış **> %5 VE** mevcut kullanıma göre **aylık ek maliyet > 250 TL** ise; ortalama fiyat **ağırlıklı** (alınan miktara göre).
 
+## Sadeleştirme + Faz 2/3/4 (2026-10-24, kullanıcı yokken; kullanıcı onayıyla canlıya)
+
+Kullanıcı kararları: market fişi nadir → okuma kuralı eklenmez, **barista elle girer (tutar dahil, sorun yok)**;
+uygulama içi okuma testi kaldırılsın; gereksiz ne varsa sadeleştirilsin.
+- **Kaldırıldı:** uygulama içi okuma testi ekranı (kurulum paneli; ~140 satır) ve patronun KDV'li "Fatura elle gir" formu
+  (~375 satır). Komut satırı okuma testi (scripts/okuma-testi.sh, okuma-testi.js) ve canlıdaki okuma_testleri /
+  fatura_kaydet DOKUNULMADI (yalnız ekrandan kalktı). app.js 2815 → 2548 satır.
+- **Elle mal girişi** (yeni `elleGiris`, sql/22 `elle_mal_kabul`): barista Mal geldi'de "Market fişi / faturasız: elle gir",
+  patron Girişler'de "✍️ Elle mal girişi". Malzeme kartı → +/− miktar → fişteki tutar (KDV dahil, isteğe bağlı) → liste →
+  kaydet. Tutar kayıtlı fiyattan %30+ saparsa stok girer ama fiyat değişmez, patronun Bugünkü kontrolüne düşer.
+- **Barista:** sayım ekranında +/− düğmeleri ve malzeme simgesi; ana ekranda "Bugün sayım günü" ipucu (son sayım ≥ 7 gün
+  ya da hiç yok → sayım düğmesi öne çıkar; sql/22 `barista_durumu`).
+- **Patron Özet — Bugünkü kontrol** (sql/22 `gunluk_kontrol`): sorun yoksa yeşil "Her şey yolunda"; varsa tek satırlık
+  maddeler (teslimat farkı, yüksek açık, fiyat uyarısı, elle fiyat kontrolü, sayım gecikmesi, eksik satış raporu, işlenen
+  fatura) — dokununca ilgili yere gider.
+- **Fiyat değişimleri** (sql/22 `fiyat_degisimleri`): son iki fatura fiyatı, 90 gün ağırlıklı ortalama, aylık etki;
+  uyarı = %5+ artış VE ayda 250 TL+. Son 28 günde satış raporu yoksa TL etkisi hesaplanmaz ("kullanım verisi yok").
+- **Stok:** güven etiketi yalnız dikkat gerekince ("Tahmini": sayımdan sonra satış girilmedi · "Kontrol gerekli": eksiye
+  düştü / okunmayı bekleyen fatura) + "kaç gün yeter" dolu çubuğu.
+- **Girişler:** "İşlem geçmişi" (islem_gecmisi, son 60; açılınca yüklenir).
+- Testler: `npm test` 69/69, SQL zinciri + test/gunluk_kontrol_test.sql (elle giriş, tekrar istek, sapan fiyat, başka mekan,
+  yetki, veri yokken TL etkisi null, %5+250 TL kuralı, ağırlıklı ortalama). Demoda 5 sekme + barista akışları denendi.
+  Geri dönüş: scripts/geri-al-22.sql + git revert.
+
 ## FAZ 1 — Mal kabul (2026-10-24) · CANLIDA (sql/21 + ön yüz 7764268)
 
 **Canlıya alma (2026-10-24):** yedek `Desktop/kahve-stok-yedek/2026-10-24_faz1-oncesi` (19 tablo, 47 işlev, 24 politika) →
