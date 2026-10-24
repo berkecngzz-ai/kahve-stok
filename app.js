@@ -92,6 +92,11 @@ function girisEkrani(sekme = 'giris') {
   ustSag.innerHTML = '';
   const kayit = sekme === 'kayit';
   app.innerHTML = `
+    <div class="karsilama">
+      <span class="karsilama-isaret">${ikon('<path d="M4 10h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11.5h1.5a2.5 2.5 0 0 1 0 5H15.5"/><path d="M8 3.5c0 1.5 1.5 1.5 1.5 3.5M12 3.5c0 1.5 1.5 1.5 1.5 3.5"/>')}</span>
+      <h1>Kafenin stoğu,<br><em>tek bakışta.</em></h1>
+      <p>Mal gelir, sayılır, kayıp görünür. Gerisini uygulama hesaplar.</p>
+    </div>
     <div class="sekmeler">
       <button data-sekme="giris" class="${kayit ? '' : 'secili'}">Giriş yap</button>
       <button data-sekme="kayit" class="${kayit ? 'secili' : ''}">Hesap aç</button>
@@ -177,7 +182,8 @@ async function anaEkran(user, uye) {
   if (!PATRON_SEKMELER.some(([k]) => k === aktifSekme)) aktifSekme = 'ozet';
   if (ayarSekme === 'kurulum' && !kurulumcu) ayarSekme = 'malzeme';
   app.innerHTML = `
-    <div class="baslik-satir"><h1>${esc(uye.mekanlar.ad)}</h1><span class="rozet">Patron · ${esc(uye.ad)}</span></div>
+    <div class="sayfa-bas"><div><small>${esc(bugunYazisi())}</small><h1>${esc(uye.mekanlar.ad)}</h1></div>
+      <span class="bas-harf" title="Patron · ${esc(uye.ad)}" aria-label="Patron: ${esc(uye.ad)}">${esc((uye.ad || '?').trim().charAt(0).toLocaleUpperCase('tr-TR'))}</span></div>
     <div id="icerik"><div class="iskelet"></div><div class="iskelet kisa"></div></div>
     <nav class="alt-menu" aria-label="Bölümler">
       ${PATRON_SEKMELER.map(([k, ad, ikon]) => `<button data-sekme="${k}" class="${aktifSekme === k ? 'secili' : ''}"
@@ -199,6 +205,43 @@ async function anaEkran(user, uye) {
 // Alt menü simgeleri (ince çizgi, yazı rengini alır).
 const ikon = (yol) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9"
   stroke-linecap="round" stroke-linejoin="round">${yol}</svg>`;
+// Ekran simgeleri (emoji yerine ince çizgi; renk yazıdan gelir).
+const SIMGE = {
+  kamyon: '<path d="M3 6.5h11v9.5H3z"/><path d="M14 9.5h3.6L21 13v3h-7"/><circle cx="7" cy="17.5" r="1.9"/><circle cx="17" cy="17.5" r="1.9"/>',
+  artis: '<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  dusus: '<path d="m3 7 6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
+  etiket: '<path d="M3 12.2V4h8.2L21 13.8 13.8 21z"/><circle cx="7.6" cy="8.4" r="1.4"/>',
+  kalem: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  liste: '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 3.5h6v3H9zM9 11.5h6M9 15.5h4"/>',
+  para: '<rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5v.01M17.5 14.5v.01"/>',
+  kum: '<path d="M6 3h12M6 21h12M8 3v2.5c0 2 4 4.5 4 6.5s-4 4.5-4 6.5V21M16 3v2.5c0 2-4 4.5-4 6.5s4 4.5 4 6.5V21"/>',
+  tamam: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  kutu: '<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9M7.5 5.2l9 4.6"/>',
+  alev: '<path d="M12 21c-3.9 0-7-2.7-7-6.6 0-3 1.9-5 3.4-6.4.3 1.7 1.2 2.9 2.4 3.4.2-3.2 1.4-6 3.7-8.4.5 3.2 5.5 5.6 5.5 11.4 0 3.9-3.1 6.6-8 6.6z"/>',
+  sayim: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1.5"/><path d="m9 14 2 2 4-4"/>',
+  ok: '<path d="m9 6 6 6-6 6"/>',
+};
+const simge = (ad) => ikon(SIMGE[ad] ?? '');
+// Eski emoji işaretleri → simge (kontrol maddeleri).
+const EMOJI_SIMGE = { '🚚': 'kamyon', '📉': 'dusus', '📈': 'artis', '🏷️': 'etiket', '✍️': 'kalem', '📋': 'liste', '💰': 'para', '⏳': 'kum' };
+const bugunYazisi = () => new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+// Büyük rakam yumuşakça sayarak gelir (hareket azaltılmışsa doğrudan).
+function sayacBaslat(kok) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  kok.querySelectorAll('[data-sayac]').forEach((el) => {
+    const hedef = Number(el.dataset.sayac);
+    if (!Number.isFinite(hedef) || hedef === 0) return;
+    const t0 = performance.now();
+    const adim = (t) => {
+      const p = Math.min(1, (t - t0) / 900);
+      el.textContent = tlYaz(p < 1 ? Math.round(hedef * (1 - (1 - p) ** 3)) : hedef);
+      if (p < 1) requestAnimationFrame(adim);
+    };
+    requestAnimationFrame(adim);
+  });
+}
+
 const PATRON_SEKMELER = [
   ['ozet', 'Özet', ikon('<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/>')],
   ['stok', 'Stok', ikon('<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9"/>')],
@@ -408,7 +451,7 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son }) {
   }
   if (!maddeler.length) {
     return `<section class="kart kontrol-kart yesil"><h2>Bugünkü kontrol</h2>
-      <p class="hepsi-tamam">✓ Her şey yolunda</p>
+      <p class="hepsi-tamam"><span class="simge-kutu">${simge('tamam')}</span>Her şey yolunda</p>
       <p class="bilgi kucuk-yazi">Teslimatlar tam, faturalar işlendi, sayım güncel.</p></section>`;
   }
   const kirmizi = maddeler.some(([r]) => r === 'kirmizi');
@@ -416,9 +459,9 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son }) {
     <h2>Bugünkü kontrol <span class="rozet">${maddeler.length}</span></h2>
     ${maddeler.map(([renk, ikon, baslik, alt, git]) => `<${git ? 'button' : 'div'} class="kontrol-madde ${renk}"
         ${git ? `data-kontrol-git="${esc(git)}"` : ''}>
-      <span class="kontrol-ikon" aria-hidden="true">${ikon}</span>
+      <span class="kontrol-ikon" aria-hidden="true">${EMOJI_SIMGE[ikon] ? simge(EMOJI_SIMGE[ikon]) : ikon}</span>
       <span class="kontrol-metin"><b>${esc(baslik)}</b><small>${esc(alt)}</small></span>
-      ${git ? '<span class="kontrol-ok" aria-hidden="true">›</span>' : ''}</${git ? 'button' : 'div'}>`).join('')}
+      ${git ? `<span class="kontrol-ok" aria-hidden="true">${simge('ok')}</span>` : ''}</${git ? 'button' : 'div'}>`).join('')}
   </section>`;
 }
 
@@ -461,12 +504,19 @@ async function ozetSekmesi(icerik) {
     const fark = onceki ? Number(son.acik_tl) - Number(onceki.acik_tl) : 0;   // açık eksi sayı: artı fark = azaldı
     kahraman = `
       <section class="kart kahraman ${son.buyuk ? 'kirmizi' : 'yesil'}">
-        <div class="etiket">Son haftanın açığı · ${esc(donemYaz(son.baslangic, son.bitis))}</div>
-        <div class="dev-rakam">${tlYaz(son.acik_tl)}</div>
+        <div class="etiket"><span>Son haftanın açığı</span><span>${esc(donemYaz(son.baslangic, son.bitis))}</span></div>
+        <div class="dev-rakam" data-sayac="${Number(son.acik_tl)}">${tlYaz(son.acik_tl)}</div>
         <div class="durum-yazi">${son.buyuk ? 'Normalden yüksek açık var' : 'Açık normal sınırda'}</div>
         ${onceki ? `<div class="alt-yazi">Önceki hafta ${tlYaz(onceki.acik_tl)}${Math.abs(fark) >= 1
           ? ` · ${fark > 0 ? `${tlYaz(fark)} daha az` : `${tlYaz(-fark)} daha fazla`}` : ''}</div>` : ''}
         ${sonSayimGun > 8 ? `<div class="alt-yazi">Son sayım ${sonSayimGun} gün önce. Bu haftanın sayımı bekleniyor.</div>` : ''}
+        ${trend.length > 1 ? (() => {
+          const haftalar = trend.slice(0, 6).reverse();
+          const enBuyuk = Math.max(...haftalar.map((d) => Math.abs(Number(d.acik_tl))), 1);
+          return `<div class="mini-cubuklar" aria-hidden="true">${haftalar.map((d, i) => `<div>
+            <i class="${d.buyuk ? 'yuksek' : ''}" style="height:${Math.max(6, Math.abs(Number(d.acik_tl)) / enBuyuk * 100).toFixed(0)}%;animation-delay:${(i * 0.06).toFixed(2)}s"></i>
+            <span>${esc(new Date(`${d.bitis}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }))}</span></div>`).join('')}</div>`;
+        })() : ''}
       </section>`;
   } else {
     // Yeni mekan: açık ikinci sayımdan sonra çıkar; o zamana kadar kurulum adımları gösterilir.
@@ -494,8 +544,8 @@ async function ozetSekmesi(icerik) {
   }
 
   icerik.innerHTML = `
-    ${gunlukKontrolKarti({ kontrol, fiyatlar, eksik: eksikler?.[0], son })}
     ${kahraman}
+    ${gunlukKontrolKarti({ kontrol, fiyatlar, eksik: eksikler?.[0], son })}
     ${teslimatKarti(gorevler ?? [])}
     ${fiyatKontrolKarti(fiyatKontrol)}
     ${kontrol ? '' : bekleyenUyarisi(eksikler?.[0])}
@@ -507,11 +557,6 @@ async function ozetSekmesi(icerik) {
         : '<p class="bilgi">Bu hafta açık veren malzeme yok.</p>'}
       <button class="ikincil tam" data-git="rapor" data-sayim="${esc(son.sayim_id)}">Haftanın raporunu aç</button>
     </section>` : ''}
-    ${trend.length > 1 ? `<section class="kart">
-      <h2>Haftalara göre açık (TL)</h2>
-      ${trendSvg(trend)}
-      <p class="bilgi kucuk-yazi">Kırmızı çubuk: o hafta normalden yüksek açık var.</p>
-    </section>` : ''}
     ${azalan.length ? `<section class="kart">
       <h2>Azalan malzemeler</h2>
       ${azalan.slice(0, 5).map((m) => `<div class="cizgili-satir"><span>${esc(m.ad)}</span>
@@ -519,6 +564,7 @@ async function ozetSekmesi(icerik) {
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
     </section>` : ''}
     ${fiyatKarti(fiyatlar)}`;
+  sayacBaslat(icerik);
   teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
   fiyatKontrolKartiBagla(icerik, () => ozetSekmesi(icerik));
   icerik.querySelectorAll('[data-kontrol-git]').forEach((b) => b.addEventListener('click', () => {
@@ -586,7 +632,7 @@ async function stokSekmesi(icerik) {
     </div>`;
   };
   icerik.innerHTML = `
-    <section class="kart">
+    <section class="kart kahraman">
       <div class="etiket">Elde olan malın değeri ${KDV_DAHIL}</div>
       <div class="buyuk-rakam">${sayilan.length ? `${tahminiDeger ? '≈ ' : ''}${tlYaz(deger)}` : '—'}</div>
       ${tahminiDeger ? `<p class="bilgi kucuk-yazi">${tahminiDeger} malzemenin fiyatı doğrulanmadı; değer son onaylı fiyatla tahmini.</p>` : ''}
@@ -683,7 +729,7 @@ async function stokFarkiSekmesi(icerik) {
   const enCok = tamam.filter((x) => Number(x.fark_tl) < 0).sort((a, b) => Number(a.fark_tl) - Number(b.fark_tl)).slice(0, 3);
 
   icerik.innerHTML = `
-    <section class="kart">
+    <section class="kart kahraman">
       <div class="donem-sec">
         <label for="sayim-sec">Hafta</label>
         <select id="sayim-sec">${r.sayimlar.map((s, i) => {
@@ -1337,15 +1383,11 @@ async function girisSekmesi(icerik, user, patron) {
     eksik?.bekleyen_satis_raporu ? `${eksik.bekleyen_satis_raporu} satış raporu` : '',
   ].filter(Boolean).join(', ');
   icerik.innerHTML = `
-    ${eksikMetni ? `<div class="sade-uyari">⏳ ${eksikMetni} henüz işlenmedi. İşlenince rakamlar biraz değişebilir.</div>` : ''}
-    <div class="buyuk-dugmeler yatay">
-      <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
-      <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
-      <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
-    </div>
+    ${eksikMetni ? `<div class="sade-uyari">${eksikMetni} henüz işlenmedi. İşlenince rakamlar biraz değişebilir.</div>` : ''}
+    <div class="buyuk-dugmeler yatay">${ISLER.map(isDugmesi).join('')}</div>
     <div class="izgara">
-      <button class="ikincil" data-is="elle">✍️ Elle mal girişi</button>
-      <button class="ikincil" data-yeni="satis">💰 Satış gir</button>
+      <button class="ikincil yan-dugme" data-is="elle">${simge('kalem')}Elle mal girişi</button>
+      <button class="ikincil yan-dugme" data-yeni="satis">${simge('para')}Satış gir</button>
     </div>
     <div class="kart liste-kart">
       <div class="baslik-satir"><h2>Geçmiş girişler</h2>
@@ -1527,16 +1569,18 @@ async function belgeleriGoster(kutu, liste) {
 
 const istekKimligi = () => crypto.randomUUID();
 
+// Üç ana iş: simge, ad, kısa açıklama.
+const ISLER = [['mal', 'kutu', 'Mal geldi', 'Faturayı çek, gelenleri say'], ['fire', 'alev', 'Fire var', 'Dökülen, bozulan, iade'],
+  ['sayim', 'sayim', 'Haftalık sayım', 'Rafta ne var, tek tek say']];
+const isDugmesi = ([is, sim, ad, alt]) => `<button data-is="${is}"><span class="simge">${simge(sim)}</span>
+  <span class="dugme-metin"><b>${ad}</b><small>${alt}</small></span><span class="ok">${simge('ok')}</span></button>`;
+
 function baristaEkrani(user, uye) {
   app.innerHTML = `
-    <h1 class="ortada">${esc(uye.mekanlar.ad)}</h1>
-    <div class="buyuk-dugmeler">
-      <button data-is="mal"><span class="simge">📦</span>Mal geldi</button>
-      <button data-is="fire"><span class="simge">🗑️</span>Fire var</button>
-      <button data-is="sayim"><span class="simge">📋</span>Haftalık sayım</button>
-    </div>
+    <div class="selam"><small>${esc(bugunYazisi())} · ${esc(uye.mekanlar.ad)}</small>
+      <h1>Merhaba, ${esc((uye.ad || '').split(' ')[0])}</h1></div>
     <p class="gorev-ipucu" id="ipucu" hidden></p>
-    <p class="bilgi ortada">${esc(uye.ad)}</p>`;
+    <div class="buyuk-dugmeler">${ISLER.map(isDugmesi).join('')}</div>`;
   const ana = () => baristaEkrani(user, uye);
   app.querySelectorAll('[data-is]').forEach((b) => b.addEventListener('click', () => isBaslat(app, b.dataset.is, user, ana)));
   // Sistem ne yapılacağını söyler: haftalık sayımın günü geldiyse sayım düğmesi öne çıkar. (Bilgi alınamazsa sessiz.)
@@ -1547,7 +1591,7 @@ function baristaEkrani(user, uye) {
     const metin = gun == null ? 'İlk sayımı yap: stok takibi sayımla başlar.'
       : gun >= 7 ? `Bugün sayım günü · son sayım ${gun} gün önce` : null;
     if (!metin) return;
-    ipucu.textContent = `📋 ${metin}`;
+    ipucu.innerHTML = `${simge('sayim')}<span>${esc(metin)}</span>`;
     ipucu.hidden = false;
     app.querySelector('[data-is="sayim"]')?.classList.add('one-cikan');
   }).catch(() => {});
