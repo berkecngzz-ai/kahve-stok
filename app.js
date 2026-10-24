@@ -634,8 +634,8 @@ async function stokFarkiSekmesi(icerik) {
     return `
     <details class="rapor-satir ${x.renk}" ${x.renk === 'buyuk' ? 'open' : ''}>
       <summary>
-        <span class="ad"><b>${esc(x.ad)}</b><small><span class="nokta"></span>${DURUM_YAZI[x.renk]}${x.renk !== 'normal' && acikOrani(x)
-          ? ` · kullanılanın ${acikOrani(x)} kadarı` : ''}</small></span>
+        <span class="ad"><b>${esc(x.ad)}</b>${x.renk === 'normal' ? '' : `<small><span class="nokta"></span>${DURUM_YAZI[x.renk]}${acikOrani(x)
+          ? ` · kullanılanın ${acikOrani(x)} kadarı` : ''}</small>`}</span>
         <span class="deger"><b>${x.fark_tl != null ? `${x.tahmini ? '≈ ' : ''}${tlYaz(x.fark_tl, { isaret: true })}` : 'fiyat yok'}</b>
           ${x.tahmini ? '<small class="guven tahmin">Tahmini</small>' : ''}
           <small>${okunurMiktar(x.fark, x.birim, { isaret: true })}</small></span>
@@ -656,6 +656,19 @@ async function stokFarkiSekmesi(icerik) {
       ${!kullanilan && Number(x.fark) < 0 ? '<p class="bilgi kucuk-yazi">Bu dönemde satış ya da fire girilmemiş; açığın tamamı kayıp görünüyor.</p>' : ''}
     </details>`;
   };
+  const donem = r.baslangic ? donemYaz(r.baslangic, r.bitis) : kisaTarih(r.bitis);
+  const yaklasik = tahminiSayi ? '≈ ' : '';
+  const ozet = tamam.length ? `
+      <div class="iki-rakam">
+        <div><div class="etiket">Açık</div><div class="buyuk-rakam ${buyukSayi ? 'uyari' : 'iyi'}">${yaklasik}${tlYaz(r.toplam_acik_tl)}</div></div>
+        <div><div class="etiket">Fazla</div><div class="buyuk-rakam soluk">${yaklasik}${tlYaz(r.toplam_fazla_tl, { isaret: true })}</div></div>
+      </div>
+      <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek açık var.` : 'Tüm malzemeler normal sınırda.'}</p>`
+    : '<p class="bilgi">Bu, ilk sayım. Açık bir sonraki haftalık sayımda görünür.</p>';
+  const uyariKutusu = r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u)}</span>`).join('')}</div>` : '';
+  // Ekranda yalnız en çok açık verenler; geri kalanı "Raporu aç" ile açılan belgede.
+  const enCok = tamam.filter((x) => Number(x.fark_tl) < 0).sort((a, b) => Number(a.fark_tl) - Number(b.fark_tl)).slice(0, 3);
+
   icerik.innerHTML = `
     <section class="kart">
       <div class="donem-sec">
@@ -668,44 +681,97 @@ async function stokFarkiSekmesi(icerik) {
             : `${esc(kisaTarih(s.tarih))} sayımı${ilkSayim ? ' (ilk sayım)' : ''}`}</option>`;
         }).join('')}</select>
       </div>
-      ${tamam.length ? `
-      <div class="iki-rakam">
-        <div><div class="etiket">Açık</div><div class="buyuk-rakam ${buyukSayi ? 'uyari' : 'iyi'}">${tlYaz(r.toplam_acik_tl)}</div></div>
-        <div><div class="etiket">Fazla</div><div class="buyuk-rakam soluk">${tlYaz(r.toplam_fazla_tl, { isaret: true })}</div></div>
-      </div>
-      <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek açık var.` : 'Tüm malzemeler normal sınırda.'}</p>`
-      : '<p class="bilgi">Bu, ilk sayım. Açık bir sonraki haftalık sayımda görünür.</p>'}
-      ${r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u)}</span>`).join('')}</div>` : ''}
-      ${tahminiSayi ? `<p class="bilgi kucuk-yazi">${tahminiSayi} malzemenin fiyatı doğrulanmadı: TL'si son onaylı fiyatla tahmini (≈).</p>` : ''}
+      ${ozet}
+      ${uyariKutusu}
     </section>
-    ${fiyatsiz.length ? `<section class="kart"><h2>TL toplamına girmeyenler (${fiyatsiz.length})</h2>
-      <p class="bilgi">Onaylı fiyatı olmadığı için açık/fazla TL'ye çevrilmedi. Miktar farkı:</p>
+    ${tamam.length ? `<section class="kart">
+      <h2>En çok açık verenler</h2>
+      ${enCok.length ? enCok.map((x) => `<div class="cizgili-satir ${x.renk}"><span><span class="nokta ${x.renk}"></span>${esc(x.ad)}</span>
+        <b class="${x.renk === 'buyuk' ? 'uyari' : ''}">${x.tahmini ? '≈ ' : ''}${tlYaz(x.fark_tl, { isaret: true })}</b></div>`).join('')
+        : '<p class="bilgi">Bu hafta açık veren malzeme yok.</p>'}
+    </section>` : ''}
+    <button class="dev tam" id="belge-ac">📄 Raporu aç</button>
+    <p class="bilgi kucuk-yazi ortala">Tüm malzemeler, haftalık grafik ve notlar raporda. PDF olarak kaydedebilir ya da paylaşabilirsin.</p>`;
+
+  // Rapor belgesi: kâğıt görünümlü, tek sütun; telefondan PDF olarak kaydedilir / yazdırılır.
+  const belgeHtml = () => `
+    <header class="belge-bas">
+      <div class="belge-mekan">${esc(mekanAdi)}</div>
+      <h1>Haftalık stok raporu</h1>
+      <div class="belge-donem">${esc(donem)}</div>
+    </header>
+    ${ozet}
+    ${uyariKutusu}
+    ${tamam.length ? `
+    <h2>Malzemeler</h2>
+    <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: normalden fazla kayıp.
+      <span class="nokta fazla"></span>Sarı: olması gerekenden fazla sayıldı. Hesabı görmek için malzemeye dokun.</p>
+    <div class="belge-liste">${tamam.filter((x) => Number(x.fark) !== 0)
+      .sort((a, b) => Number(a.fark_tl ?? 0) - Number(b.fark_tl ?? 0)).map(satir).join('')}</div>
+    ${tamam.some((x) => Number(x.fark) === 0) ? `<p class="bilgi kucuk-yazi">Farkı olmayanlar: ${tamam.filter((x) => Number(x.fark) === 0)
+      .map((x) => esc(x.ad)).join(', ')}.</p>` : ''}` : ''}
+    ${tahminiSayi ? `<p class="bilgi kucuk-yazi">≈ ${tahminiSayi} malzemenin fiyatı doğrulanmadı; TL'si son onaylı fiyatla tahmini.</p>` : ''}
+    ${fiyatsiz.length ? `<h2>TL toplamına girmeyenler</h2>
+      <p class="bilgi kucuk-yazi">Onaylı fiyatı olmadığı için TL'ye çevrilmedi. Miktar farkı:</p>
       ${fiyatsiz.map((x) => `<div class="cizgili-satir"><span>${esc(x.ad)}</span>
-        <span>${okunurMiktar(x.fark, x.birim, { isaret: true })}</span></div>`).join('')}</section>` : ''}
-    ${trend.length > 1 ? `<section class="kart"><h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}</section>` : ''}
-    ${tamam.length ? `<section class="kart liste-kart">
-      <h2>Malzemeler</h2>
-      <p class="bilgi kucuk-yazi"><span class="nokta buyuk"></span>Kırmızı: normalden fazla kayıp.
-        <span class="nokta fazla"></span>Sarı: sayılan, olması gerekenden fazla (satış ya da fire eksik girilmiş olabilir).
-        Ayrıntı için malzemeye dokun.</p>
-      ${tamam.filter((x) => Number(x.fark) !== 0).map(satir).join('')}
-      ${tamam.some((x) => Number(x.fark) === 0) ? `<p class="bilgi kucuk-yazi">Farkı olmayanlar: ${tamam.filter((x) => Number(x.fark) === 0)
-        .map((x) => esc(x.ad)).join(', ')}.</p>` : ''}
-      <button class="ikincil tam" id="indir">Raporu indir (Excel)</button></section>` : ''}
-    ${ilk.length ? `<section class="kart"><h2>İlk kez sayılanlar (${ilk.length})</h2>
-      <p class="bilgi">Daha önce sayılmadıkları için açık bir sonraki sayımda çıkar.</p>
-      <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p></section>` : ''}
-    ${sayilmadi.length ? `<section class="kart"><h2>Bu sayımda sayılmayanlar (${sayilmadi.length})</h2>
-      <p class="bilgi">${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p></section>` : ''}
-    <p class="bilgi kucuk-yazi">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım
-      günündeki satış, fire ve mal girişleri o haftaya dahil. TL, bugünkü fiyatla (KDV dahil).</p>`;
-  // Muhasebeci / ortak için: haftanın tablosu Excel'de açılan dosya olarak (cihazda üretilir, hiçbir yere gönderilmez).
-  icerik.querySelector('#indir')?.addEventListener('click', () => {
+        <span>${okunurMiktar(x.fark, x.birim, { isaret: true })}</span></div>`).join('')}` : ''}
+    ${ilk.length ? `<h2>İlk kez sayılanlar</h2>
+      <p class="bilgi kucuk-yazi">Açıkları bir sonraki sayımda çıkar.</p>
+      <p>${ilk.map((x) => `${esc(x.ad)}: ${okunurMiktar(x.sayilan, x.birim)}`).join(' · ')}</p>` : ''}
+    ${sayilmadi.length ? `<h2>Bu sayımda sayılmayanlar</h2><p>${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p>` : ''}
+    ${trend.length > 1 ? `<h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}` : ''}
+    <footer class="belge-dip">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım
+      günündeki satış, fire ve mal girişleri o haftaya dahil. TL, bugünkü fiyatla (KDV dahil).
+      <br>Hazırlandı: ${esc(new Date().toLocaleString('tr-TR', { dateStyle: 'long', timeStyle: 'short' }))}</footer>`;
+
+  const excelIndir = () => {
+    // Muhasebeci / ortak için: Excel'de açılan dosya (cihazda üretilir, hiçbir yere gönderilmez).
     const blob = new Blob([raporCsv(r, mekanAdi)], { type: 'text/csv;charset=utf-8' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `stok-raporu-${r.bitis}.csv` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  });
+  };
+
+  const belgeAc = () => {
+    const kaplama = document.createElement('div');
+    kaplama.className = 'belge-kaplama';
+    kaplama.setAttribute('role', 'dialog');
+    kaplama.setAttribute('aria-label', 'Haftalık stok raporu');
+    kaplama.innerHTML = `
+      <div class="belge-ust">
+        <button class="ikincil" id="belge-kapat">← Geri</button>
+        <button id="belge-kaydet">PDF kaydet</button>
+        ${tamam.length ? '<button class="ikincil" id="belge-excel">Excel</button>' : ''}
+      </div>
+      <article class="belge">${belgeHtml()}</article>`;
+    document.body.append(kaplama);
+    document.body.classList.add('belge-acik');
+    const eskiBaslik = document.title;
+    // Kaydedilen PDF'in adı sayfa başlığından gelir.
+    document.title = `Stok raporu ${mekanAdi} ${r.bitis}`;
+    // Yazdırırken tüm hesap dökümleri açık; sonra eski hâline döner.
+    const acik = new Map();
+    const once = () => kaplama.querySelectorAll('details').forEach((d) => { acik.set(d, d.open); d.open = true; });
+    const sonra = () => acik.forEach((v, d) => { d.open = v; });
+    const kapat = () => {
+      kaplama.remove();
+      document.body.classList.remove('belge-acik');
+      document.title = eskiBaslik;
+      window.removeEventListener('beforeprint', once);
+      window.removeEventListener('afterprint', sonra);
+      document.removeEventListener('keydown', tus);
+    };
+    const tus = (e) => { if (e.key === 'Escape') kapat(); };
+    window.addEventListener('beforeprint', once);
+    window.addEventListener('afterprint', sonra);
+    document.addEventListener('keydown', tus);
+    kaplama.querySelector('#belge-kapat').onclick = kapat;
+    kaplama.querySelector('#belge-kaydet').onclick = () => window.print();
+    kaplama.querySelector('#belge-excel')?.addEventListener('click', excelIndir);
+    kaplama.querySelector('#belge-kapat').focus();
+  };
+
+  icerik.querySelector('#belge-ac').addEventListener('click', belgeAc);
   icerik.querySelector('#sayim-sec').addEventListener('change', (e) => {
     secilenSayim = e.target.value;
     stokFarkiSekmesi(icerik).catch(hataGoster);

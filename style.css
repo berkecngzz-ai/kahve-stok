@@ -475,3 +475,40 @@ button.kontrol-madde { cursor: pointer; }
 
 /* hidden özniteliği her zaman gizler (kart vb. display kuralları ezmesin) */
 [hidden] { display: none !important; }
+
+/* ---------- Rapor belgesi (Rapor → "Raporu aç") ---------- */
+.ortala { text-align: center; }
+.nokta.buyuk { background: var(--kirmizi); }
+.nokta.fazla { background: var(--sari); }
+.cizgili-satir .nokta { margin-right: 8px; }
+.belge-kaplama { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: var(--zemin);
+  padding: 0 0 32px; -webkit-overflow-scrolling: touch; }
+body.belge-acik { overflow: hidden; }
+.belge-ust { position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; padding: 10px 16px;
+  background: var(--zemin); border-bottom: 1px solid var(--cizgi); }
+.belge-ust button { flex: 1; min-height: 48px; margin: 0; white-space: nowrap; padding: 0 12px; }
+.belge-ust #belge-kapat { flex: 0 0 auto; }
+.belge { max-width: 720px; margin: 16px auto 0; background: var(--kart); color: var(--metin); border: 1px solid var(--cizgi);
+  border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .08); padding: 28px 22px; }
+@media (max-width: 760px) { .belge { margin: 12px 12px 0; padding: 22px 16px; } }
+.belge-bas { border-bottom: 2px solid var(--metin); padding-bottom: 12px; margin-bottom: 4px; }
+.belge-mekan { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--soluk); font-weight: 600; }
+.belge h1 { font-size: 24px; margin: 4px 0 2px; }
+.belge-donem { color: var(--soluk); font-size: 15px; }
+.belge h2 { font-size: 16px; margin: 22px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--cizgi); }
+.belge-liste details.rapor-satir:first-child { border-top: 0; }
+.belge-dip { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--cizgi); color: var(--soluk); font-size: 12px; line-height: 1.5; }
+
+@media print {
+  @page { margin: 14mm; }
+  body.belge-acik > *:not(.belge-kaplama) { display: none !important; }
+  body.belge-acik { overflow: visible; background: #fff; }
+  .belge-kaplama { position: static; overflow: visible; padding: 0; background: #fff; }
+  .belge-ust { display: none !important; }
+  .belge { margin: 0; max-width: none; border: 0; box-shadow: none; padding: 0; background: #fff; color: #000;
+    --metin: #000; --soluk: #555; --cizgi: #ccc; --kart: #fff; --kirmizi: #b3261e; --sari: #9a6200; --yesil: #2e7d32;
+    --sari-zemin: #fdf3dc; }
+  .belge details.rapor-satir { break-inside: avoid; }
+  .belge h2 { break-after: avoid; }
+}
+.belge details.rapor-satir.normal > summary { border-left-color: transparent; }
