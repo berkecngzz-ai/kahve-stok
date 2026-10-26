@@ -255,6 +255,19 @@ select public.satis_raporu_isle(pg_temp.rapor(:'mb'), jsonb_build_array(
   pg_temp.satir(public.bugun() - 4, 'Latte', :'latteb', 2, 'satis', null, null, 330))) as p7 \gset
 select pg_temp.dogrula((:'p7')::jsonb ->> 'eklenen' = '1', 'iptal edilen günün satırları yeniden yüklenemedi');
 
+-- Eski usul (elle, satırsız) satış girişi aynı gün varsa ona dokunulmaz; rapor ayrı satış günü girişi açar
+reset role;
+insert into girisler (id, mekan_id, tur, tarih, aciklama, giren, giren_ad)
+  values ('e5e5e5e5-0000-0000-0000-000000000001', :'mb', 'satis', public.bugun() - 3, null, 'f6f6f6f6-0000-0000-0000-000000000003', 'Ece');
+insert into giris_kalemleri (giris_id, mekan_id, urun_id, miktar) values ('e5e5e5e5-0000-0000-0000-000000000001', :'mb', :'latteb', 7);
+insert into malzeme_hareketleri (giris_id, mekan_id, malzeme_id, miktar) values ('e5e5e5e5-0000-0000-0000-000000000001', :'mb', :'sutb', 1400);
+set role authenticated;
+select public.satis_raporu_isle(pg_temp.rapor(:'mb'), jsonb_build_array(pg_temp.satir(public.bugun() - 3, 'Latte', :'latteb', 1, 'satis', 'F50')));
+reset role;
+select pg_temp.dogrula((select miktar = 1400 from malzeme_hareketleri where giris_id = 'e5e5e5e5-0000-0000-0000-000000000001'), 'eski usul satış girişi bozuldu');
+set role authenticated;
+select pg_temp.dogrula(pg_temp.tuketim(:'mb', public.bugun() - 3, :'sutb') = 1400 + 190, 'eski + yeni satış toplamı yanlış');
+
 -- İzolasyon: Kafe B, Kafe A'nın satış satırlarını görmez; başka mekanın ürünü yazılamaz
 select count(*) as gor from satis_satirlari where mekan_id = :'ma' \gset
 select pg_temp.dogrula(:'gor'::int = 0, 'başka mekanın satış satırları görünüyor');

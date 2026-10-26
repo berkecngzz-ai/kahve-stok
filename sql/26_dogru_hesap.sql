@@ -137,8 +137,11 @@ create or replace function public.satis_gunu_yenile(p_mekan uuid, p_tarih date, 
 language plpgsql security definer set search_path = public as $$
 declare v_g uuid;
 begin
-  select id into v_g from girisler
-    where mekan_id = p_mekan and tur = 'satis' and tarih = p_tarih and iptal_zamani is null order by olusturma limit 1;
+  -- Yalnız satır bazlı (bu sistemin açtığı) satış günü girişi kullanılır; eski usul elle girilmiş satışlara dokunulmaz.
+  select g.id into v_g from girisler g
+    where g.mekan_id = p_mekan and g.tur = 'satis' and g.tarih = p_tarih and g.iptal_zamani is null
+      and exists (select 1 from satis_satirlari s where s.giris_id = g.id)
+    order by g.olusturma limit 1;
   if v_g is null then
     insert into girisler (mekan_id, tur, tarih, aciklama, giren, giren_ad)
       values (p_mekan, 'satis', p_tarih, 'Satış raporu', p_giren, coalesce(p_giren_ad, '?')) returning id into v_g;
