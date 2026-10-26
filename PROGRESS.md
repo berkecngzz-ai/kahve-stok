@@ -398,3 +398,6 @@ simülasyonu, gerçek AI fatura testi, bağımsız doğrulama, RAPOR.md). Ayrın
 - [x] ADIM 1-2: denetim + sql/26 (reçete sürümü, POS satır, iptal/iade, teslim tarihi, sayım düzeltme, ortalama maliyet,
   reçetesiz uyarı, günlük süt/haftalık ayrımı) + ön yüz. CANLIDA (2026-10-26). Testler: test/dogru_hesap_test.sql.
 - [ ] ADIM 3: Örnek Kahve simülasyonu (scripts/simulasyon/) — sıradaki
+- [~] ADIM 3: Örnek Kahve hesapları canlıda açıldı (giriş: .local-work/ornek-kahve-giris.json, git dışı). Veri: `python scripts/simulasyon/uret.py`
+  → `node scripts/simulasyon/yukle.mjs` (kaldığı yerden devam eder; durum cikti/yukleme-durum.json) → `python scripts/simulasyon/dogrula.py`.
+  sql/27 (ürün firesi reçete sürümü) canlıda.

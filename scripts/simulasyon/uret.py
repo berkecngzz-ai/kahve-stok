@@ -332,6 +332,10 @@ def fatura_resmi(f, varyant):
     if varyant.get('bulanik'):
         im = im.filter(ImageFilter.GaussianBlur(varyant['bulanik']))
     return im
+# Uygulamanın AI'ya gönderdiği kopya (fotoKucult: uzun kenar 1600 px, JPEG 0,78); PDF'in ilk sayfası da böyle gider.
+os.makedirs(os.path.join(KOK, 'gonderim'), exist_ok=True)
+def gonderim(im, ad):
+    k = im.copy(); k.thumbnail((1600, 1600)); k.save(os.path.join(KOK, 'gonderim', f'{ad}.jpg'), 'JPEG', quality=78)
 VARYANT = {}
 for i, f in enumerate(faturalar):
     v = {}
@@ -347,10 +351,13 @@ for i, f in enumerate(faturalar):
     if pdf: im.save(yol, 'PDF', resolution=150)
     else: im.save(yol, 'JPEG', quality=82)
     f['dosya'] = os.path.basename(yol); f['gorsel'] = v
+    gonderim(im, f['id'])
+
 # Mükerrer: süt faturası (gün 7) aynı dosya + aynı faturanın farklı açıyla yeniden çekilmiş fotoğrafı
 mukerrer = next(f for f in faturalar if f['ted'] == 'sut' and f['fatura_gunu'] == 7)
 im = fatura_resmi(mukerrer, {'aci': 2})
 im.save(os.path.join(KOK, 'faturalar', f'{mukerrer["id"]}-tekrar-cekim.jpg'), 'JPEG', quality=80)
+gonderim(im, f'{mukerrer["id"]}-tekrar-cekim')
 
 # ---------------- Ham veri + gömülü hatalar ----------------
 ham = dict(

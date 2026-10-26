@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.2.17",
+    "@supabase/supabase-js": "^2.45.4",
     "@xmldom/xmldom": "0.8.10",
     "supabase": "^2.121.0"
   }
