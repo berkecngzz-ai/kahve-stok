@@ -404,3 +404,5 @@ simülasyonu, gerçek AI fatura testi, bağımsız doğrulama, RAPOR.md). Ayrın
 - 2026-10-27: ilk simülasyon yüklemesinde bulunan 2 uygulama hatası düzeltildi ve CANLIDA: (1) "(12 dilim)" paket içi
   çarpanı (eslestirme.js), (2) sql/28 — AI birim fiyatı tutarsız ama toplam + kör sayım + maliyet tutarlıysa stoğa girer.
   Örnek Kahve verisi silinip baştan yükleniyor (hesaplar duruyor). Sonra: dogrula.py → RAPOR.md.
+- [x] 2026-10-27 TAMAM: Örnek Kahve 30 gün canlıda; bağımsız doğrulama 30 rapor / 94 satır / 0 kritik uyuşmazlık;
+  gerçek AI 26 fatura doğru stoklandı. Rapor: RAPOR.md (yerel, git dışı). Sonraki adım: kullanıcının akşam kontrol listesi.
