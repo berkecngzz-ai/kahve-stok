@@ -401,3 +401,6 @@ simülasyonu, gerçek AI fatura testi, bağımsız doğrulama, RAPOR.md). Ayrın
 - [~] ADIM 3: Örnek Kahve hesapları canlıda açıldı (giriş: .local-work/ornek-kahve-giris.json, git dışı). Veri: `python scripts/simulasyon/uret.py`
   → `node scripts/simulasyon/yukle.mjs` (kaldığı yerden devam eder; durum cikti/yukleme-durum.json) → `python scripts/simulasyon/dogrula.py`.
   sql/27 (ürün firesi reçete sürümü) canlıda.
+- 2026-10-27: ilk simülasyon yüklemesinde bulunan 2 uygulama hatası düzeltildi ve CANLIDA: (1) "(12 dilim)" paket içi
+  çarpanı (eslestirme.js), (2) sql/28 — AI birim fiyatı tutarsız ama toplam + kör sayım + maliyet tutarlıysa stoğa girer.
+  Örnek Kahve verisi silinip baştan yükleniyor (hesaplar duruyor). Sonra: dogrula.py → RAPOR.md.
