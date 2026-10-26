@@ -3,3 +3,7 @@
 .env.*
 node_modules/
 supabase/.temp/
+
+# Yerel çalışma dosyaları ve raporlar (giriş bilgisi içerebilir) GitHub'a gitmez.
+.local-work/
+RAPOR.md
