@@ -71,7 +71,11 @@ export function carpanBul(belgeBirimi, malzemeBirimi, metin) {
   // Çoklu paket: "x12", "12x", "12'li", "12 li" (fiyat değil: "x 41,00" sayılmaz)
   let coklu = 1;
   const c1 = ham.match(/(?:^|\s|\*)x\s*(\d{1,4})(?![\d.,])/) || ham.match(/\b(\d{1,4})\s*x(?:\s|$)/)
-          || ham.match(/\b(\d{1,4})\s*['’]?\s*l[iıuü](?![a-zçğıöşü])/);
+          || ham.match(/\b(\d{1,4})\s*['’]?\s*l[iıuü](?![a-zçğıöşü])/)
+          // Paket içi dilim / porsiyon ("San Sebastian (12 dilim)") ya da parantez içinde adet ("(6 adet)").
+          // Parantezsiz "12 adet" sipariş miktarı olabilir: paket içi sayılmaz.
+          || ham.match(/\b(\d{1,4})\s*(?:dilim|porsiyon|parça|parca|slices?)(?![a-zçğıöşü])/)
+          || ham.match(/\((\d{1,4})\s*(?:adet|ad\.?|pcs|pc|tane)\)/);
   if (c1) coklu = Number(c1[1]);
   // Paket boyu
   const boy = ham.match(/(\d+(?:[.,]\d+)?)\s*(kg|gr|g|lt|l|ml|cl)(?![a-zçğıöşü])/);

@@ -26,6 +26,7 @@ export const ZINCIR = [
   'sql/24_sade_metinler.sql',
   'sql/25_satis_yalniz_rapor.sql', 'test/satis_raporu_test.sql',
   'sql/26_dogru_hesap.sql', 'sql/27_fire_recete_surumu.sql', 'test/dogru_hesap_test.sql',
+  'sql/28_fatura_birim_fiyat.sql', 'test/fatura_birim_fiyat_test.sql',
 ];
 
 // SQL metnini ifadelere böler: tırnak, $etiket$ gövdeleri ve yorumlar içindeki ';' bölmez.

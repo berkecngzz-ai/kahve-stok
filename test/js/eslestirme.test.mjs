@@ -108,3 +108,12 @@ test('iki yakın aday → en iyisi baristaya sorulur (yanlışsa "değil" der)',
   const r2 = siniflandir({ metin: 'LAKTOZSUZ KREMALI SÜT 1L', miktar: 1, birim: 'adet' }, { malzemeler: m2, defter: [], tedarikciAnahtar: '' });
   assert.equal(r2.sinif, 'soru');
 });
+
+test('paket içi dilim/porsiyon ve parantezli adet çarpanı; parantezsiz "12 adet" sipariş miktarıdır', async () => {
+  const { carpanBul } = await import('../../eslestirme.js');
+  assert.equal(carpanBul('adet', 'adet', 'San Sebastian Cheesecake (12 dilim)'), 12);
+  assert.equal(carpanBul('adet', 'adet', 'Havuçlu Kek 8 Porsiyon'), 8);
+  assert.equal(carpanBul('adet', 'adet', 'Brownie (6 adet)'), 6);
+  assert.equal(carpanBul('adet', 'adet', 'Cookie 12 adet'), 1);
+  assert.equal(carpanBul('adet', 'adet', 'Brownie'), 1);
+});
