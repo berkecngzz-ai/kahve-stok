@@ -68,18 +68,62 @@ function suggest(key,active){
  }
  return best&&!tie?best.id:null;
 }
-// memory: Map(kasa anahtarı → urun_id | null). null: "tarifi yok, stoktan düşme" (atlanır, ignored'a yazılır).
-// Boş adetli satır (kategori başlığı) atlanır; iade (eksi) aynı ürünün toplamından düşer.
+// İsteğe bağlı sütunlar: tarih, saat (ya da tarih+saat), fiş/işlem no, durum (satış/iptal/iade), tutar.
+const DATE_COL=v=>/^(tarih|date|gun|islem tarihi|satis tarihi|fis tarihi|siparis tarihi|business date)$/.test(v)?2:0;
+const DATETIME_COL=v=>/^(tarih ?\/? ?saat|tarih saat|zaman|datetime|date ?\/? ?time|islem zamani|created at|time stamp|timestamp)$/.test(v)?2:0;
+const TIME_COL=v=>/^(saat|time|islem saati)$/.test(v)?2:0;
+const FIS_COL=v=>/^(fis|fis no|fis numarasi|adisyon|adisyon no|islem no|belge no|receipt|receipt no|receipt number|order|order no|order id|transaction|transaction id|check|check no|ticket|ticket no|siparis no)$/.test(v)?2:0;
+const DURUM_COL=v=>/^(durum|status|islem tipi|islem turu|tip|tur|type|transaction type|hareket)$/.test(v)?2:0;
+const TUTAR_COL=v=>/^(tutar|toplam tutar|net tutar|satis tutari|amount|net sales|gross sales|total|toplam|ciro)$/.test(v)?2:0;
+const firstCol=(cells,score)=>cells.findIndex(c=>score(c)>0);
+const pad=n=>String(n).padStart(2,'0');
+// Tarih: "18.10.2026", "18/10/2026", "2026-10-18", Excel seri sayısı (46313); saat "14:22", "14:22:05", Excel kesri.
+export function parseDate(v){
+ const s=String(v??'').trim();if(!s)return null;
+ let m;
+ if((m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s)))return `${m[1]}-${m[2]}-${m[3]}`;
+ if((m=/^(\d{1,2})[./](\d{1,2})[./](\d{4})/.exec(s)))return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+ if(/^\d{5}(\.\d+)?$/.test(s)){const d=new Date(Math.round((Number(s)-25569)*864e5));return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;}
+ return undefined;
+}
+export function parseTime(v){
+ const s=String(v??'').trim();if(!s)return null;
+ let m;
+ if((m=/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/.exec(s)))return `${pad(m[1])}:${m[2]}:${m[3]??'00'}`;
+ if(/^\d*\.\d+$/.test(s)||/^\d{5}\.\d+$/.test(s)){const f=Number(s)%1,t=Math.round(f*86400);return `${pad(Math.floor(t/3600)%24)}:${pad(Math.floor(t/60)%60)}:${pad(t%60)}`;}
+ return undefined;
+}
+// Tutar: "1.234,50" (TR), "1234.50", "1,234.50" (EN), "-165,00"
+export function parseAmount(v){
+ let s=String(v??'').trim().replace(/\s|tl|₺|try/gi,'');if(!s)return null;
+ if(/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(s))s=s.replace(/\./g,'').replace(',','.');
+ else if(/^-?\d{1,3}(,\d{3})*(\.\d+)?$/.test(s))s=s.replace(/,/g,'');
+ else s=s.replace(',','.');
+ const n=Number(s);return Number.isFinite(n)?Math.round(n*100)/100:null;
+}
+const durumTuru=v=>{const d=normalize(v);if(!d)return null;
+ if(/iptal|void|cancel|silindi|geri alindi/.test(d))return 'iptal';
+ if(/iade|refund|return/.test(d))return 'iade';
+ return 'satis';};
+
+// Satır bazında okuma. memory: Map(kasa anahtarı → urun_id | null); null: "takip etmiyoruz" (stoktan düşmez).
+// Dönüş: lines (her satış/iptal/iade satırı: tarih, saat, fiş, ad, adet, tutar, tür, urun_id | null), matched (ürün başına net
+// satış: satış − iptal; özet için), unmatched (seçim gereken kasa adları), ignored (takip edilmeyenler), hasDate, period, counts.
+// İade (verildikten sonra para iadesi) ve türü belirsiz eksi satır stoğa etki etmez; yalnız sayılır.
 export function matchSales(rows,products,memory=new Map()){
- let header=-1,ni=-1,qi=-1;
+ let header=-1,ni=-1,qi=-1,cols=null;
  for(let i=0;i<Math.min(rows.length,20);i++){
   const r=rows[i].map(normalize),n=bestColumn(r,nameScore),q=bestColumn(r,qtyScore);
-  if(n>=0&&q>=0&&n!==q){header=i;ni=n;qi=q;break;}
+  if(n>=0&&q>=0&&n!==q){header=i;ni=n;qi=q;
+   cols={tarih:firstCol(r,DATE_COL),zaman:firstCol(r,DATETIME_COL),saat:firstCol(r,TIME_COL),fis:firstCol(r,FIS_COL),
+    durum:firstCol(r,DURUM_COL),tutar:firstCol(r,TUTAR_COL)};
+   break;}
  }
  if(header<0)throw Error('Ürün adı ve adet sütunları bulunamadı.');
+ const hasDate=cols.tarih>=0||cols.zaman>=0;
  const active=products.filter(p=>p.aktif!==false),activeIds=new Set(active.map(p=>p.id));
- const totals=new Map(),unmatched=new Map(),ignored=new Map();
- const add=(map,k,v,amount)=>{const x=map.get(k)||{...v,quantity:0};x.quantity+=amount;map.set(k,x);};
+ const resolve=new Map();          // kasa anahtarı → {id} | {ignore:true} | {suggestion}
+ const lines=new Map();
  for(let i=header+1;i<rows.length;i++){
   const r=rows[i];if(!r.some(v=>String(v??'').trim()))continue;
   const raw=String(r[ni]??'').trim();if(!raw||isTotalRow(normalize(raw)))continue;
@@ -88,20 +132,50 @@ export function matchSales(rows,products,memory=new Map()){
   if(!Number.isSafeInteger(amount))throw Error(`${i+1}. satırın adedi okunamadı ("${String(r[qi]).trim()}").`);
   if(Math.abs(amount)>100000)throw Error(`${i+1}. satırın adedi geçersiz.`);
   if(!amount)continue;
+  let tarih=null,zaman=null;
+  if(cols.zaman>=0){tarih=parseDate(r[cols.zaman]);const t=parseTime(r[cols.zaman]);if(tarih&&t)zaman=`${tarih} ${t}`;}
+  if(!tarih&&cols.tarih>=0)tarih=parseDate(r[cols.tarih]);
+  if(hasDate&&tarih===undefined)throw Error(`${i+1}. satırın tarihi okunamadı ("${String(r[cols.tarih>=0?cols.tarih:cols.zaman]).trim()}").`);
+  if(hasDate&&!tarih)continue;                       // tarihsiz ara satır (kategori başlığı vb.)
+  if(!zaman&&tarih&&cols.saat>=0){const t=parseTime(r[cols.saat]);if(t)zaman=`${tarih} ${t}`;}
+  let tur=cols.durum>=0?durumTuru(r[cols.durum])??'satis':'satis';
+  if(amount<0&&tur==='satis')tur='iade';             // türü belirsiz eksi satır: iade sayılır, stok artmaz
+  const fis=cols.fis>=0?String(r[cols.fis]??'').trim().slice(0,60)||null:null;
+  const tutar=cols.tutar>=0?parseAmount(r[cols.tutar]):null;
   const key=salesKey(raw);
-  // Sıra: hatırlanan ürün → menüde birebir aynı ad → hatırlanan "takip edilmiyor" → seçim. (Takip dışı bırakılan ürün
-  // sonradan menüye aynı adla eklenirse kendiliğinden sayılmaya başlar.)
-  let id=memory.get(key);
-  if(id&&!activeIds.has(id))id=undefined;
-  if(!id){const found=active.filter(p=>normalize(p.ad)===key);id=found.length===1?found[0].id:undefined;}
-  if(!id&&memory.get(key)===null){add(ignored,key,{name:raw,key},amount);continue;}
-  if(!id){add(unmatched,key,{name:raw,key,row:i+1,suggestion:suggest(key,active)},amount);continue;}
-  const sum=(totals.get(id)||0)+amount;if(sum>100000)throw Error('Bir ürün için toplam adet 100000 sınırını aşıyor.');totals.set(id,sum);
+  if(!resolve.has(key)){
+   let id=memory.get(key);
+   if(id&&!activeIds.has(id))id=undefined;
+   if(!id){const found=active.filter(p=>normalize(p.ad)===key);id=found.length===1?found[0].id:undefined;}
+   resolve.set(key,id?{id}:memory.get(key)===null?{ignore:true}:{suggestion:suggest(key,active),name:raw,row:i+1});
+  }
+  // Aynı fiş / saat / gün + ürün + tür tek satırda toplanır (sunucu bu birleşimle mükerrer satırı tanır).
+  const lk=[tarih,zaman,fis,key,tur].join('|');
+  const x=lines.get(lk)||{tarih,zaman,fis_no:fis,ad:raw,ad_anahtar:key,adet:0,tutar:null,tur};
+  x.adet+=Math.abs(amount);
+  if(x.adet>100000)throw Error('Bir ürün için toplam adet 100000 sınırını aşıyor.');
+  if(tutar!==null)x.tutar=Math.round(((x.tutar??0)+Math.abs(tutar))*100)/100;
+  lines.set(lk,x);
  }
- const matched=[...totals].filter(([,m])=>m>0).map(([urun_id,miktar])=>({urun_id,miktar}));
- const un=[...unmatched.values()].filter(x=>x.quantity>0);
- if(!matched.length&&!un.length&&!ignored.size)throw Error('Raporda satış adedi bulunamadı.');
- return {matched,unmatched:un,ignored:[...ignored.values()]};
+ const all=[...lines.values()];
+ for(const l of all){const r=resolve.get(l.ad_anahtar);l.urun_id=r.id??null;}
+ // Ürün başına net (satış − iptal, gruplara göre en az 0) — ekranda özet için.
+ const grup=new Map();
+ for(const l of all){if(l.tur==='iade')continue;const g=[l.tarih,l.fis_no??l.zaman??'',l.ad_anahtar].join('|');
+  const v=grup.get(g)||{key:l.ad_anahtar,net:0};v.net+=l.tur==='satis'?l.adet:-l.adet;grup.set(g,v);}
+ const netKey=new Map();for(const v of grup.values())netKey.set(v.key,(netKey.get(v.key)||0)+Math.max(0,v.net));
+ const totals=new Map(),unmatched=[],ignored=[];
+ for(const [key,net] of netKey){
+  const r=resolve.get(key);if(!net)continue;
+  if(r.id){const sum=(totals.get(r.id)||0)+net;if(sum>100000*400)throw Error('Bir ürün için toplam adet çok büyük.');totals.set(r.id,sum);}
+  else if(r.ignore)ignored.push({name:all.find(l=>l.ad_anahtar===key).ad,key,quantity:net});
+  else unmatched.push({name:r.name,key,row:r.row,suggestion:r.suggestion,quantity:net});
+ }
+ const matched=[...totals].map(([urun_id,miktar])=>({urun_id,miktar}));
+ if(!all.length)throw Error('Raporda satış adedi bulunamadı.');
+ const tarihler=all.map(l=>l.tarih).filter(Boolean).sort();
+ const counts={satis:0,iptal:0,iade:0};for(const l of all)counts[l.tur]+=l.adet;
+ return {matched,unmatched,ignored,lines:all,hasDate,period:tarihler.length?[tarihler[0],tarihler.at(-1)]:null,counts};
 }
 // Bazı kasa programları "Excel" diye HTML tablo verir (.xls / .htm). Hücre metinleri satır satır.
 export function htmlRows(text){

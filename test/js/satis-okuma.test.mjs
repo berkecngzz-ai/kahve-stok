@@ -16,10 +16,11 @@ test('BOM, tırnaklı virgül, satır sonu, farklı sütun sırası, toplam sat�
  assert.equal(matchSales(rows,[...products,{id:'extra',ad:'Özel, Kahve'}]).matched.length,2);
  assert.deepEqual(csvRows('Ürün;Adet\n"Çift ""espresso""";2')[1],['Çift "espresso"','2']);
 });
-test('kesir, bozuk, belirsiz sütun, taşma ve bozuk CSV kaydedilmez; boş adet atlanır, iade düşer',()=>{
+test('kesir, bozuk, belirsiz sütun, taşma ve bozuk CSV kaydedilmez; boş adet atlanır, iade stoğu artırmaz',()=>{
  for(const q of ['1,5','NaN','100001','1,250','abc'])assert.throws(()=>matchSales([['Ürün','Adet'],['Latte',q]],products));
  assert.throws(()=>matchSales([['Ürün','Adet'],['Latte','']],products),/bulunamadı/);
- assert.deepEqual(matchSales([['Ürün','Adet'],['Latte','10'],['Latte','-2'],['Americano','-1']],products).matched,[{urun_id:'0',miktar:8}]);
+ const ia=matchSales([['Ürün','Adet'],['Latte','10'],['Latte','-2'],['Americano','-1']],products);
+ assert.deepEqual(ia.matched,[{urun_id:'0',miktar:10}]);assert.deepEqual(ia.counts,{satis:10,iptal:0,iade:3});
  assert.throws(()=>matchSales([['Ürün','Adet','Quantity'],['Latte',1,1]],products));
  assert.throws(()=>csvRows('Ürün;Adet\n"Latte;3'));
  assert.throws(()=>matchSales([['Ürün','Adet'],['Latte',100000],['Latte (İKRAM)',1]],products));
@@ -47,8 +48,8 @@ test('XLSX MIME içindeki xml sözcüğü dosya uzantısını XML yapmaz',()=>{
 });
 test('kasa programlarının başlıkları: Stok Adı / Satış Miktarı; kod, grup, fiyat sütunları aday değil; özet satırları atlanır',()=>{
  const p=[{id:'1',ad:'Latte'}];
- assert.deepEqual(matchSales([['Stok Kodu','Stok Adı','Satış Miktarı','Tutar'],['L01','Latte','12','840'],['','ARA TOPLAM:','12','840'],['','Genel Toplam (TL)','12','840']],p),
-  {matched:[{urun_id:'1',miktar:12}],unmatched:[],ignored:[]});
+ assert.deepEqual(matchSales([['Stok Kodu','Stok Adı','Satış Miktarı','Tutar'],['L01','Latte','12','840'],['','ARA TOPLAM:','12','840'],['','Genel Toplam (TL)','12','840']],p
+  ).matched,[{urun_id:'1',miktar:12}]);
  assert.deepEqual(matchSales([['Ürün Kodu','Ürün Adı','Ürün Grubu','Adet','Birim Fiyatı'],['1','Latte','Sıcak','3','70']],p).matched,[{urun_id:'1',miktar:3}]);
  assert.deepEqual(matchSales([['Item Description','Qty Sold','Price'],['Latte','4','0']],p).matched,[{urun_id:'1',miktar:4}]);
  // "Toplama" gibi toplamla başlamayan ürün adı atlanmaz; birebir bilinen başlık (Satış Adedi) benzerine (İade Adedi) üstün
@@ -116,10 +117,26 @@ test('örnek kasa raporları (4 biçim) aynı toplamı verir',async()=>{
   toplamlar.push([...r.matched.map(x=>x.miktar),...r.unmatched.map(x=>x.quantity)].reduce((a,c)=>a+c,0));
   assert.ok(r.unmatched.some(x=>/san sebastian/.test(x.key)&&x.suggestion===null),f+': San Sebastian takip dışı olmalı');
  }
- assert.deepEqual(toplamlar,[1845,1845,1845,1845]);
+ assert.deepEqual(toplamlar,[1848,1848,1848,1848]);   // iade satırları (−3) stoğa etki etmez
 });
 test('menüde yazım hatası olan ürün sessizce atlanmaz, öneri olarak gelir; farklı ürünler karışmaz',()=>{
  const p=[{id:'C',ad:'cappucino'},{id:'L',ad:'Latte'},{id:'M',ad:'Matcha'}];
  const r=matchSales([['Ürün','Adet'],['Cappuccino','91'],['Mocha','4'],['Chai Latte','2'],['Lattee','3']],p);
  assert.deepEqual(Object.fromEntries(r.unmatched.map(x=>[x.name,x.suggestion])),{Cappuccino:'C',Mocha:null,'Chai Latte':null,Lattee:'L'});
+});
+
+test('satır bazında: fiş, tarih/saat, durum; aynı fişin aynı ürünü birleşir; satışsız iptal 0; Excel tarih/saat sayıları',()=>{
+ const p=[{id:'L',ad:'Latte'},{id:'E',ad:'Espresso'}];
+ const r=matchSales([['Fiş No','Tarih','Saat','Ürün','Adet','Tutar','Durum'],
+  ['A1','03.10.2026','14:22','Latte','2','330,00','Satış'],['A1','03.10.2026','14:22','Latte','1','165,00','Satış'],
+  ['A2','03.10.2026','15:00','Latte','1','165,00','İptal'],['A3','04.10.2026','09:10','Espresso','1','110','İade'],
+  ['','','','SICAK İÇECEKLER','',''],['A4','2026-10-04','09:15','Latte','1','165','Satış']],p);
+ assert.deepEqual(r.matched,[{urun_id:'L',miktar:4}]);
+ assert.deepEqual(r.period,['2026-10-03','2026-10-04']);
+ assert.equal(r.lines.length,4);
+ assert.deepEqual(r.lines[0],{tarih:'2026-10-03',zaman:'2026-10-03 14:22:00',fis_no:'A1',ad:'Latte',ad_anahtar:'latte',adet:3,tutar:495,tur:'satis',urun_id:'L'});
+ assert.equal(r.lines.find(l=>l.fis_no==='A3').tur,'iade');
+ const x=matchSales([['Tarih Saat','Ürün','Adet'],['46313.6','Latte','2']],p);
+ assert.equal(x.lines[0].zaman,'2026-10-18 14:24:00');
+ assert.throws(()=>matchSales([['Tarih','Ürün','Adet'],['31-31-2026','Latte','1']],p),/tarihi okunamadı/);
 });
