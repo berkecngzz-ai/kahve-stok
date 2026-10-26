@@ -389,3 +389,9 @@ programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
 - Aynı güne ikinci satış reddedilir (istemci önceden sorar). Yedek: `kahve-stok-yedek/2026-10-24_satis-rapor-oncesi`.
   Geri alma: `scripts/geri-al-25.sql` (zincirde test edildi).
 - Doğrulanmadı: gerçek kasa programı dosyası; barista yüklemesinin patron tarafından depodan açılması (demoda depo içerik saklamıyor).
+
+## ÜRÜNLEŞME GÖREVİ — 2026-10-26 (devam notu; oturum kesilirse buradan sürdür)
+Görev: kullanıcının "gerçek kafede güvenilir ürün" görevi (yedek+sıfırlama, denetim, hesap kuralları, Örnek Kahve 30 gün
+simülasyonu, gerçek AI fatura testi, bağımsız doğrulama, RAPOR.md). Ayrıntı RAPOR.md'de (yerel, git'e girmez).
+- [x] ADIM 0: yedek `Desktop/kahve-stok-yedek/2026-10-26_sifirlama-oncesi` (veritabani/ 22 tablo + _auth_kullanicilar.json,
+  _dosyalar/ 15 görsel). Canlı SIFIRLANDI: tüm mekan verisi + depo + 3 deneme kullanıcısı silindi; Berke hesabı (patron+kurulum) kaldı.
