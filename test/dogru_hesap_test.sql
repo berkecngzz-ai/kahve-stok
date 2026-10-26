@@ -275,3 +275,12 @@ select pg_temp.hata_bekle(format($$select public.satis_raporu_isle(pg_temp.rapor
   pg_temp.satir(public.bugun() - 2, 'Latte', :'latte', 1)), 'bu mekana ait olmayan');
 select pg_temp.hata_bekle(format($$select public.sayim_duzelt(%L, %L, 1)$$, :'s3', :'sut'), 'Sayım bulunamadı');
 reset role;
+
+-- KURAL (sql/27): ürün firesi fire gününün reçetesiyle — Kafe B Latte: D-8 → 200 ml (v2), D-4 → 190 ml (D-5 sürümü)
+set role authenticated;
+select pg_temp.ol('f6f6f6f6-0000-0000-0000-000000000003','patronDB@x.com');
+select public.giris_kaydet('fire', public.bugun() - 8, 'Döküldü', jsonb_build_array(jsonb_build_object('urun_id', :'latteb', 'miktar', 1))) as fu8 \gset
+select public.giris_kaydet('fire', public.bugun() - 4, 'Döküldü', jsonb_build_array(jsonb_build_object('urun_id', :'latteb', 'miktar', 2))) as fu4 \gset
+reset role;
+select pg_temp.dogrula((select miktar = 200 from malzeme_hareketleri where giris_id = :'fu8'), 'D-8 ürün firesi 200 ml değil');
+select pg_temp.dogrula((select miktar = 380 from malzeme_hareketleri where giris_id = :'fu4'), 'D-4 ürün firesi 2×190 değil');
