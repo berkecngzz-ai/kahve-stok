@@ -73,7 +73,8 @@ await adim('malzemeler', async () => {
   }
   return ham.malzemeler.length;
 });
-const { data: mz } = await P.sb.from('malzemeler').select('id, ad, birim, aktif, fiyat');
+const { data: mz, error: mzHata } = await P.sb.from('malzemeler').select('id, ad, birim, aktif');
+if (mzHata) throw mzHata;
 const malzemeId = Object.fromEntries(ham.malzemeler.map((m) => [m.kod, mz.find((x) => x.ad === m.ad).id]));
 await adim('urunler', async () => {
   let n = 0;
@@ -157,7 +158,8 @@ async function faturaYukle(f, { dosyaAdi = f.id, ozetDosya = f.dosya } = {}) {
         s.karar = { ...s.karar, carpan: STOK_SAYIM[m.birim] };
         g.barista = `stok biriminde saydı: ${n}`;
       } else {
-        const n = t.gelen;                                 // barista faturadaki birimle (koli / paket / adet / litre) sayar
+        // Barista ekranın sorduğu birimle sayar (uygulama: sayımBirimi — litre, kg, adet ya da paket/koli): fiziksel gelen ÷ çarpan.
+        const n = Math.round(((t.gelen * t.carpan) / Number(s.karar.carpan)) * 1000) / 1000;
         Object.assign(s, { sayim: 'sayildi', gelen_miktar: n, cevap: 'evet' });
         let k;
         if (s.miktar == null) k = { karar: 'okuma_hatasi' };
@@ -251,6 +253,7 @@ for (let n = 1; n <= 30; n++) {
     if (f.teslim_gunu !== f.fatura_gunu) {
       await adim(`teslim-${f.id}`, async () => {
         const { data } = await P.sb.from('belgeler').select('giris_id').eq('id', g.belge_id).single();
+        if (!data?.giris_id) return { atlandi: 'fatura stoğa girmedi (kontrolde)' };
         await rpc(P.sb, 'fatura_teslim_tarihi', { p_giris: data.giris_id, p_tarih: gun(f.teslim_gunu) });
         return { giris: data.giris_id, eski: g.okunan_tarih, yeni: gun(f.teslim_gunu) };
       });
