@@ -395,3 +395,6 @@ Görev: kullanıcının "gerçek kafede güvenilir ürün" görevi (yedek+sıfı
 simülasyonu, gerçek AI fatura testi, bağımsız doğrulama, RAPOR.md). Ayrıntı RAPOR.md'de (yerel, git'e girmez).
 - [x] ADIM 0: yedek `Desktop/kahve-stok-yedek/2026-10-26_sifirlama-oncesi` (veritabani/ 22 tablo + _auth_kullanicilar.json,
   _dosyalar/ 15 görsel). Canlı SIFIRLANDI: tüm mekan verisi + depo + 3 deneme kullanıcısı silindi; Berke hesabı (patron+kurulum) kaldı.
+- [x] ADIM 1-2: denetim + sql/26 (reçete sürümü, POS satır, iptal/iade, teslim tarihi, sayım düzeltme, ortalama maliyet,
+  reçetesiz uyarı, günlük süt/haftalık ayrımı) + ön yüz. CANLIDA (2026-10-26). Testler: test/dogru_hesap_test.sql.
+- [ ] ADIM 3: Örnek Kahve simülasyonu (scripts/simulasyon/) — sıradaki
