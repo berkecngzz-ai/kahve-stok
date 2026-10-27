@@ -39,6 +39,11 @@
   Kök 2 (sql/33): mükerrer kontrolü yalnız başlık alanlarına bakıyordu → içerik izi: aynı fatura tarihi + genel toplam +
   satır tutarları (KDV dahil) aynıysa "yüklenmiş olabilir" → "Aynı fatura mı?". Miktar ize girmez. Test: icerik_mukerrer_test.
   Canlıdaki gerçek çift (PDF/AI) aynı izi veriyor (80.00|600.00). Dış testin kaydı iptal edilmişti.
+- KABUL TESTİ (2026-10-28 gece) — rapor: Desktop\CoffeeStock-kabul-testi\RAPOR.md. test/kabul/ (yerel: 2 TEST kafe 30 gün,
+  bağımsız defter 93 satır 0 uyuşmazlık; izolasyon 71, hatalı girdi 23, mükerrer 19 deneme geçti; arayüz uçtan uca; canlı 46
+  okuma izolasyon + 7 AI okuma + mükerrer doğrulama). Düzeltilen: fire ml/litre sorusu (app.js), pasif malzeme stoğu (sql/34).
+  Açık kararlar: kapanmış hafta uyarısı, geç fatura günü barista sorusu, barista geriye tarih sınırı, sayım sonrası foto yönlendirmesi.
+  Yerel sunucu: --veri scripts/demo/bos-veri.sql + /auth/v1/signup; çalıştır: bash .local-work/kabul-calistir.sh (port 8788).
 - Starbucks Marmaris demo: 13–20 Ekim (müdahalesiz test haftası) + 20–27 Ekim; scriptler .local-work/demo-hafta/.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
