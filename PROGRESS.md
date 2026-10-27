@@ -9,6 +9,12 @@
   işlem geçmişine yazılır). Kök neden: dönem sayım GÜNLERİ arasında; geç gönderilen sayım yanlış güne düşüyordu.
   Girişler'de fatura teslim günü + sayım günü artık telefon tarih seçicisiyle. Test: test/sayim_tarihi_test.sql
   (akşam senaryosu, her şey bugün + ilk sayım düne → süt −500 ml / −25 TL). Canlı doğrulama yine 0 uyuşmazlık.
+- sql/30 (CANLIDA, 2026-10-28) — canlı hata: Starbucks Marmaris'te açılış sayımı 0 → mal kabul → stokta görünmedi.
+  Kök: (1) fatura stok tarihi faturanın BASILI tarihiydi (01.10) → sayımdan önce sayıldı; artık yüklendiği gün
+  (belgeler.teslim_tarihi ile değişir). (2) Aynı gün sıra: `sayimdan_sonra()` — malzemenin İLK (açılış) sayımından sonra
+  aynı gün girilen her şey sonradır; sonraki sayımlarda yalnız kendi gününde girilmiş fatura/fire saat sırasıyla, satış güne
+  göre (önce). stok_durumu + stok_farki bu kuralla. Örnek Kahve doğrulaması yine 0 uyuşmazlık (geçmiş veri etkilenmedi).
+  Kullanıcının faturası tek seferlik yüklendiği güne (27.10) alındı. Test: test/ayni_gun_test.sql. Geri al: scripts/geri-al-30.sql.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
 
