@@ -16,7 +16,7 @@ const MODULLER = ['app.js', 'satis-okuma.js', 'okuma.js', 'eslestirme.js', 'kare
 const DIGER = ['style.css', 'index.html', 'fonts/fonts.css'];
 const oku = (d) => readFileSync(join(KOK, d), 'utf8');
 // Etiketin kendisi hesaba girmesin (aynı içerik → aynı etiket)
-const temiz = (t) => t.replace(/\?v=[0-9a-f]{10}/g, '').replace(/const SURUM = '[0-9a-f]*';/, "const SURUM = '';");
+const temiz = (t) => t.replace(/\r\n/g, '\n').replace(/\?v=[0-9a-f]{10}/g, '').replace(/const SURUM = '[0-9a-f]*';/, "const SURUM = '';");
 
 const h = createHash('sha256');
 for (const d of [...MODULLER, ...DIGER]) h.update(d).update(temiz(oku(d)));
