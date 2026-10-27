@@ -190,3 +190,21 @@ test('tedarikçi: "A.Ş." ve sondaki "e-FATURA"', () => {
   const r = metinCoz(['DENEME KAHVE KAVURMA A.Ş.  e-FATURA', 'VKN: 2222222222']);
   assert.equal(r.tedarikci, 'DENEME KAHVE KAVURMA A.Ş.');
 });
+
+// Canlı test (2026-10-28): numara 20 karakterde kesiliyordu, unvan eki olmayan tedarikçi ve "KDV hariç toplam / KDV toplamı"
+// okunmuyordu → aynı faturanın fotoğrafı ayrı fatura sanıldı.
+test('PDF: uzun fatura numarası kesilmez, ekli olmayan tedarikçi ve KDV toplamları okunur', () => {
+  const r = metinCoz(['TEST TEDARİKÇİ', 'FATURA - YAZILIM TEST BELGESİ', 'Fatura No: TEST-OCR-20261028-001', 'Tarih: 28.10.2026',
+    'Alıcı: TEST 14 GUN 20261028-5e78f9', 'Ürün / Hizmet  Miktar  Birim  Birim fiyat  Tutar',
+    'TEST Kahve  1  kg  600,00  600,00', 'TEST Süt  2  litre  40,00  80,00', 'Fiyatlar KDV dahildir.',
+    'KDV hariç toplam: 618,18 TL', 'KDV toplamı (%10): 61,82 TL', 'GENEL TOPLAM: 680,00 TL']);
+  assert.equal(r.fatura_no, 'TEST-OCR-20261028-001');
+  assert.equal(r.tedarikci, 'TEST TEDARİKÇİ');
+  assert.deepEqual([r.toplamlar.genel, r.toplamlar.kdv_haric, r.toplamlar.kdv], [680, 618.18, 61.82]);
+  assert.deepEqual(r.satirlar.map((s) => [s.miktar, s.tutar_dahil]), [[1, 600], [2, 80]]);
+});
+
+test('PDF: 40 karakterden uzun numara kesik okunmaz', () => {
+  const r = metinCoz(['Fatura No: ' + 'A'.repeat(45), 'GENEL TOPLAM: 10,00']);
+  assert.equal(r.fatura_no, null);
+});

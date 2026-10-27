@@ -75,3 +75,4 @@ select pg_temp.dogrula((:'rap')::jsonb ->> 'uyarilar' like '%Kurabiye%' and (:'r
 -- Yalnız menü dışı ürün içeren rapor reddedilir
 select pg_temp.hata_bekle(format($$select public.satis_raporu_isle(pg_temp.rapor(%L), jsonb_build_array(pg_temp.satir(public.bugun(), 'Su 0,5 L', null, 4)))$$, :'ma'),
   'menüdeki ürünlerden hiçbiri yok');
+reset role;

@@ -6,8 +6,8 @@
 //   | Ak Çiftlik Tam Yağlı Süt 1L | 24 Adet | 924,00 | Süt 24 L |
 //   Ara toplam **1.776,00**, KDV **17,76**, genel toplam **1.793,76 TL**
 
-import { anahtar, kelimeler } from './eslestirme.js?v=7fc5ebb3a5';
-import { trSayi } from './okuma.js?v=7fc5ebb3a5';
+import { anahtar, kelimeler } from './eslestirme.js?v=2785cbfc8d';
+import { trSayi } from './okuma.js?v=2785cbfc8d';
 
 const BIRIM_CEVIR = { l: ['ml', 1000], lt: ['ml', 1000], litre: ['ml', 1000], ml: ['ml', 1],
   kg: ['g', 1000], g: ['g', 1], gr: ['g', 1], adet: ['adet', 1] };

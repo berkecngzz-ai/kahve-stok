@@ -33,6 +33,12 @@
 - sql/32 (CANLIDA, 2026-10-28) — KURAL: menüye girilmemiş ürün yok sayılır (okunmaz, kaydedilmez, uyarı/rapor yok).
   satis_raporu_isle = v26 + urun_id boş satırları atar; tarifsiz_satislar/rapor uyarısı yalnız menüdeki reçetesiz ürün.
   Satış raporu ekranında "Takip edilmeyenler" kaldırıldı; menü dışı satırlar gönderilmez. Eski menü dışı satırlar silinmedi.
+- Mükerrer (CANLIDA, 2026-10-28) — dış test: aynı faturanın PDF'i + fotoğrafı ikisi de stoğa girdi (+1 kg kahve, +2 L süt).
+  Kök 1 (okuma.js metinCoz): numara 20 karakterde kesiliyordu (artık 40, kesik numara okunmaz), unvan eki olmayan
+  tedarikçi boştu (ilk satır yedeği), "KDV hariç toplam"/"KDV toplamı" ve "Fiyatlar KDV dahildir" tanınmıyordu.
+  Kök 2 (sql/33): mükerrer kontrolü yalnız başlık alanlarına bakıyordu → içerik izi: aynı fatura tarihi + genel toplam +
+  satır tutarları (KDV dahil) aynıysa "yüklenmiş olabilir" → "Aynı fatura mı?". Miktar ize girmez. Test: icerik_mukerrer_test.
+  Canlıdaki gerçek çift (PDF/AI) aynı izi veriyor (80.00|600.00). Dış testin kaydı iptal edilmişti.
 - Starbucks Marmaris demo: 13–20 Ekim (müdahalesiz test haftası) + 20–27 Ekim; scriptler .local-work/demo-hafta/.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.

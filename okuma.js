@@ -135,8 +135,8 @@ const TOPLAM_ETIKETLERI = [
   ['genel', /vergiler\s*dahil\s*toplam/i, 2],
   ['genel', /genel\s*toplam/i, 1],
   ['kdv_haric', /mal\s*(?:\/\s*)?hizmet\s*toplam/i, 2],
-  ['kdv_haric', /(ara\s*toplam|kdv\s*matrah)/i, 1],
-  ['kdv', /(toplam\s*kdv|kdv\s*tutar|katma\s*değer\s*vergisi|^\s*top\.?\s*kdv)/i, 1],
+  ['kdv_haric', /(ara\s*toplam|kdv\s*matrah|kdv\s*hari[çc]\s*toplam)/i, 1],
+  ['kdv', /(toplam\s*kdv|kdv\s*tutar|kdv\s*toplam|katma\s*değer\s*vergisi|^\s*top\.?\s*kdv)/i, 1],
   ['indirim', /(toplam\s*[iİı]skonto|[iİı]ndirim\s*toplam|toplam\s*[iİı]ndirim)/i, 1],
   ['genel', /^\s*(toplam|tutar)\s*[:*₺]?\s*\d/i, 0.5],         // fiş: "TOPLAM *609,75"
 ];
@@ -208,15 +208,20 @@ export function metinCoz(satirlar) {
   const fisMi = FIS_IZI.test(hepsi);
 
   const ettn = hepsi.match(/ETTN\s*:?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1] ?? null;
-  const fatura_no = hepsi.match(/Fatura\s*No\s*:?\s*([A-Z0-9]{3}20\d{11}|[A-Z0-9][A-Z0-9-]{4,19})/i)?.[1]
-    ?? hepsi.match(/(?:Belge|Fiş|Seri)\s*No\s*:?\s*([A-Z0-9][A-Z0-9-]{3,19})/i)?.[1]
-    ?? hepsi.match(/(?:^|\s)No\s*:\s*((?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{4,19})/)?.[1] ?? null;
+  // Numara sonuna kadar alınır (kesilmiş numara mükerrer kontrolünü şaşırtır); 40 karakteri aşan numara okunmaz.
+  const fatura_no = hepsi.match(/Fatura\s*No\s*:?\s*([A-Z0-9]{3}20\d{11}(?![A-Z0-9])|[A-Z0-9][A-Z0-9-]{4,39}(?![A-Z0-9-]))/i)?.[1]
+    ?? hepsi.match(/(?:Belge|Fiş|Seri)\s*No\s*:?\s*([A-Z0-9][A-Z0-9-]{3,39}(?![A-Z0-9-]))/i)?.[1]
+    ?? hepsi.match(/(?:^|\s)No\s*:\s*((?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{4,39}(?![A-Z0-9-]))/)?.[1] ?? null;
   const t = hepsi.match(/(?:Fatura\s*Tarihi|Düzenleme\s*Tarihi|Tarih)\s*:?\s*(\d{2})[./-](\d{2})[./-](\d{4})/i)
          ?? hepsi.match(/(\d{2})[./-](\d{2})[./-](20\d{2})/);
   const tarih = t ? `${t[3]}-${t[2]}-${t[1]}` : null;
   const vkn = hepsi.match(/(?:VKN|TCKN|Vergi\s*(?:Kimlik\s*)?(?:No|Numarası))\s*:?\s*(\d{10,11})(?!\d)/i)?.[1] ?? null;
   const unvan = new RegExp(`(?<![${HARF}])(A\\.?\\s?Ş|LTD|ŞTİ|STI|TİC|TIC|SAN|GIDA|GDA|PAZARLAMA|DAĞITIM|MARKET|TOPTAN)(?![${HARF}])`, 'i');
-  const tedarikciSatiri = temiz.slice(0, 12).find((s) => unvan.test(s) && !/sayın|alıcı|müşteri/i.test(s));
+  // Unvan eki (A.Ş., LTD…) olan satır; yoksa belgenin ilk satırı (satıcı faturada en üstte yazar) — başlık, etiket ya da
+  // rakam satırı değilse.
+  const tedarikciSatiri = temiz.slice(0, 12).find((s) => unvan.test(s) && !/sayın|alıcı|müşteri/i.test(s))
+    ?? temiz.slice(0, 1).find((s) => s.length <= 60 && (s.match(new RegExp(`[${HARF}]`, 'g')) ?? []).length >= 4
+      && !/:|\d{3}|fatura|fiş|e-?ar[sş]iv|irsaliye|sayın|alıcı|müşteri|tarih/i.test(s));
   const tedarikci = tedarikciSatiri
     ? tedarikciSatiri.replace(/\s*\b(e-?\s?fatura|e-?\s?arşiv(\s*fatura)?|fatura)\s*$/i, '').trim() || null : null;
 
@@ -299,7 +304,8 @@ export function metinCoz(satirlar) {
   // Tutarlar KDV hariç mi dahil mi? Faturada hariç; fişte çoğunlukla dahil. Toplamla hangisi tutuyorsa o.
   const toplamTutar = urunler.reduce((a, u) => a + (u.tutar ?? 0), 0);
   const pay = Math.max(1, 0.01 * urunler.length);
-  const dahil = fisMi && toplamlar.genel != null && Math.abs(toplamTutar - (toplamlar.genel + toplamlar.indirim)) <= pay
+  const dahilYazili = /fiyatlar(?:ımız)?\s*kdv\s*dahil/i.test(hepsi);      // "Fiyatlar KDV dahildir."
+  const dahil = (fisMi || dahilYazili) && toplamlar.genel != null && Math.abs(toplamTutar - (toplamlar.genel + toplamlar.indirim)) <= pay
     && !(toplamlar.kdv != null && Math.abs(toplamTutar + toplamlar.kdv - toplamlar.genel) <= pay && toplamlar.kdv > pay);
   for (const u of urunler) {
     if (dahil) u.tutar_dahil = u.tutar; else u.tutar_haric = u.tutar;

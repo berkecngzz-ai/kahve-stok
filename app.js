@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=7fc5ebb3a5';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=2785cbfc8d';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=7fc5ebb3a5';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=7fc5ebb3a5';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=7fc5ebb3a5';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=7fc5ebb3a5';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=7fc5ebb3a5';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=2785cbfc8d';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=2785cbfc8d';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=2785cbfc8d';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=2785cbfc8d';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=2785cbfc8d';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=7fc5ebb3a5';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=2785cbfc8d';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -3076,7 +3076,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '7fc5ebb3a5';
+const SURUM = '2785cbfc8d';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });
