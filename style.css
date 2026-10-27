@@ -783,3 +783,6 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
   display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 14px;
   background: var(--metin); color: var(--zemin); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: 15px; }
 .surum-bandi button { flex: none; width: auto; }
+/* Fire: g/ml mi kg/litre mi? */
+.mesaj.birim-sor { display: grid; gap: 8px; text-align: center; }
+.mesaj.birim-sor button { width: 100%; }

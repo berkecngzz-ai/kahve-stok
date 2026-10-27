@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=2785cbfc8d';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=3734c9cf06';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=2785cbfc8d';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=2785cbfc8d';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=2785cbfc8d';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=2785cbfc8d';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=2785cbfc8d';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=3734c9cf06';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=3734c9cf06';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=3734c9cf06';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=3734c9cf06';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=3734c9cf06';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=2785cbfc8d';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=3734c9cf06';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -639,7 +639,7 @@ async function stokSekmesi(icerik) {
     const hareket = [Number(m.gelen) ? `${okunurMiktar(m.gelen, m.birim)} geldi` : '',
       kullanilan ? `${okunurMiktar(kullanilan, m.birim)} kullanıldı` : ''].filter(Boolean).join(', ');
     return `<div class="stok-satir ${durum || ''}">
-      <div class="sol"><b>${esc(m.ad)}</b>${guven !== 'dogru' ? ` <span class="guven ${guven}">${guvenAd}</span>` : ''}
+      <div class="sol"><b>${esc(m.ad)}</b>${m.aktif === false ? ' <span class="guven tahmin">Pasif · elde kalan</span>' : ''}${guven !== 'dogru' ? ` <span class="guven ${guven}">${guvenAd}</span>` : ''}
         <small>${hareket ? `${esc(kisaTarih(m.sayim_tarih))} sayımı ${okunurMiktar(m.sayilan, m.birim)}; sonra ${hareket}`
           : `${m.sayim_tarih === r.tarih ? 'Bugün' : esc(kisaTarih(m.sayim_tarih))} sayıldı`}</small></div>
       <div class="sag"><span class="orta-rakam">${okunurMiktar(Math.max(0, m.simdi), m.birim)}</span>
@@ -1932,6 +1932,18 @@ async function fireVar(kutu, user, bitti) {
         kutu.querySelector('.mesaj').textContent = urun ? 'Kaç tane? Tam sayı yaz.' : 'Rakamı yaz.';
         return;
       }
+      // g/ml istenirken 10'dan küçük sayı büyük olasılıkla kg/litre düşünülerek yazıldı ("0,5" süt): tek dokunuşla netleştir.
+      const buyuk = BUYUK_KISAYOL[secim.birim];
+      if (!urun && buyuk && n < 10) {
+        const m = kutu.querySelector('.mesaj');
+        m.className = 'mesaj birim-sor';
+        m.innerHTML = `<b>${esc(sayiYaz(n))} ${esc(secim.birim)} mi?</b>
+          <button class="ikincil" type="button" data-kucuk>${esc(sayiYaz(n))} ${esc(secim.birim)}</button>
+          <button type="button" data-buyuk>${esc(sayiYaz(n))} ${esc(buyuk[0].replace(/^1 /, ''))} (${esc(sayiYaz(n * buyuk[1]))} ${esc(secim.birim)})</button>`;
+        m.querySelector('[data-kucuk]').onclick = () => { miktar = inp.value; nedenEkrani(n); };
+        m.querySelector('[data-buyuk]').onclick = () => { miktar = sayiYaz(n * buyuk[1]).replace(/\./g, ''); nedenEkrani(n * buyuk[1]); };
+        return;
+      }
       miktar = inp.value;
       nedenEkrani(n);
     };
@@ -3076,7 +3088,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '2785cbfc8d';
+const SURUM = '3734c9cf06';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });
