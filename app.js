@@ -1763,7 +1763,7 @@ async function belgeleriGoster(kutu, liste) {
 const istekKimligi = () => crypto.randomUUID();
 
 // Üç ana iş: simge, ad, kısa açıklama.
-const ISLER = [['mal', 'kutu', 'Mal geldi', 'Faturayı çek, gelenleri say'], ['fire', 'alev', 'Fire var', 'Dökülen, bozulan, iade'],
+const ISLER = [['mal', 'kutu', 'Mal geldi', 'Faturayı çek, kontrol et, onayla'], ['fire', 'alev', 'Fire var', 'Dökülen, bozulan, iade'],
   ['sayim', 'sayim', 'Haftalık sayım', 'Rafta ne var, tek tek say']];
 const isDugmesi = ([is, sim, ad, alt]) => `<button data-is="${is}"><span class="simge">${simge(sim)}</span>
   <span class="dugme-metin"><b>${ad}</b><small>${alt}</small></span><span class="ok">${simge('ok')}</span></button>`;
@@ -2528,9 +2528,13 @@ async function malGeldi(kutu, user, bitti) {
     sonuc.satirlar.forEach((s) => { s.karar = aiIleSiniflandir(s, ctx); s.cevap = null; });
   };
 
-  // ---------- Kör sayım ----------
-  // Stoğa girecek her satır (defterden bilinen ya da baristaya sorulan) sayılır; faturadaki miktar gösterilmez.
+  // ---------- Onay (sayım yalnız şüphede) ----------
+  // Okuma güçlü olduğu için barista her kalemi saymaz: okunan liste gösterilir, "Hepsi geldi" ile tek dokunuşta onaylanır.
+  // Yalnız şüpheli kalem kör sayılır (faturadaki miktar gösterilmeden): miktar okunamadı, paket içi bilinmiyor, ürün
+  // okuma kendi içinde tutmadı ya da barista "Farklı geldi" dedi. Fark / okuma hatası kararı aynı. Ürün eşleşmesi emin
+  // değilse (soru) sayı sorulmaz; özet ekranında "Bu ürün X değil" seçeneği çıkar.
   const stokAdayi = (s) => s.karar.sinif === 'eslesti' || s.karar.sinif === 'soru';
+  const sayilmali = (s) => s.zorla || s.miktar == null || s.karar.stokBirimi || sonuc.notlar?.includes('okuma_tutarsiz');
   const OLCU = { kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' };
   // Paket içi bilinmiyorsa (stokBirimi) barista malzemenin kendi biriminde sayar: kg / litre / adet.
   const STOK_SAYIM = { g: ['kg', 1000], ml: ['litre', 1000], adet: ['adet', 1] };
@@ -2644,9 +2648,17 @@ async function malGeldi(kutu, user, bitti) {
   };
 
   const soruSirasi = () => {
-    const s = sonuc.satirlar.find((x) => stokAdayi(x) && x.cevap == null);
-    if (!s) return ozetEkrani();
-    sayimEkrani(s, malzemeBul.get(s.karar.malzeme_id));
+    const s = sonuc.satirlar.find((x) => stokAdayi(x) && x.cevap == null && sayilmali(x));
+    if (s) return sayimEkrani(s, malzemeBul.get(s.karar.malzeme_id));
+    // Kalanlar göz onayına: faturadaki kadar geldi sayılır; barista özet ekranında "Farklı geldi" diyebilir.
+    sonuc.satirlar.filter((x) => stokAdayi(x) && x.cevap == null).forEach((x) => Object.assign(x, {
+      sayim: 'sayildi', gelen_miktar: x.miktar, teslimat: 'tam', cevap: 'evet', goz_onayi: true }));
+    ozetEkrani();
+  };
+  // "Farklı geldi": o kalem kör sayıma döner.
+  const farkliGeldi = (s) => {
+    Object.assign(s, { cevap: null, sayim: null, gelen_miktar: null, teslimat: null, goz_onayi: false, zorla: true });
+    soruSirasi();
   };
 
   const ozetEkrani = (hata = '') => {
@@ -2665,7 +2677,10 @@ async function malGeldi(kutu, user, bitti) {
       return `<li class="kabul-kalem ${farkli ? 'farkli' : ''}">
           <span class="kalem-ikon" aria-hidden="true">${malzemeIkonu(m)}</span>
           <span class="kalem-metin"><b>${buyukMiktar(gelen * c, m.birim)}</b> ${esc(m.ad)}
+            ${s.goz_onayi && c !== 1 && !(m.birim !== 'adet' && c === 1000) && !s.karar.stokBirimi ? `<small>${sayiYaz(gelen)} ${BELGE_BIRIM[s.birim] === 'paket/diğer' ? 'paket' : BELGE_BIRIM[s.birim] ?? 'paket'} × ${buyukMiktar(c, m.birim)}</small>` : ''}
             ${s.sayim === 'sayilmadi' ? '<small>Sayılmadı · faturadaki gibi alındı</small>' : ''}
+            ${s.goz_onayi ? `<span class="kalem-dugmeler"><button type="button" class="metin-dugme" data-farkli="${sonuc.satirlar.indexOf(s)}">Farklı geldi</button>
+              ${s.karar.sinif === 'soru' ? `<button type="button" class="metin-dugme" data-degil="${sonuc.satirlar.indexOf(s)}">Bu ürün ${esc(m.ad)} değil</button>` : ''}</span>` : ''}
             ${farkli ? `<small>Faturada ${buyukMiktar(Number(s.miktar) * c, m.birim)} · ${buyukMiktar(Math.abs(fark), m.birim)}
               ${fark > 0 ? 'eksik' : 'fazla'} geldi, patrona iletilecek</small>` : ''}</span>
           <span class="kalem-durum" aria-hidden="true">${tutmuyor && s.sayim !== 'sayildi' ? '⏳' : farkli ? '⚠️' : '✓'}</span></li>`;
@@ -2674,13 +2689,21 @@ async function malGeldi(kutu, user, bitti) {
         <h2>📦 ${esc(sonuc.tedarikci ?? 'Fatura')}</h2>
         ${tutmuyor ? `<div class="sade-uyari">⚠️ Toplam tutmuyor, faturaya tekrar bak.
             <button class="dev ikincil" id="tekrar-cek">📷 Tekrar çek</button></div>` : ''}
+        ${stokta.some((s) => s.goz_onayi) ? '<p class="bilgi">Faturadan okunanlar. Gelenle aynıysa kaydet; farklı olanın altındaki "Farklı geldi"ye dokun.</p>' : ''}
         <ul class="kabul-liste">${stokta.map(kalem).join('')}</ul>
         ${bekleyen.length ? `<p class="buyuk-yazi">⏳ ${bekleyen.length} kalem sonra kontrol edilecek</p>` : ''}
         ${toplamVar ? '' : `<p class="buyuk-yazi">Faturanın en altındaki toplam?</p>${rakamKutusu('TL')}`}
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
-        <button class="dev" id="kaydet">Kaydet ✓</button>
+        <button class="dev" id="kaydet">${stokta.some((s) => s.goz_onayi) && !stokta.some((s) => ['teslimat_farki', 'belirsiz'].includes(s.teslimat))
+          ? 'Hepsi geldi, kaydet ✓' : 'Onayla, kaydet ✓'}</button>
         <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
     kutu.querySelector('#tekrar-cek')?.addEventListener('click', bastanCek);
+    kutu.querySelectorAll('[data-farkli]').forEach((b) => b.addEventListener('click', () => farkliGeldi(sonuc.satirlar[Number(b.dataset.farkli)])));
+    kutu.querySelectorAll('[data-degil]').forEach((b) => b.addEventListener('click', () => {
+      const x = sonuc.satirlar[Number(b.dataset.degil)];
+      gec(x, malzemeBul.get(x.karar.malzeme_id));
+      ozetEkrani();
+    }));
     kutu.querySelector('#vazgec').onclick = () => { if (confirm('Fatura kaydedilmeden çıkılsın mı?')) { temizle(); bitti(); } };
     kutu.querySelector('#kaydet').onclick = () => {
       if (!toplamVar) {

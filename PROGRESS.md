@@ -15,6 +15,12 @@
   aynı gün girilen her şey sonradır; sonraki sayımlarda yalnız kendi gününde girilmiş fatura/fire saat sırasıyla, satış güne
   göre (önce). stok_durumu + stok_farki bu kuralla. Örnek Kahve doğrulaması yine 0 uyuşmazlık (geçmiş veri etkilenmedi).
   Kullanıcının faturası tek seferlik yüklendiği güne (27.10) alındı. Test: test/ayni_gun_test.sql. Geri al: scripts/geri-al-30.sql.
+- Mal geldi = ONAY (kullanıcı kararı 2026-10-28: "baristaya kaç geldi diye sormayalım, AI okusun, son onay"): okunan
+  liste + "Hepsi geldi, kaydet"; satır altında "Farklı geldi" (o satır eski kör sayıma döner: tekrar sayım, ikinci okuma,
+  teslimat farkı/okuma hatası kararı aynı) ve eşleşme emin değilse "Bu ürün X değil". Zorunlu kör sayım yalnız: miktar
+  okunamadı, paket içi bilinmiyor, okuma tutarsız. Onaylı satır sunucuya sayim=sayildi, gelen=faturadaki, teslimat=tam
+  (+ okunan.satirlar[].goz_onayi=true iz). Sunucu değişmedi. Risk: birim hatası (simde 65 satırın 12'si) artık
+  kör sayımla değil baristanın göz kontrolü (paket × içerik gösterilir) + sunucu fiyat/miktar olağandışı kontrolüyle yakalanır.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
 

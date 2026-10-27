@@ -775,3 +775,6 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 .tarih-duzelt input { width: auto; min-height: 40px; padding: 6px 10px; font-size: 15px; }
 .giris li.duzeltilir { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .giris li.duzeltilir .metin-dugme { flex: none; }
+/* Mal geldi özeti: kalem altı küçük düğmeler */
+.kalem-dugmeler { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; }
+.kalem-dugmeler .metin-dugme { font-size: 14px; padding: 4px 0; margin: 0; min-height: 0; width: auto; }
