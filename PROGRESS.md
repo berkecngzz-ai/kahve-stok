@@ -5,8 +5,12 @@
   (90 gün ortalaması, "Gün" açıklaması, fiyat doğrulama dili) ve liste/başlıklardaki "KDV dahil" etiketleri kaldırıldı;
   fiyat GİRİLEN alanlarda "KDV dahil" duruyor. Girişler: patron için "Kasadan satış raporu yükle" öne, barista işleri
   "Diğer girişler" altında katlı. Özet dibinde "CoffeeStock ekibinin kontrolünde" notu. Hesap/SQL değişmedi.
-- Bilinen tuzak: sayım ve fire daima bugünün tarihiyle girilir; aynı gün iki sayım raporu oluşturmaz (dönem bir önceki
-  GÜNÜN sayımından başlar). Aynı akşam test için başlangıç sayımını dünün tarihine elle (SQL) almak gerekir.
+- sql/29 (69ce0b5, CANLIDA): patron sayımın gününü düzeltebilir (`sayim_tarihi`; gelecek/aynı güne ikinci sayım yok,
+  işlem geçmişine yazılır). Kök neden: dönem sayım GÜNLERİ arasında; geç gönderilen sayım yanlış güne düşüyordu.
+  Girişler'de fatura teslim günü + sayım günü artık telefon tarih seçicisiyle. Test: test/sayim_tarihi_test.sql
+  (akşam senaryosu, her şey bugün + ilk sayım düne → süt −500 ml / −25 TL). Canlı doğrulama yine 0 uyuşmazlık.
+- Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
+- Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
 
 ## ÜRÜN YOL HARİTASI — 2026-10-23 (kullanıcıyla kararlaştırıldı; sıradaki işler buradan)
 
