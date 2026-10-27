@@ -1,5 +1,13 @@
 # İlerleme notları
 
+## Patron dili sadeleştirme (2026-10-27) · CANLIDA (764d2bf, yalnız ön yüz)
+- Ekranda "açık −X TL" yerine "kayıp X TL" (eksi işaretsiz; ayrıntılı rapor belgesinde işaret kalır). Teknik notlar
+  (90 gün ortalaması, "Gün" açıklaması, fiyat doğrulama dili) ve liste/başlıklardaki "KDV dahil" etiketleri kaldırıldı;
+  fiyat GİRİLEN alanlarda "KDV dahil" duruyor. Girişler: patron için "Kasadan satış raporu yükle" öne, barista işleri
+  "Diğer girişler" altında katlı. Özet dibinde "CoffeeStock ekibinin kontrolünde" notu. Hesap/SQL değişmedi.
+- Bilinen tuzak: sayım ve fire daima bugünün tarihiyle girilir; aynı gün iki sayım raporu oluşturmaz (dönem bir önceki
+  GÜNÜN sayımından başlar). Aynı akşam test için başlangıç sayımını dünün tarihine elle (SQL) almak gerekir.
+
 ## ÜRÜN YOL HARİTASI — 2026-10-23 (kullanıcıyla kararlaştırıldı; sıradaki işler buradan)
 
 İlkeler: barista için kolaylık · patron için şeffaflık · hesaplarda güvenilirlik. Uygulama günde birkaç dakikada
