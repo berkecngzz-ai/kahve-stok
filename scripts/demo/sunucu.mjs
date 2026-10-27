@@ -6,6 +6,7 @@
 // Kullanım:  node scripts/demo/sunucu.mjs [--port 8787] [--kok <klasör>] [--veri scripts/demo/demo-veri.sql]
 // Sonra tarayıcıda http://localhost:8787 → demo hesapları scripts/demo/demo-veri.sql'in başında yazıyor.
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, extname, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +34,10 @@ for (const d of ['sql/13_rapor_uyarilari.sql', 'sql/14_fatura_patron_yetkisi.sql
 }
 
 // Mal kabul demosu (eksik teslimat görevi) yalnız 21 kuruluysa
-const EK = SEMA.includes('sql/21_mal_kabul.sql') && existsSync(join(KOK, 'scripts/demo/demo-mal-kabul.sql'))
+const EK = VERI === 'scripts/demo/demo-veri.sql' && SEMA.includes('sql/21_mal_kabul.sql') && existsSync(join(KOK, 'scripts/demo/demo-mal-kabul.sql'))
   ? ['scripts/demo/demo-mal-kabul.sql'] : [];
 // 25 (elle satış kapalı) demo verisinden SONRA: demo-veri.sql geçmiş haftaların satışını eski yoldan yazar.
-const SON = ['sql/25_satis_yalniz_rapor.sql', 'sql/26_dogru_hesap.sql', 'sql/27_fire_recete_surumu.sql', 'sql/28_fatura_birim_fiyat.sql', 'sql/29_sayim_tarihi.sql', 'sql/30_ayni_gun_sirasi.sql', 'sql/31_okuma_duzeltme.sql', 'sql/32_menude_olmayan.sql', 'sql/33_icerik_mukerrer.sql'].filter((d) => existsSync(join(KOK, d)));
+const SON = ['sql/25_satis_yalniz_rapor.sql', 'sql/26_dogru_hesap.sql', 'sql/27_fire_recete_surumu.sql', 'sql/28_fatura_birim_fiyat.sql', 'sql/29_sayim_tarihi.sql', 'sql/30_ayni_gun_sirasi.sql', 'sql/31_okuma_duzeltme.sql', 'sql/32_menude_olmayan.sql', 'sql/33_icerik_mukerrer.sql', 'sql/34_pasif_stok.sql'].filter((d) => existsSync(join(KOK, d)));
 const db = await veritabani([...SEMA, VERI, ...EK, ...SON], { sessiz: true });
 // Demo hesapları: demo-veri.sql "-- hesap: e-posta şifre" satırlarıyla tanımlar (yalnız bu yerel demo için).
 const HESAPLAR = new Map([...readFileSync(join(KOK, VERI), 'utf8').matchAll(/^-- hesap: (\S+) (\S+)/gm)]
@@ -179,21 +180,24 @@ async function tabloIstegi(yontem, tablo, params, govde, basliklar) {
       ${siraCevir(params.get('order'), tablo)} ${limit} ${offset}) s`;
     return (await db.query(sql, degerler)).rows.map((r) => r.j);
   }
+  // PostgREST gibi: sonuç yalnız istenirse döner (Prefer: return=representation); istenmezse hiçbir sütun okunmaz
+  // (sütun yetkileri: patron/barista fiyat gibi sütunları doğrudan okuyamaz).
   const donsun = /return=representation/.test(basliklar.prefer || '');
   const secim = params.get('select') ? secimCevir(params.get('select'), tablo) : '*';
+  const donus = donsun ? `returning ${secim.replaceAll(`${id(tablo)}.`, '')}` : '';
   if (yontem === 'POST') {
     const satirlar = Array.isArray(govde) ? govde : [govde];
     const kollar = Object.keys(satirlar[0]).map(id).join(', ');
     degerler.push(JSON.stringify(satirlar));
     const r = await db.query(`insert into ${t} (${kollar}) select ${kollar} from jsonb_populate_recordset(null::${t}, $${degerler.length})
-      returning ${secim.replaceAll(`${id(tablo)}.`, '')}`, degerler);
+      ${donus}`, degerler);
     return donsun ? r.rows : null;
   }
   if (yontem === 'PATCH') {
     const kollar = Object.keys(govde).map(id);
     degerler.push(JSON.stringify(govde));
     const r = await db.query(`update ${t} set (${kollar.join(', ')}) = (select ${kollar.join(', ')}
-      from jsonb_populate_record(null::${t}, $${degerler.length})) ${where} returning ${secim.replaceAll(`${id(tablo)}.`, '')}`, degerler);
+      from jsonb_populate_record(null::${t}, $${degerler.length})) ${where} ${donus}`, degerler);
     return donsun ? r.rows : null;
   }
   throw Object.assign(new Error(`${yontem} desteklenmiyor`), { kod: 405 });
@@ -254,6 +258,19 @@ createServer(async (req, res) => {
     if (url.pathname === '/auth/v1/user') {
       if (!kim) return json(res, 401, { msg: 'oturum yok' });
       return json(res, 200, { id: kim.sub, email: kim.email, aud: 'authenticated', role: 'authenticated' });
+    }
+    // Kayıt (yalnız yerel test): e-posta doğrulaması yok, oturum hemen açılır. Gerçek e-posta akışı burada test edilmez.
+    if (url.pathname === '/auth/v1/signup' && req.method === 'POST') {
+      const { email, password } = govde || {};
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) return json(res, 400, { code: 400, error_code: 'validation_failed', msg: 'Unable to validate email address: invalid format' });
+      if (!password || password.length < 6) return json(res, 422, { code: 422, error_code: 'weak_password', msg: 'Password should be at least 6 characters.' });
+      if (HESAPLAR.has(email)) return json(res, 422, { code: 422, error_code: 'user_already_exists', msg: 'User already registered' });
+      const uid = randomUUID();
+      await sirayla(() => db.query('insert into auth.users (id, email) values ($1, $2)', [uid, email]));
+      HESAPLAR.set(email, password); kullanicilar.set(email, uid);
+      const user = { id: uid, aud: 'authenticated', role: 'authenticated', email, app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
+      return json(res, 200, { access_token: jeton(uid, email), token_type: 'bearer', expires_in: 86400,
+        expires_at: Math.floor(Date.now() / 1000) + 86400, refresh_token: `yenile-${uid}`, user });
     }
     if (url.pathname.startsWith('/auth/v1/')) return json(res, 204);
     // Dosya yükleme taklidi: içerik saklanmaz, yalnız storage.objects'e kayıt düşülür (RLS: mekanın klasörü).

@@ -8,3 +8,5 @@ supabase/.temp/
 .local-work/
 RAPOR.md
 scripts/simulasyon/cikti/
+# Kabul testi çıktıları (üretilen veri, raporlar)
+test/kabul/cikti/
