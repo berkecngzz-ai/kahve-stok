@@ -1316,6 +1316,7 @@ async function girisSekmesi(icerik, user, patron) {
   // Satırları 100'erli gruplar halinde çek (adres çok uzamasın diye).
   const kalemler = [];
   const belgeler = [];
+  const fireHareketleri = [];   // ürün firesi reçeteyle malzemeye çevrilmiş hâli (TL karşılığı için)
   for (let i = 0; i < girisler.length; i += 100) {
     const idler = girisler.slice(i, i + 100).map((g) => g.id);
     const [kr, br] = await Promise.all([
@@ -1328,6 +1329,12 @@ async function girisSekmesi(icerik, user, patron) {
     if (br.error) throw br.error;
     kalemler.push(...kr.data);
     belgeler.push(...br.data);
+    const fireIdler = girisler.slice(i, i + 100).filter((g) => g.tur === 'fire').map((g) => g.id);
+    if (fireIdler.length) {
+      const hr = await sb.from('malzeme_hareketleri').select('giris_id, malzeme_id, miktar').in('giris_id', fireIdler);
+      if (hr.error) throw hr.error;
+      fireHareketleri.push(...hr.data);
+    }
     // "Mal geldi" ile okunan faturaların dosyaları belge_dosyalari'nda
     const okunan = await sb.from('belgeler').select('id, giris_id').in('giris_id', idler);
     if (okunan.error) throw okunan.error;
@@ -1359,11 +1366,11 @@ async function girisSekmesi(icerik, user, patron) {
     if (g.tur === 'fatura') return tlYaz(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0));
     if (g.tur === 'satis') return `${sayiYaz(satirlar.reduce((t, k) => t + Number(k.miktar), 0))} ürün`;
     if (g.tur === 'fire') {
+      // Ürün firesi de (2 Americano) reçeteyle malzemeye çevrilmiş hareketlerden TL'ye çevrilir.
       let toplam = 0;
-      for (const k of satirlar) {
-        const m = malzemeBul.get(k.malzeme_id);
-        if (!m) return `${satirlar.length} kalem`;   // ürün firesi: TL karşılığı burada hesaplanmaz
-        toplam += miktarTl(k.miktar, m.birim, m.fiyat) ?? 0;
+      for (const h of fireHareketleri.filter((x) => x.giris_id === g.id)) {
+        const m = malzemeBul.get(h.malzeme_id);
+        toplam += m ? miktarTl(h.miktar, m.birim, m.fiyat) ?? 0 : 0;
       }
       return tlYaz(toplam);
     }
