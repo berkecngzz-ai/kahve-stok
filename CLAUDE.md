@@ -5,6 +5,7 @@
 - Görev bitince sormadan PROGRESS.md'yi güncelle. Kısa tut: güncel durum, önemli kararlar ve nedenleri, açık sorunlar, sıradaki adım. Sohbet dökümüne dönüşmesin; eski ve artık geçerli olmayan bilgiyi sil ya da tek satırda özetle.
 - Tamamlanan tutarlı değişiklikleri commit et; yalnız kendi değişikliklerini dahil et, secrets ve geçici dosyaları dışarıda bırak.
 - PROGRESS.md kaydedilip commit edildikten sonra mesajın sonuna "✅ Clear yapabilirsin" yaz.
+- Ön yüz dosyası (js/css/index.html) değişince commit'ten önce `node scripts/surum.mjs` çalıştır (telefon önbelleği; npm test unutulursa hata verir).
 - "Bitti" demeden önce test et. Test edilmeyen kısmı açıkça belirt.
 
 ## Verimlilik

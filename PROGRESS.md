@@ -21,6 +21,10 @@
   okunamadı, paket içi bilinmiyor, okuma tutarsız. Onaylı satır sunucuya sayim=sayildi, gelen=faturadaki, teslimat=tam
   (+ okunan.satirlar[].goz_onayi=true iz). Sunucu değişmedi. Risk: birim hatası (simde 65 satırın 12'si) artık
   kör sayımla değil baristanın göz kontrolü (paket × içerik gösterilir) + sunucu fiyat/miktar olağandışı kontrolüyle yakalanır.
+- Önbellek (2026-10-28): GitHub Pages max-age=600 → telefon düzeltmeyi görmedi ("hâlâ 1 kalem"). scripts/surum.mjs içerik
+  etiketini tüm yerel import'lara + index.html'e ?v= olarak yazar, surum.json üretir; app.js açılışta surum.json'u
+  önbelleksiz okur, yeni sürüm varsa ?v=<yeni> adresine geçer (döngü korumalı); arka plandan dönünce "Güncelle" bandı.
+  test/js/surum.test.mjs etiket eskiyse npm test'i düşürür.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
 

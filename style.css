@@ -778,3 +778,8 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 /* Mal geldi özeti: kalem altı küçük düğmeler */
 .kalem-dugmeler { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; }
 .kalem-dugmeler .metin-dugme { font-size: 14px; padding: 4px 0; margin: 0; min-height: 0; width: auto; }
+/* Yeni sürüm bandı (uygulama arka plandan dönünce) */
+.surum-bandi { position: fixed; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 14px;
+  background: var(--metin); color: var(--zemin); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: 15px; }
+.surum-bandi button { flex: none; width: auto; }

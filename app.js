@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=2ef0f0f58c';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=2ef0f0f58c';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=2ef0f0f58c';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=2ef0f0f58c';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=2ef0f0f58c';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=2ef0f0f58c';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=2ef0f0f58c';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -3081,5 +3081,37 @@ async function goster() {
     app.querySelector('#tekrar').onclick = goster;
   }
 }
+
+// ---------- Sürüm ----------
+// GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
+// yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
+// Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
+const SURUM = '2ef0f0f58c';
+async function yeniSurum() {
+  try {
+    const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const { v } = await r.json();
+    return v && SURUM && v !== SURUM ? v : null;
+  } catch { return null; }
+}
+function surumeGec(v) {
+  const u = new URL(location.href);
+  if (u.searchParams.get('v') === v) return false;   // bu adres zaten denendi: döngüye girme
+  u.searchParams.set('v', v);
+  location.replace(u);
+  return true;
+}
+yeniSurum().then((v) => v && surumeGec(v));
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || document.querySelector('.surum-bandi')) return;
+  const v = await yeniSurum();
+  if (!v) return;
+  const bant = document.createElement('div');
+  bant.className = 'surum-bandi';
+  bant.innerHTML = '<span>Uygulamanın yeni sürümü hazır.</span><button class="kucuk">Güncelle</button>';
+  bant.querySelector('button').onclick = () => { if (!surumeGec(v)) location.reload(); };
+  document.body.append(bant);
+});
 
 goster();
