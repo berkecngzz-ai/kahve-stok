@@ -9,6 +9,8 @@ import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDu
   ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js';
 
 const app = document.getElementById('app');
+// Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
+const kayipYaz = (tl) => tlYaz(Math.abs(Number(tl) || 0));
 const ustSag = document.getElementById('ust-sag');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -235,7 +237,7 @@ function sayacBaslat(kok) {
     const t0 = performance.now();
     const adim = (t) => {
       const p = Math.min(1, (t - t0) / 900);
-      el.textContent = tlYaz(p < 1 ? Math.round(hedef * (1 - (1 - p) ** 3)) : hedef);
+      el.textContent = kayipYaz(p < 1 ? Math.round(hedef * (1 - (1 - p) ** 3)) : hedef);
       if (p < 1) requestAnimationFrame(adim);
     };
     requestAnimationFrame(adim);
@@ -357,9 +359,8 @@ function teslimatKartiBagla(icerik, yenile) {
 function fiyatKontrolKarti(liste) {
   if (!liste?.length) return '';
   return `<section class="kart gorev-kart" id="fiyat-kontrol">
-    <h2>Fiyatı doğrulanmayanlar <span class="rozet">${liste.length}</span></h2>
-    <p class="bilgi kucuk-yazi">Mal stoğa girdi. Faturaya bakıp bu satırın tutarını yaz; o zamana kadar TL hesapları
-      son onaylı fiyatla tahminidir.</p>
+    <h2>Tutar onayı bekleyenler <span class="rozet">${liste.length}</span></h2>
+    <p class="bilgi kucuk-yazi">Mal stoğa girdi. Faturadaki tutarı yaz ya da kayıtlı fiyatı onayla.</p>
     ${liste.map((x) => `<div class="gorev" data-fk="${esc(x.id)}">
         <div class="gorev-ust">
           <span class="gorev-ikon" aria-hidden="true">${malzemeIkonu({ ad: x.malzeme, birim: x.birim })}</span>
@@ -419,7 +420,7 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
       `${Number(kontrol.acik_teslimat_tl) ? `≈ ${tlYaz(kontrol.acik_teslimat_tl)} eksik mal · ` : ''}aşağıda karar ver`, '#teslimat-gorevleri']);
   }
   if (son?.buyuk) {
-    maddeler.push(['kirmizi', '📉', `Geçen haftanın açığı yüksek: ${tlYaz(son.acik_tl)}`, 'Hangi malzemede olduğunu raporda gör', 'rapor']);
+    maddeler.push(['kirmizi', '📉', `Geçen hafta kayıp yüksek: ${kayipYaz(son.acik_tl)}`, 'Hangi malzemede olduğunu raporda gör', 'rapor']);
   }
   for (const f of (fiyatlar ?? []).filter((x) => x.uyari)) {
     maddeler.push(['sari', '📈', `${f.ad} %${String(f.degisim_yuzde).replace('.', ',')} pahalandı`,
@@ -427,8 +428,8 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
   }
   if (kontrol.fiyat_kontrol != null) {
     if (Number(kontrol.fiyat_kontrol)) {
-      maddeler.push(['sari', '🏷️', `${kontrol.fiyat_kontrol} kalemin fiyatı doğrulanmadı`,
-        'Mal stoğa girdi; TL hesapları tahmini. Aşağıda tutarı yazıp onayla', '#fiyat-kontrol']);
+      maddeler.push(['sari', '🏷️', `${kontrol.fiyat_kontrol} fatura satırı tutar onayı bekliyor`,
+        'Mal stoğa girdi. Faturadaki tutarı yazman yeterli', '#fiyat-kontrol']);
     }
   } else {
     // Sunucu henüz eski sürümse (sql/23 yok): elle girişin kontrolü eskisi gibi
@@ -438,7 +439,7 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
     }
   }
   const sayimGun = kontrol.son_sayim ? gunFarki(kontrol.bugun, kontrol.son_sayim) : null;
-  if (sayimGun == null) maddeler.push(['sari', '📋', 'Henüz sayım yok', 'Takip ilk haftalık sayımla başlar', null]);
+  if (sayimGun == null) maddeler.push(['sari', '📋', 'Henüz sayım yok', 'Takip baristanın ilk haftalık sayımıyla başlar', null]);
   else if (sayimGun > 8) maddeler.push(['sari', '📋', `Haftalık sayım gecikti`, `Son sayım ${sayimGun} gün önce`, null]);
   const satisBekliyor = Number(eksik?.bekleyen_satis_raporu) > 0;
   // Barista Excel/CSV raporu yüklediyse patron tek dokunuşla işler; fotoğraf/PDF raporları ekibimiz işler.
@@ -487,12 +488,10 @@ function fiyatKarti(fiyatlar) {
         <div class="fiyat-ust"><b>${esc(f.ad)}</b>
           <span class="fiyat-oran ${art ? 'artti' : 'azaldi'}">${art ? '▲' : '▼'} %${String(Math.abs(f.degisim_yuzde)).replace('.', ',')}</span></div>
         <div class="fiyat-cubuk ${art ? 'artti' : 'azaldi'}"><span style="width:${(Math.abs(f.degisim_yuzde) / enBuyuk * 100).toFixed(0)}%"></span></div>
-        <small>${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)}${f.ortalama != null ? ` · 90 gün ortalaması ${tlYaz(f.ortalama)}` : ''}
-          ${f.aylik_etki != null ? ` · ayda ${tlYaz(f.aylik_etki, { isaret: true })}` : ' · kullanım verisi yok, aylık etki hesaplanmadı'}</small>
+        <small>${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)}${f.aylik_etki != null
+          ? ` · ayda ${tlYaz(f.aylik_etki, { isaret: true })}` : ''}</small>
       </div>`;
     }).join('')}
-    <p class="bilgi kucuk-yazi">Fiyatlar KDV dahil. Uyarı: %5'ten fazla artış ve ayda 250 TL'den fazla ek maliyet.
-      Ortalama, alınan miktara göre (yalnız doğrulanmış fiyatlar).</p>
   </section>`;
 }
 
@@ -515,10 +514,10 @@ async function ozetSekmesi(icerik) {
     const fark = onceki ? Number(son.acik_tl) - Number(onceki.acik_tl) : 0;   // açık eksi sayı: artı fark = azaldı
     kahraman = `
       <section class="kart kahraman ${son.buyuk ? 'kirmizi' : 'yesil'}">
-        <div class="etiket"><span>Son haftanın açığı</span><span>${esc(donemYaz(son.baslangic, son.bitis))}</span></div>
-        <div class="dev-rakam" data-sayac="${Number(son.acik_tl)}">${tlYaz(son.acik_tl)}</div>
-        <div class="durum-yazi">${son.buyuk ? 'Normalden yüksek açık var' : 'Açık normal sınırda'}</div>
-        ${onceki ? `<div class="alt-yazi">Önceki hafta ${tlYaz(onceki.acik_tl)}${Math.abs(fark) >= 1
+        <div class="etiket"><span>Geçen haftaki kayıp</span><span>${esc(donemYaz(son.baslangic, son.bitis))}</span></div>
+        <div class="dev-rakam" data-sayac="${Number(son.acik_tl)}">${kayipYaz(son.acik_tl)}</div>
+        <div class="durum-yazi">${son.buyuk ? 'Normalden yüksek · nedenini aşağıda gör' : 'Normal sınırda'}</div>
+        ${onceki ? `<div class="alt-yazi">Önceki hafta ${kayipYaz(onceki.acik_tl)}${Math.abs(fark) >= 1
           ? ` · ${fark > 0 ? `${tlYaz(fark)} daha az` : `${tlYaz(-fark)} daha fazla`}` : ''}</div>` : ''}
         ${sonSayimGun > 8 ? `<div class="alt-yazi">Son sayım ${sonSayimGun} gün önce. Bu haftanın sayımı bekleniyor.</div>` : ''}
         ${trend.length > 1 ? (() => {
@@ -539,11 +538,11 @@ async function ozetSekmesi(icerik) {
       [mr.count > 0, 'Malzemeleri gir', 'Kahve, süt, bardak… ve kg / litre / adet fiyatı', 'malzeme'],
       [ur.count > 0, 'Ürün tariflerini gir', 'Latte = 18 g kahve + 220 ml süt + 1 bardak', 'urun'],
       [uyr.count > 0, 'Baristayı davet et', 'Mekan ayarlarındaki davet kodunu ver', 'mekan'],
-      [sayilmis, 'İlk haftalık sayım', 'Barista "Haftalık sayım" ile yapar; ikinci sayımda ilk açık raporu çıkar', null],
+      [sayilmis, 'İlk haftalık sayım', 'Barista "Haftalık sayım" ile yapar; ikinci sayımda ilk kayıp raporu çıkar', null],
     ];
     kahraman = `<section class="kart kahraman">
-      <div class="etiket">Haftalık açık</div>
-      <p class="buyuk-yazi">${sayilmis ? 'İlk sayım yapıldı. Açık, bir sonraki haftalık sayımdan sonra burada görünür.'
+      <div class="etiket">Haftalık kayıp</div>
+      <p class="buyuk-yazi">${sayilmis ? 'İlk sayım yapıldı. Kayıp, bir sonraki haftalık sayımdan sonra burada görünür.'
         : 'Henüz sayım yok. Aşağıdaki adımlar bitince takip başlar.'}</p></section>
       ${adimlar.every(([tamam]) => tamam) ? '' : `<section class="kart"><h2>İlk adımlar</h2>
         ${adimlar.map(([tamam, ad, alt, git]) => `<div class="adim ${tamam ? 'bitti' : ''}">
@@ -561,11 +560,11 @@ async function ozetSekmesi(icerik) {
     ${fiyatKontrolKarti(fiyatKontrol)}
     ${kontrol ? '' : bekleyenUyarisi(eksikler?.[0])}
     ${son ? `<section class="kart">
-      <h2>En çok açık veren malzemeler</h2>
+      <h2>Kayıp en çok nerede?</h2>
       ${son.en_cok_acik.length ? `<ol class="sirali">${son.en_cok_acik.map((x) => `
         <li class="${acikDurumu(x) === 'buyuk' ? 'kirmizi' : ''}"><span class="ad">${esc(x.ad)}</span>
-          <span class="miktar">${okunurMiktar(x.fark, x.birim)}</span><b class="tutar">${tlYaz(x.fark_tl)}</b></li>`).join('')}</ol>`
-        : '<p class="bilgi">Bu hafta açık veren malzeme yok.</p>'}
+          <span class="miktar">${okunurMiktar(Math.abs(x.fark), x.birim)}</span><b class="tutar">${kayipYaz(x.fark_tl)}</b></li>`).join('')}</ol>`
+        : '<p class="bilgi">Bu hafta kayıp yok.</p>'}
       <button class="ikincil tam" data-git="rapor" data-sayim="${esc(son.sayim_id)}">Haftanın raporunu aç</button>
     </section>` : ''}
     ${azalan.length ? `<section class="kart">
@@ -574,7 +573,8 @@ async function ozetSekmesi(icerik) {
         <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
     </section>` : ''}
-    ${fiyatKarti(fiyatlar)}`;
+    ${fiyatKarti(fiyatlar)}
+    <p class="ekip-dip">${simge('tamam')}Faturaların ve hesapların CoffeeStock ekibinin kontrolünde.</p>`;
   sayacBaslat(icerik);
   teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
   fiyatKontrolKartiBagla(icerik, () => ozetSekmesi(icerik));
@@ -631,7 +631,6 @@ async function stokSekmesi(icerik) {
   const tahminiDeger = sayilan.filter((m) => kontrolde.has(m.malzeme_id) && Number(m.fiyat) > 0).length;
   const fiyatsiz = sayilan.filter((m) => !(Number(m.fiyat) > 0) && Number(m.simdi) > 0);
   const azSayi = sayilan.filter((m) => yeterDurumu(m.yeter_gun) === 'az').length;
-  const tahminSayi = sayilan.filter((m) => stokGuveni(m, r.tarih, faturaBekliyor)[0] !== 'dogru').length;
   const satir = (m) => {
     const durum = yeterDurumu(m.yeter_gun);
     const [guven, guvenAd, guvenNeden] = stokGuveni(m, r.tarih, faturaBekliyor);
@@ -651,14 +650,11 @@ async function stokSekmesi(icerik) {
   };
   icerik.innerHTML = `
     <section class="kart kahraman">
-      <div class="etiket">Elde olan malın değeri ${KDV_DAHIL}</div>
+      <div class="etiket">Elde olan malın değeri</div>
       <div class="buyuk-rakam">${sayilan.length ? `${tahminiDeger ? '≈ ' : ''}${tlYaz(deger)}` : '—'}</div>
-      ${tahminiDeger ? `<p class="bilgi kucuk-yazi">${tahminiDeger} malzemenin fiyatı doğrulanmadı; değer son onaylı fiyatla tahmini.</p>` : ''}
       ${fiyatsiz.length ? `<p class="bilgi kucuk-yazi">Fiyatı olmadığı için değere girmeyenler: ${fiyatsiz.map((m) => esc(m.ad)).join(', ')}.</p>` : ''}
       <p class="bilgi kucuk-yazi">${sayilan.length ? `${sayilan.length} malzeme${azSayi
-        ? ` · <span class="uyari">${azSayi} tanesi 2 günden az yeter</span>` : ''}. ` : ''}Son sayımdan sonra gelen eklendi,
-        satılan ve fire düşüldü.${tahminSayi ? ` <b>${tahminSayi} malzemenin rakamı tahmini</b>, bir sonraki sayımda kesinleşir.` : ''}
-        "Gün": son ${(r.kullanim_gun || 28) >= 14 ? `${Math.round((r.kullanim_gun || 28) / 7)} haftanın` : `${r.kullanim_gun} günün`} ortalama kullanımına göre.</p>
+        ? ` · <span class="uyari">${azSayi} tanesi 2 günden az yeter</span>` : ''}` : ''}</p>
     </section>
     ${sayilan.length ? `<section class="kart liste-kart">${sayilan.map(satir).join('')}</section>` : ''}
     ${sayilmayan.length ? `<section class="kart"><h2>Henüz sayılmayanlar (${sayilmayan.length})</h2>
@@ -676,7 +672,7 @@ async function stokFarkiSekmesi(icerik) {
   if (r.durum === 'sayim_yok') {
     icerik.innerHTML = `<div class="kart"><h2>Haftalık rapor</h2>
       <p class="bilgi">Henüz sayım yok. Rapor iki haftalık sayım arasında hesaplanır: ilk sayım başlangıç olur,
-        ikinci sayımda her malzemenin açığı görünür.</p></div>`;
+        ikinci sayımda her malzemenin kaybı görünür.</p></div>`;
     return;
   }
   trend.forEach((d) => { d.buyuk = donemBuyukMu(d); });
@@ -692,7 +688,7 @@ async function stokFarkiSekmesi(icerik) {
     const t = miktarTl(miktar, x.birim, x.fiyat);
     return t == null ? '—' : tlYaz(t);
   };
-  const DURUM_YAZI = { buyuk: 'Yüksek açık', normal: 'Normal', fazla: 'Fazla çıktı' };
+  const DURUM_YAZI = { buyuk: 'Yüksek kayıp', normal: 'Normal', fazla: 'Fazla çıktı' };
   const satir = (x) => {
     const kullanilan = Number(x.satis) + Number(x.fire);
     return `
@@ -713,11 +709,11 @@ async function stokFarkiSekmesi(icerik) {
         <tr><td>− Fire</td><td>${okunurMiktar(x.fire, x.birim)}</td><td>${tlHucre(x.fire, x)}</td></tr>
         <tr class="ara"><td>= Olması gereken</td><td>${okunurMiktar(x.beklenen, x.birim)}</td><td>${tlHucre(x.beklenen, x)}</td></tr>
         <tr><td>Sayılan</td><td>${okunurMiktar(x.sayilan, x.birim)}</td><td>${tlHucre(x.sayilan, x)}</td></tr>
-        <tr class="sonuc"><td>${Number(x.fark) < 0 ? 'Açık' : 'Fark'}</td><td>${okunurMiktar(x.fark, x.birim, { isaret: true })}</td>
+        <tr class="sonuc"><td>${Number(x.fark) < 0 ? 'Kayıp' : 'Fazla'}</td><td>${okunurMiktar(x.fark, x.birim, { isaret: true })}</td>
           <td>${x.fark_tl != null ? tlYaz(x.fark_tl, { isaret: true }) : '—'}</td></tr>
         </tbody>
       </table>
-      ${!kullanilan && Number(x.fark) < 0 ? '<p class="bilgi kucuk-yazi">Bu dönemde satış ya da fire girilmemiş; açığın tamamı kayıp görünüyor.</p>' : ''}
+      ${!kullanilan && Number(x.fark) < 0 ? '<p class="bilgi kucuk-yazi">Bu dönemde satış raporu ya da fire girilmemiş; fark eksik kayıttan olabilir.</p>' : ''}
     </details>`;
   };
   const donem = r.baslangic ? donemYaz(r.baslangic, r.bitis) : kisaTarih(r.bitis);
@@ -737,12 +733,12 @@ async function stokFarkiSekmesi(icerik) {
   const yaklasik = tahminiSayi ? '≈ ' : '';
   const ozet = tamam.length ? `
       <div class="iki-rakam">
-        <div><div class="etiket">Açık</div><div class="buyuk-rakam ${buyukSayi ? 'uyari' : 'iyi'}">${yaklasik}${tlYaz(r.toplam_acik_tl)}</div></div>
-        <div><div class="etiket">Fazla</div><div class="buyuk-rakam soluk">${yaklasik}${tlYaz(r.toplam_fazla_tl, { isaret: true })}</div></div>
+        <div><div class="etiket">Kayıp</div><div class="buyuk-rakam ${buyukSayi ? 'uyari' : 'iyi'}">${yaklasik}${kayipYaz(r.toplam_acik_tl)}</div></div>
+        <div><div class="etiket">Fazla çıkan</div><div class="buyuk-rakam soluk">${yaklasik}${tlYaz(r.toplam_fazla_tl)}</div></div>
       </div>
-      <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek açık var.` : 'Tüm malzemeler normal sınırda.'}</p>`
-    : '<p class="bilgi">Bu, ilk sayım. Açık bir sonraki haftalık sayımda görünür.</p>';
-  const uyariKutusu = r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u)}</span>`).join('')}</div>` : '';
+      <p class="durum-yazi ${buyukSayi ? 'uyari' : 'iyi'}">${buyukSayi ? `${buyukSayi} malzemede normalden yüksek kayıp var.` : 'Tüm malzemeler normal sınırda.'}</p>`
+    : '<p class="bilgi">Bu, ilk sayım. Kayıp bir sonraki haftalık sayımda görünür.</p>';
+  const uyariKutusu = r.uyarilar.length ? `<div class="durum-kart sari">${r.uyarilar.map((u) => `<span>${esc(u.replace('açık küçülebilir', 'kayıp küçülebilir'))}</span>`).join('')}</div>` : '';
   // Ekranda yalnız en çok açık verenler; geri kalanı "Raporu aç" ile açılan belgede.
   const enCok = tamam.filter((x) => Number(x.fark_tl) < 0).sort((a, b) => Number(a.fark_tl) - Number(b.fark_tl)).slice(0, 3);
 
@@ -761,13 +757,11 @@ async function stokFarkiSekmesi(icerik) {
       ${ozet}
       ${uyariKutusu}
     </section>
-    ${bugundenBeri ? `<section class="kart"><h2>${esc(kisaTarih(r.bitis))} sayımından bu yana</h2>${bugundenBeri}
-      <p class="bilgi kucuk-yazi">Kayıp (açık), bir sonraki sayımda burada çıkar.</p></section>` : ''}
     ${tamam.length ? `<section class="kart">
-      <h2>En çok açık verenler</h2>
+      <h2>Kayıp en çok nerede?</h2>
       ${enCok.length ? enCok.map((x) => `<div class="cizgili-satir ${x.renk}"><span><span class="nokta ${x.renk}"></span>${esc(x.ad)}</span>
-        <b class="${x.renk === 'buyuk' ? 'uyari' : ''}">${x.tahmini ? '≈ ' : ''}${tlYaz(x.fark_tl, { isaret: true })}</b></div>`).join('')
-        : '<p class="bilgi">Bu hafta açık veren malzeme yok.</p>'}
+        <b class="${x.renk === 'buyuk' ? 'uyari' : ''}">${x.tahmini ? '≈ ' : ''}${kayipYaz(x.fark_tl)}</b></div>`).join('')
+        : '<p class="bilgi">Bu hafta kayıp yok.</p>'}
     </section>` : ''}
     <button class="dev tam" id="belge-ac">📄 Raporu aç</button>
     <p class="bilgi kucuk-yazi ortala">Tüm malzemeler, haftalık grafik ve notlar raporda. PDF olarak kaydedebilir ya da paylaşabilirsin.</p>`;
@@ -808,11 +802,11 @@ async function stokFarkiSekmesi(icerik) {
         <thead><tr><th>Malzeme</th><th>Sayılan</th><th>TL</th></tr></thead>
         <tbody>${ilk.map((x) => `<tr><td>${esc(x.ad)}</td><td>${okunurMiktar(x.sayilan, x.birim)}</td><td>${tlHucre(x.sayilan, x)}</td></tr>`).join('')}</tbody>
       </table>
-      ${tamam.length ? '<p class="bilgi kucuk-yazi">Bunların açığı bir sonraki sayımda çıkar.</p>' : ''}` : ''}
+      ${tamam.length ? '<p class="bilgi kucuk-yazi">Bunların kaybı bir sonraki sayımda çıkar.</p>' : ''}` : ''}
     ${sayilmadi.length ? `<h2>Bu sayımda sayılmayanlar</h2><p>${sayilmadi.map((x) => esc(x.ad)).join(', ')}</p>` : ''}
-    ${trend.length > 1 ? `<h2>Haftalara göre açık (TL)</h2>${trendSvg(trend)}` : ''}
+    ${trend.length > 1 ? `<h2>Haftalara göre kayıp (TL)</h2>${trendSvg(trend)}` : ''}
     <footer class="belge-dip">${r.baslangic ? `${esc(kisaTarih(r.baslangic))} sayımından ${esc(kisaTarih(r.bitis))} sayımına. ` : ''}Sayım
-      günündeki satış, fire ve mal girişleri o haftaya dahil. TL, bugünkü fiyatla (KDV dahil).
+      günündeki satış, fire ve mal girişleri o haftaya dahil. TL, son 90 günün ortalama alış fiyatıyla.
       <br>Hazırlandı: ${esc(new Date().toLocaleString('tr-TR', { dateStyle: 'long', timeStyle: 'short' }))}</footer>`;
 
   const excelIndir = () => {
@@ -945,9 +939,8 @@ async function malzemeleriGetir(fiyatli = true) {
 
 // ---------- KDV ----------
 // Kimse KDV oranı / matrah görmez ya da girmez. Veritabanında fiyat KDV dahildir; faturadan okunan oran arka planda
-// saklanır (toplam kontrolü için). Ekranlarda her fiyat KDV dahildir ve yanında küçük "KDV dahil" yazar
+// saklanır (toplam kontrolü için). Ekranlarda her fiyat KDV dahildir; fiyat girilen alanlarda "KDV dahil" yazar
 // (toptancılar çoğunlukla "+KDV" fiyat söyler; yanlış karşılaştırma olmasın).
-const KDV_DAHIL = '<small class="kdv-dahil">KDV dahil</small>';
 
 // "45,00 ₺ · KDV dahil" gibi tek satırlık fiyat yazısı.
 function fiyatYazisi(dahil) {
@@ -970,7 +963,7 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
     <div class="satir">
       <div class="genis">${esc(m.ad)}
         <small>${Number(m.fiyat) > 0
-          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))} · KDV dahil`
+          ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))}`
           : '<span class="uyari">Fiyat girilmemiş</span>'}</small>
         <details class="gecmis" data-gecmis="${esc(m.id)}"><summary>Fiyat geçmişi</summary>
           <div><p class="bilgi">Yükleniyor…</p></div></details></div>
@@ -1408,11 +1401,15 @@ async function girisSekmesi(icerik, user, patron) {
   ].filter(Boolean).join(', ');
   icerik.innerHTML = `
     ${eksikMetni ? `<div class="sade-uyari">${eksikMetni} henüz işlenmedi. İşlenince rakamlar biraz değişebilir.</div>` : ''}
-    <div class="buyuk-dugmeler yatay">${ISLER.map(isDugmesi).join('')}</div>
+    ${patron ? `<button class="dev tam" data-satis-rapor>Kasadan satış raporu yükle</button>
+    <details class="kart diger-isler"><summary><b>Diğer girişler</b><small class="bilgi"> · mal, fire, sayım (genelde barista yapar)</small></summary>
+      <div class="buyuk-dugmeler yatay">${ISLER.map(isDugmesi).join('')}</div>
+      <button class="ikincil yan-dugme tam" data-is="elle">${simge('kalem')}Elle mal girişi</button>
+    </details>` : `<div class="buyuk-dugmeler yatay">${ISLER.map(isDugmesi).join('')}</div>
     <div class="izgara">
       <button class="ikincil yan-dugme" data-is="elle">${simge('kalem')}Elle mal girişi</button>
       <button class="ikincil yan-dugme" data-satis-rapor>${simge('para')}Satış raporu yükle</button>
-    </div>
+    </div>`}
     <div class="kart liste-kart">
       <div class="baslik-satir"><h2>Geçmiş girişler</h2>
         <input id="ay" type="month" value="${secilenAy}" max="${bugun.slice(0, 7)}" aria-label="Ay"></div>

@@ -759,3 +759,13 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 .takip-disi { margin-top: 12px; padding: 10px 14px; border-radius: 14px; background: var(--kahve-acik); }
 .takip-disi p { margin: 0; }
 .takip-disi details { margin-top: 8px; border-top: 1px solid var(--cizgi); }
+
+/* Patron Özet dibi: sakin güven notu */
+.ekip-dip { margin: 20px 16px 8px; color: var(--soluk); font-size: 13px; line-height: 1.5; text-align: center; }
+.ekip-dip svg { width: 15px; height: 15px; color: var(--yesil); vertical-align: -3px; margin-right: 6px; }
+/* Patron Girişler: baristanın işleri katlanır */
+.diger-isler { margin-top: 14px; }
+.diger-isler > summary { cursor: pointer; list-style: none; padding: 2px 0; }
+.diger-isler > summary::-webkit-details-marker { display: none; }
+.diger-isler[open] > summary { margin-bottom: 12px; }
+.diger-isler .yan-dugme.tam { width: 100%; margin-top: 10px; }
