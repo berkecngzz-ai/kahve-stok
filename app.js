@@ -1384,10 +1384,12 @@ async function girisSekmesi(icerik, user, patron) {
             <small>${esc(g.aciklama || g.giren_ad)}${fatura && gBelgeler.length ? ' · 📄' : ''}</small></span>
           <span class="giris-tutar">${girisTutari(g, satirlar)}</span>
         </summary>
-        <ul>${satirlar.map((k) => `<li>${kalemYaz(k)}${patron && g.tur === 'sayim' && !g.iptal_zamani && k.malzeme_id
-          ? ` <button class="metin-dugme" data-sayim-duzelt="${esc(g.id)}" data-malzeme="${esc(k.malzeme_id)}">düzelt</button>` : ''}</li>`).join('')}</ul>
-        ${patron && fatura && !g.iptal_zamani ? `<small>Teslim tarihi: ${esc(kisaTarih(g.tarih))}
-          <button class="metin-dugme" data-teslim="${esc(g.id)}" data-tarih="${esc(g.tarih)}">düzelt</button></small>` : ''}
+        <ul>${satirlar.map((k) => patron && g.tur === 'sayim' && !g.iptal_zamani && k.malzeme_id
+          ? `<li class="duzeltilir"><span>${kalemYaz(k)}</span>
+            <button class="metin-dugme" data-sayim-duzelt="${esc(g.id)}" data-malzeme="${esc(k.malzeme_id)}">düzelt</button></li>`
+          : `<li>${kalemYaz(k)}</li>`).join('')}</ul>
+        ${patron && (fatura || g.tur === 'sayim') && !g.iptal_zamani ? `<label class="tarih-duzelt">${fatura ? 'Mal hangi gün geldi?' : 'Sayım hangi günün kapanışı?'}
+          <input type="date" value="${esc(g.tarih)}" max="${bugun}" data-tarih-duzelt="${esc(g.id)}" data-tur="${g.tur}"></label>` : ''}
         ${gBelgeler.length ? '<div class="belgeler"><p class="bilgi">Belgeler yükleniyor…</p></div>' : ''}
         <small>Giren: ${esc(g.giren_ad)}, ${zamanYaz(g.olusturma)}</small>
         ${g.iptal_zamani ? `<small class="uyari">İptal eden: ${esc(g.iptal_eden_ad)}, ${zamanYaz(g.iptal_zamani)}</small>` : ''}
@@ -1470,17 +1472,20 @@ async function girisSekmesi(icerik, user, patron) {
     if (error) { hataGoster(error); return; }
     yenile();
   }));
-  // Faturanın fiziksel teslim tarihi (geç yüklenen fatura): mal hangi gün geldiyse o güne işlenir.
-  icerik.querySelectorAll('[data-teslim]').forEach((b) => b.addEventListener('click', async () => {
-    const cevap = prompt('Mal hangi gün geldi? (GG.AA.YYYY)', b.dataset.tarih.split('-').reverse().join('.'));
-    if (cevap == null) return;
-    const m = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(cevap.trim());
-    if (!m) { alert('Tarihi GG.AA.YYYY olarak yaz.'); return; }
-    const { error } = await sb.rpc('fatura_teslim_tarihi', { p_giris: b.dataset.teslim,
-      p_tarih: `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` });
-    if (error) { hataGoster(error); return; }
-    yenile();
-  }));
+  // Tarih düzeltme: geç yüklenen faturada mal hangi gün geldiyse, geç gönderilen sayımda hangi günün kapanışıysa o gün.
+  // Raporlar bu tarihe göre yeniden hesaplanır; değişiklik işlem geçmişine yazılır.
+  icerik.querySelectorAll('[data-tarih-duzelt]').forEach((inp) => {
+    const eski = inp.value;
+    inp.addEventListener('change', async () => {
+      if (!inp.value || inp.value === eski) return;
+      if (!confirm(`Tarih ${kisaTarih(inp.value)} olsun mu? Raporlar buna göre yeniden hesaplanır.`)) { inp.value = eski; return; }
+      inp.disabled = true;
+      const { error } = await sb.rpc(inp.dataset.tur === 'sayim' ? 'sayim_tarihi' : 'fatura_teslim_tarihi',
+        { p_giris: inp.dataset.tarihDuzelt, p_tarih: inp.value });
+      if (error) { inp.value = eski; inp.disabled = false; hataGoster(error); return; }
+      yenile();
+    });
+  });
   icerik.querySelectorAll('[data-iptal]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Bu giriş iptal edilsin mi? Silinmez; iptal edildi olarak kalır ve hesaplara katılmaz.')) return;
     b.disabled = true;
@@ -1498,6 +1503,10 @@ const ISLEM_ADI = {
   belge_iptal: (a) => ['↩', 'Fatura iptal edildi', [a.tedarikci, a.fatura_no].filter(Boolean).join(' · ')],
   mal_kabul: (a) => ['📦', 'Mal kabul (sayımla)', `${a.tedarikci ?? ''}${(a.kalemler ?? []).length ? ` · ${a.kalemler.length} kalem sayıldı` : ''}`],
   teslimat_farki: (a) => ['🚚', `Teslimat farkı: ${a.malzeme ?? ''}`, a.fark_tl != null ? `≈ ${tlYaz(Math.abs(a.fark_tl))} ${a.fark_tl > 0 ? 'eksik' : 'fazla'}` : ''],
+  teslim_tarihi: (a) => ['📅', 'Fatura teslim tarihi düzeltildi', `${kisaTarih(a.eski)} → ${kisaTarih(a.yeni)}${a.tedarikci ? ` · ${a.tedarikci}` : ''}`],
+  sayim_tarihi: (a) => ['📅', 'Sayım tarihi düzeltildi', `${kisaTarih(a.eski)} → ${kisaTarih(a.yeni)}`],
+  sayim_duzelt: (a) => ['✍️', `Sayım düzeltildi: ${a.malzeme ?? ''}`, `${a.birim ? `${okunurMiktar(a.eski, a.birim)} → ${okunurMiktar(a.yeni, a.birim)}` : ''}${a.not ? ` · ${a.not}` : ''}`],
+  fiyat_onay: () => ['🏷️', 'Fatura tutarı onaylandı', ''],
   fark_cozuldu: (a) => ['✓', `Fark kapatıldı: ${a.malzeme ?? ''}`, [COZUMLER.find(([k]) => k === a.cozum)?.[1], a.not].filter(Boolean).join(' · ')],
 };
 async function islemGecmisiGoster(kutu) {

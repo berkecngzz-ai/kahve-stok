@@ -769,3 +769,9 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 .diger-isler > summary::-webkit-details-marker { display: none; }
 .diger-isler[open] > summary { margin-bottom: 12px; }
 .diger-isler .yan-dugme.tam { width: 100%; margin-top: 10px; }
+/* Girişler: fatura teslim / sayım günü düzeltme (telefonun tarih seçicisi) */
+.tarih-duzelt { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0;
+  color: var(--soluk); font-size: 14px; }
+.tarih-duzelt input { width: auto; min-height: 40px; padding: 6px 10px; font-size: 15px; }
+.giris li.duzeltilir { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.giris li.duzeltilir .metin-dugme { flex: none; }
