@@ -30,6 +30,9 @@
   fiyatı × çarpan) okunan miktarın tam katıysa (koli 2…48). Fiyat referansın %15'inde + miktar olağandışı değil → stoğa
   (teslimat=okuma_hatasi, okunan_miktar iz). Gerçek zam (tam kat değil) kuyrukta kalır. belge_kaydet = v28 + düzeltme.
   Test: test/okuma_duzeltme_test.sql. Canlıdaki bekleyen satır (Starbucks MSG2026000402, 3→36) geçişte otomatik çözüldü.
+- sql/32 (CANLIDA, 2026-10-28) — KURAL: menüye girilmemiş ürün yok sayılır (okunmaz, kaydedilmez, uyarı/rapor yok).
+  satis_raporu_isle = v26 + urun_id boş satırları atar; tarifsiz_satislar/rapor uyarısı yalnız menüdeki reçetesiz ürün.
+  Satış raporu ekranında "Takip edilmeyenler" kaldırıldı; menü dışı satırlar gönderilmez. Eski menü dışı satırlar silinmedi.
 - Starbucks Marmaris demo: 13–20 Ekim (müdahalesiz test haftası) + 20–27 Ekim; scriptler .local-work/demo-hafta/.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.

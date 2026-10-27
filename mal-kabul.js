@@ -11,7 +11,7 @@
 //                                                       faturanın fotoğrafına bakıp karar verir)
 // Stok her durumda SAYILAN kadar artar (rafta olan budur); karar yalnız "patrona görev açılsın mı" sorusudur.
 
-import { benzerlik, anahtar } from './eslestirme.js?v=68d6f2c33d';
+import { benzerlik, anahtar } from './eslestirme.js?v=7fc5ebb3a5';
 
 // İki miktar aynı mı? Adet/paket tam sayıdır; kg/litre küsuratlı olabilir (%0,5 pay).
 export function ayniMiktar(a, b) {

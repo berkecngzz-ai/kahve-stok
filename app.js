@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=68d6f2c33d';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=7fc5ebb3a5';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=68d6f2c33d';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=68d6f2c33d';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=68d6f2c33d';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=68d6f2c33d';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=68d6f2c33d';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=7fc5ebb3a5';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=7fc5ebb3a5';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=7fc5ebb3a5';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=7fc5ebb3a5';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=7fc5ebb3a5';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=68d6f2c33d';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=7fc5ebb3a5';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -1637,7 +1637,7 @@ async function satisRaporuEkrani(kutu, { bitti, belge = null }) {
   const girdi = kutu.querySelector('#rapor-dosya');
   girdi.onchange = () => { if (girdi.files[0]) oku(girdi.files[0], kutu.querySelector('.mesaj')).catch(hataGoster); };
 
-  function gozdenGecir(dosya, { matched, unmatched, ignored, lines, hasDate, period, counts }) {
+  function gozdenGecir(dosya, { matched, unmatched, lines, hasDate, period, counts }) {
     const ad = (id) => urunler.find((u) => u.id === id)?.ad ?? '?';
     const toplam = matched.reduce((t, x) => t + x.miktar, 0);
     const bugun = bugunStr();
@@ -1649,18 +1649,15 @@ async function satisRaporuEkrani(kutu, { bitti, belge = null }) {
       <span><b>${esc(x.name)}</b><small>${sayiYaz(x.quantity)} adet</small></span>
       <select data-anahtar="${esc(x.key)}" data-miktar="${x.quantity}" aria-label="${esc(x.name)} menüde hangisi">${secenekler(oneri)}</select>
     </div>`;
-    // Benzeri menüde olan (boy / buzlu farkı) onaya gelir; menüde karşılığı olmayan (San Sebastian, su…) sorulmadan
-    // takip dışı kalır ve hatırlanır. Menüdeki bir ürünse patron listeyi açıp değiştirebilir.
+    // Benzeri menüde olan (yazım / boy farkı) onaya gelir. Menüye girilmemiş ürün (su, tatlı…) hiç gösterilmez,
+    // gönderilmez, stoğa ve rapora girmez: işletme yalnız menüye girdiğini takip eder.
     const onayli = unmatched.filter((x) => x.suggestion);
-    const disarida = unmatched.filter((x) => !x.suggestion);
-    const disariAdet = disarida.reduce((t, x) => t + x.quantity, 0) + ignored.reduce((t, x) => t + x.quantity, 0);
     kutu.innerHTML = `<form class="kart" id="satis-rapor">
         <h2>Satış raporu</h2>
         <p class="bilgi kucuk-yazi">${esc(dosya.name)}</p>
-        <div class="uc-rakam">
+        <div class="iki-rakam">
           <div><div class="etiket">Stoktan düşülecek</div><div class="orta-rakam">${matched.length + onayli.length} ürün</div></div>
           <div><div class="etiket">Toplam adet</div><div class="orta-rakam">${sayiYaz(toplam + onayli.reduce((t, x) => t + x.quantity, 0))}</div></div>
-          <div><div class="etiket">Takip edilmeyen</div><div class="orta-rakam">${disarida.length + ignored.length}</div></div>
         </div>
         ${hasDate ? `<p class="bilgi"><b>Dönem:</b> ${esc(period[0] === period[1] ? kisaTarih(period[0])
             : `${kisaTarih(period[0])} – ${kisaTarih(period[1])}`)}</p>`
@@ -1674,13 +1671,6 @@ async function satisRaporuEkrani(kutu, { bitti, belge = null }) {
         ${matched.length ? `<details class="taninan"><summary>Tanınan ürünler (${matched.length})</summary>
           ${matched.map((x) => `<div class="cizgili-satir"><span>${esc(ad(x.urun_id))}</span><b>${sayiYaz(x.miktar)}</b></div>`).join('')}
         </details>` : ''}
-        ${disarida.length || ignored.length ? `<div class="takip-disi">
-          <p class="bilgi kucuk-yazi"><b>Takip edilmeyenler</b> (${sayiYaz(disariAdet)} adet, stoktan düşülmez):
-            ${[...disarida, ...ignored].map((x) => esc(x.name)).join(', ')}.</p>
-          ${disarida.length ? `<details><summary>Aralarında takip ettiğin bir ürün var mı?</summary>
-            <p class="bilgi kucuk-yazi">Menüde tarifi olan bir ürünse karşısından seç.</p>
-            ${disarida.map((x) => secimSatiri(x, '-')).join('')}</details>` : ''}
-        </div>` : ''}
         <p class="mesaj"></p>
         <button class="tam" type="submit">Kaydet</button>
         <button class="tam ikincil" type="button" id="vazgec">Vazgeç</button>
@@ -1698,7 +1688,7 @@ async function satisRaporuEkrani(kutu, { bitti, belge = null }) {
         eslesmeler.push({ ad: sec.dataset.anahtar, urun_id: urunId });
       }
       const satirlar = lines.map((l) => ({ ...l, tarih: l.tarih ?? tarih,
-        urun_id: secim.has(l.ad_anahtar) ? secim.get(l.ad_anahtar) : l.urun_id }));
+        urun_id: secim.has(l.ad_anahtar) ? secim.get(l.ad_anahtar) : l.urun_id })).filter((l) => l.urun_id);
       if (!satirlar.some((l) => l.urun_id && l.tur === 'satis')) throw new Error('Raporda menüdeki ürünlerden hiçbiri yok; tarifli ürün seç.');
       const belgeId = belge?.id ?? await satisRaporuGonder(dosya);
       belge = { id: belgeId };     // kayıt hata verirse tekrar denemede dosya yeniden yüklenmez
@@ -3086,7 +3076,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '68d6f2c33d';
+const SURUM = '7fc5ebb3a5';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });
