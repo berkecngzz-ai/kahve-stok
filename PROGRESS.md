@@ -25,6 +25,12 @@
   etiketini tüm yerel import'lara + index.html'e ?v= olarak yazar, surum.json üretir; app.js açılışta surum.json'u
   önbelleksiz okur, yeni sürüm varsa ?v=<yeni> adresine geçer (döngü korumalı); arka plandan dönünce "Güncelle" bandı.
   test/js/surum.test.mjs etiket eskiyse npm test'i düşürür.
+- sql/31 (CANLIDA, 2026-10-28) — okuma düzeltme: fiyat/miktar şüphesiyle bekleyen eşleşmiş fatura satırı (barista
+  ayrıca saymadıysa) faturanın kendi rakamlarından düzelir: tutar ÷ okunan birim fiyat, ya da tutar ÷ (tedarikçinin son
+  fiyatı × çarpan) okunan miktarın tam katıysa (koli 2…48). Fiyat referansın %15'inde + miktar olağandışı değil → stoğa
+  (teslimat=okuma_hatasi, okunan_miktar iz). Gerçek zam (tam kat değil) kuyrukta kalır. belge_kaydet = v28 + düzeltme.
+  Test: test/okuma_duzeltme_test.sql. Canlıdaki bekleyen satır (Starbucks MSG2026000402, 3→36) geçişte otomatik çözüldü.
+- Starbucks Marmaris demo: 13–20 Ekim (müdahalesiz test haftası) + 20–27 Ekim; scriptler .local-work/demo-hafta/.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.
 
