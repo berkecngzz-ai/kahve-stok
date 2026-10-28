@@ -44,6 +44,12 @@
   okuma izolasyon + 7 AI okuma + mükerrer doğrulama). Düzeltilen: fire ml/litre sorusu (app.js), pasif malzeme stoğu (sql/34).
   Açık kararlar: kapanmış hafta uyarısı, geç fatura günü barista sorusu, barista geriye tarih sınırı, sayım sonrası foto yönlendirmesi.
   Yerel sunucu: --veri scripts/demo/bos-veri.sql + /auth/v1/signup; çalıştır: bash .local-work/kabul-calistir.sh (port 8788).
+- sql/35 + ön yüz (CANLIDA, 2026-10-28) — kabul raporu önerileri: (1) barista sayım/fire yalnız bugün/dün (giris_kaydet);
+  (2) belge_kaydet isteğe bağlı teslim_tarihi (barista 7 gün, patron 366; app.teslim_tarihi ayarıyla stokla'ya geçer),
+  Mal geldi'de fatura tarihi 2+ gün eskiyse "Mal ne zaman geldi?" (Bugün / Faturadaki gün / Başka gün);
+  (3) stok_farki uyarısı: bitiş sayımından 2 gün sonra döneme eklenen/düzeltilen kayıt sayısı; (4) sayım sonrası barista
+  yönlendirmesi yalnız kasa dosyası (fotoğraf yok). Test: test/gec_kayit_test.sql; kabul paketi geçmiş günleri patronla girer.
+  Starbucks demo kayıt saatleri hizalandı (sahte "kapandıktan sonra" uyarısı vermesin).
 - Starbucks Marmaris demo: 13–20 Ekim (müdahalesiz test haftası) + 20–27 Ekim; scriptler .local-work/demo-hafta/.
 - Kullanıcıya akşam rehberi: Desktop\CoffeeStock-aksam-testi\ (REHBER.md + satis-ornegi.csv).
 - Canlıda bana ait olmayan "SIMULASYON 30 GUN 20261027093652" mekanı var (27 Eki 09:36); dokunulmadı.

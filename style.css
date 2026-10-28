@@ -786,3 +786,9 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 /* Fire: g/ml mi kg/litre mi? */
 .mesaj.birim-sor { display: grid; gap: 8px; text-align: center; }
 .mesaj.birim-sor button { width: 100%; }
+/* Mal geldi: mal ne zaman geldi? */
+.teslim-sor { border: 1px solid var(--cizgi); border-radius: 14px; padding: 12px 14px; margin: 12px 0; display: grid; gap: 8px; }
+.teslim-sor legend { font-weight: 700; padding: 0 6px; }
+.teslim-sor label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 16px; }
+.teslim-sor input[type="radio"] { width: 22px; height: 22px; margin: 0; }
+.teslim-sor input[type="date"] { width: auto; min-height: 40px; }

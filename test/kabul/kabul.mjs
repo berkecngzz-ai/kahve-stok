@@ -73,9 +73,11 @@ sonuc.hesaplar = Object.fromEntries(Object.entries(kisiler).map(([k, v]) => [k, 
 
 // ---------- Yardımcılar ----------
 const sayimIdleri = { A: {}, B: {} };
+// Barista yalnız bugün/dün için sayım ve fire girebilir (sql/35): simülasyonun geçmiş günlerini patron girer.
+const kimGirer = (kafe, gun, barista) => (gun >= 30 ? `${kafe}.${barista}` : `${kafe}.patron`);
 async function sayim(kafe, gun, kalemler, kim = 'b1') {
   const k = Object.entries(kalemler).map(([m, q]) => ({ malzeme_id: ids[kafe].malz[m], miktar: q }));
-  const id = await rpc(`${kafe}.${kim}`, 'giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'sayim', p_tarih: iso(gun), p_aciklama: null, p_kalemler: k });
+  const id = await rpc(kimGirer(kafe, gun, kim), 'giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'sayim', p_tarih: iso(gun), p_aciklama: null, p_kalemler: k });
   sayimIdleri[kafe][gun] = id;
   return id;
 }
@@ -132,7 +134,7 @@ async function kasa(kafe, d) {
     eslesmeyen: r.unmatched.map((x) => x.name), ...s };
 }
 async function fire(x) {
-  const kafe = x.kafe, B = `${kafe}.${x.gun % 2 ? 'b2' : 'b1'}`;
+  const kafe = x.kafe, B = kimGirer(kafe, x.gun, x.gun % 2 ? 'b2' : 'b1');
   const k = x.kalem.malzeme ? { malzeme_id: ids[kafe].malz[x.kalem.malzeme], miktar: x.kalem.miktar } : { urun_id: ids[kafe].urun[x.kalem.urun], miktar: x.kalem.miktar };
   const id = await rpc(B, 'giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: iso(x.gun), p_aciklama: x.neden, p_kalemler: [k] });
   if (x.iptal) await rpc(`${kafe}.patron`, 'giris_iptal', { p_id: id });

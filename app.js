@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=3734c9cf06';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=b8a55f4b16';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=3734c9cf06';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=3734c9cf06';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=3734c9cf06';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=3734c9cf06';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=3734c9cf06';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=b8a55f4b16';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=b8a55f4b16';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=b8a55f4b16';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=b8a55f4b16';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=b8a55f4b16';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=3734c9cf06';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=b8a55f4b16';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -2155,13 +2155,13 @@ async function haftalikSayim(kutu, user, bitti) {
     kutu.innerHTML = `<div class="sade-ekran">
         <div class="buyuk-simge tamam">✓</div><h2>Sayım kaydedildi</h2>
         <p class="buyuk-yazi">Son adım: bu haftanın satış raporu</p>
-        <label class="dev">📷 Fotoğraf çek<input type="file" accept="image/*" capture="environment" id="r-kamera" hidden></label>
-        <label class="dev ikincil">📎 Dosya seç<input type="file" accept="image/*,application/pdf,.csv,.txt,.xlsx,.xls,.tsv,.htm,.html" id="r-dosya" hidden></label>
+        <p class="bilgi">Kasa programından aldığın Excel ya da CSV dosyası. Kâğıt raporun fotoğrafı değil.</p>
+        <label class="dev">📎 Kasa dosyasını seç<input type="file" accept=".xlsx,.csv,.txt,.tsv,.htm,.html" id="r-dosya" hidden></label>
         <p class="mesaj"></p>
         <button class="dev ikincil" id="atla">Şimdi değil</button></div>`;
     const bitir = (alt) => kaydedildi(kutu, { baslik: 'Haftalık sayım tamam', alt, geriAl: geriAlIstegi('giris', sayimId), bitti });
     kutu.querySelector('#atla').onclick = () => bitir('Satış raporunu sonra patrona ver.');
-    for (const sec of ['#r-kamera', '#r-dosya']) {
+    for (const sec of ['#r-dosya']) {
       const inp = kutu.querySelector(sec);
       inp.onchange = async () => {
         const dosya = inp.files[0];
@@ -2300,6 +2300,7 @@ async function malGeldi(kutu, user, bitti) {
   let sonuc = null;           // kullanılan okuma + satırların sınıfı ve sayımı
   let istek = null;           // kaydetme kimliği (tekrar denemelerde aynı)
   let ayniOnay = false;
+  let teslim = null;          // mal hangi gün geldi (null: bugün); fatura tarihi 2+ gün eskiyse sorulur
   let onOkuma = null;         // ilk fotoğraf eklenir eklenmez arka planda başlayan karekod + AI okuması { dosya, is }
   let olcum = {};             // süreler (ms): küçültme, gönderme, AI, kayıt
   let okunanGorseller = [];   // AI'ya gönderilen görseller (ikinci okuma için)
@@ -2670,6 +2671,24 @@ async function malGeldi(kutu, user, bitti) {
     soruSirasi();
   };
 
+  // Faturanın basılı tarihi 2+ gün eskiyse mal ne zaman geldi? Varsayılan bugün (stok o güne yazılır).
+  // Barista en fazla 7 gün geriye seçebilir, patron 1 yıl (sunucu da aynı sınırı uygular).
+  const teslimSorusu = () => {
+    const bugun = bugunStr();
+    if (!sonuc.tarih || gunFarki(bugun, sonuc.tarih) < 2) return '';
+    const sinir = document.body.classList.contains('patron') ? 366 : 7;
+    const enEski = new Date(Date.now() - sinir * 864e5).toISOString().slice(0, 10);
+    const faturaGunuOlur = sonuc.tarih >= enEski;
+    const secili = (v) => ((teslim ?? 'bugun') === v ? 'checked' : '');
+    return `<fieldset class="teslim-sor"><legend>Mal ne zaman geldi?</legend>
+        <p class="bilgi kucuk-yazi">Faturanın tarihi ${esc(kisaTarih(sonuc.tarih))}.</p>
+        <label><input type="radio" name="teslim" value="bugun" ${secili('bugun')}> Bugün</label>
+        ${faturaGunuOlur ? `<label><input type="radio" name="teslim" value="${esc(sonuc.tarih)}" ${secili(sonuc.tarih)}> Faturadaki gün (${esc(kisaTarih(sonuc.tarih))})</label>` : ''}
+        <label><input type="radio" name="teslim" value="baska" ${teslim && teslim !== sonuc.tarih ? 'checked' : ''}> Başka gün
+          <input type="date" id="teslim-gun" min="${enEski}" max="${bugun}" value="${teslim && teslim !== sonuc.tarih ? esc(teslim) : ''}"></label>
+      </fieldset>`;
+  };
+
   const ozetEkrani = (hata = '') => {
     const stokta = sonuc.satirlar.filter((s) => stokAdayi(s) && s.cevap === 'evet');
     // Stok listesinde karşılığı olmayan satırlar (deterjan, peçete…) sessizce geçilir; burada gösterilmez.
@@ -2702,11 +2721,19 @@ async function malGeldi(kutu, user, bitti) {
         <ul class="kabul-liste">${stokta.map(kalem).join('')}</ul>
         ${bekleyen.length ? `<p class="buyuk-yazi">⏳ ${bekleyen.length} kalem sonra kontrol edilecek</p>` : ''}
         ${toplamVar ? '' : `<p class="buyuk-yazi">Faturanın en altındaki toplam?</p>${rakamKutusu('TL')}`}
+        ${teslimSorusu()}
         <p class="mesaj ${hata ? 'hata' : ''}">${esc(hata)}</p>
         <button class="dev" id="kaydet">${stokta.some((s) => s.goz_onayi) && !stokta.some((s) => ['teslimat_farki', 'belirsiz'].includes(s.teslimat))
           ? 'Hepsi geldi, kaydet ✓' : 'Onayla, kaydet ✓'}</button>
         <button class="metin-dugme" id="vazgec">Vazgeç</button></div>`;
     kutu.querySelector('#tekrar-cek')?.addEventListener('click', bastanCek);
+    kutu.querySelectorAll('[name="teslim"]').forEach((r) => r.addEventListener('change', () => {
+      teslim = r.value === 'bugun' ? null : r.value === 'baska' ? (kutu.querySelector('#teslim-gun').value || null) : r.value;
+    }));
+    kutu.querySelector('#teslim-gun')?.addEventListener('change', (e) => {
+      kutu.querySelector('[name="teslim"][value="baska"]').checked = true;
+      teslim = e.target.value && e.target.value !== bugunStr() ? e.target.value : null;
+    });
     kutu.querySelectorAll('[data-farkli]').forEach((b) => b.addEventListener('click', () => farkliGeldi(sonuc.satirlar[Number(b.dataset.farkli)])));
     kutu.querySelectorAll('[data-degil]').forEach((b) => b.addEventListener('click', () => {
       const x = sonuc.satirlar[Number(b.dataset.degil)];
@@ -2776,7 +2803,7 @@ async function malGeldi(kutu, user, bitti) {
       const r = await rpcVeri('belge_kaydet', { p: {
         istek_id: istek, tur: 'fatura', kaynak: sonuc.kaynak, dosya_ozeti: await dosyaOzeti(dosyalar[0].dosya),
         ettn: sonuc.ettn, fatura_no: sonuc.fatura_no, tedarikci: sonuc.tedarikci, tedarikci_vkn: sonuc.tedarikci_vkn,
-        tarih: sonuc.tarih, toplamlar: sonuc.toplamlar, ayni_olabilir_onay: ayniOnay,
+        tarih: sonuc.tarih, toplamlar: sonuc.toplamlar, ayni_olabilir_onay: ayniOnay, ...(teslim ? { teslim_tarihi: teslim } : {}),
         ai_okuma_id: sonuc.ai_okuma_id ?? null,
         dosyalar: dosyalar.map((d) => d.yuklenen),
         okunan: { kaynak: sonuc.kaynak, guven: sonuc.guven, netlik: sonuc.netlik ?? null, notlar: sonuc.notlar,
@@ -3088,7 +3115,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '3734c9cf06';
+const SURUM = 'b8a55f4b16';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });

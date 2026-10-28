@@ -96,6 +96,8 @@ await dene('Barista kendi rolünü patron yapma', 'A barista', 'bos', () => BA1.
 await dene('Barista patronu çıkarma', 'A barista', 'red', () => BA1.sb.rpc('uye_cikar', { p_user_id: PA.uid }));
 await dene('Barista davet kodunu yenileme', 'A barista', 'red', () => BA1.sb.rpc('davet_kodu_yenile'));
 await dene('Barista kurulum kuyruğu', 'A barista', 'red', () => BA1.sb.rpc('kurulum_kuyrugu'));
+await dene('Barista 10 gün önceye fire (geriye tarih)', 'A barista', 'red', () => BA1.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: '2026-10-18', p_aciklama: 'x', p_kalemler: [{ malzeme_id: A.malz.SUT, miktar: 1 }] }));
+await dene('Barista 10 gün önceye sayım (geriye tarih)', 'A barista', 'red', () => BA1.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'sayim', p_tarih: '2026-10-18', p_aciklama: null, p_kalemler: [{ malzeme_id: A.malz.SUT, miktar: 1 }] }));
 await dene('Barista işlem geçmişini okuma', 'A barista', 'bos', () => BA1.sb.from('islem_gecmisi').select('*').limit(3));
 await dene('Barista belge satır fiyatlarını okuma', 'A barista', 'bos', () => BA1.sb.from('belge_satirlari').select('metin, tutar_dahil').limit(3));
 // --- İşletmeden çıkarılan barista ---
