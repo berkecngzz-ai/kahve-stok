@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=b8a55f4b16';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=899e43440f';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=b8a55f4b16';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=b8a55f4b16';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=b8a55f4b16';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=b8a55f4b16';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=b8a55f4b16';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=899e43440f';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=899e43440f';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=899e43440f';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=899e43440f';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=899e43440f';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=b8a55f4b16';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=899e43440f';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -416,7 +416,7 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
   if (!kontrol) return '';
   const maddeler = [];     // [renk, ikon, başlık, açıklama, git]
   if (Number(kontrol.acik_teslimat)) {
-    maddeler.push(['kirmizi', '🚚', `${kontrol.acik_teslimat} teslimatta fark var`,
+    maddeler.push(['sari', '🚚', `${kontrol.acik_teslimat} teslimatta fark var`,
       `${Number(kontrol.acik_teslimat_tl) ? `≈ ${tlYaz(kontrol.acik_teslimat_tl)} eksik mal · ` : ''}aşağıda karar ver`, '#teslimat-gorevleri']);
   }
   if (son?.buyuk) {
@@ -424,7 +424,7 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
   }
   for (const f of (fiyatlar ?? []).filter((x) => x.uyari)) {
     maddeler.push(['sari', '📈', `${f.ad} %${String(f.degisim_yuzde).replace('.', ',')} pahalandı`,
-      `${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)} · ayda ≈ ${tlYaz(f.aylik_etki)} ek maliyet`, '#fiyatlar']);
+      `${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)} · ayda ≈ ${tlYaz(f.aylik_etki)} ek maliyet`, 'ayar']);
   }
   if (kontrol.fiyat_kontrol != null) {
     if (Number(kontrol.fiyat_kontrol)) {
@@ -473,25 +473,6 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
       <span class="kontrol-ikon" aria-hidden="true">${EMOJI_SIMGE[ikon] ? simge(EMOJI_SIMGE[ikon]) : ikon}</span>
       <span class="kontrol-metin"><b>${esc(baslik)}</b><small>${esc(alt)}</small></span>
       ${git ? `<span class="kontrol-ok" aria-hidden="true">${simge('ok')}</span>` : ''}</${git ? 'button' : 'div'}>`).join('')}
-  </section>`;
-}
-
-// Son fiyat değişimleri: önceki → son fatura fiyatı ve 90 günlük ağırlıklı ortalama. Kullanım verisi yoksa TL etkisi yazılmaz.
-function fiyatKarti(fiyatlar) {
-  const liste = (fiyatlar ?? []).filter((f) => Math.abs(Number(f.degisim_yuzde)) >= 1).slice(0, 6);
-  if (!liste.length) return '';
-  const enBuyuk = Math.max(...liste.map((f) => Math.abs(Number(f.degisim_yuzde))), 1);
-  return `<section class="kart" id="fiyatlar"><h2>Fiyat değişimleri</h2>
-    ${liste.map((f) => {
-      const art = Number(f.degisim_yuzde) > 0;
-      return `<div class="fiyat-satir ${f.uyari ? 'uyari-satir' : ''}">
-        <div class="fiyat-ust"><b>${esc(f.ad)}</b>
-          <span class="fiyat-oran ${art ? 'artti' : 'azaldi'}">${art ? '▲' : '▼'} %${String(Math.abs(f.degisim_yuzde)).replace('.', ',')}</span></div>
-        <div class="fiyat-cubuk ${art ? 'artti' : 'azaldi'}"><span style="width:${(Math.abs(f.degisim_yuzde) / enBuyuk * 100).toFixed(0)}%"></span></div>
-        <small>${tlYaz(f.onceki)} → ${tlYaz(f.son)} / ${birimFiyatAdi(f.birim)}${f.aylik_etki != null
-          ? ` · ayda ${tlYaz(f.aylik_etki, { isaret: true })}` : ''}</small>
-      </div>`;
-    }).join('')}
   </section>`;
 }
 
@@ -569,11 +550,10 @@ async function ozetSekmesi(icerik) {
     </section>` : ''}
     ${azalan.length ? `<section class="kart">
       <h2>Azalan malzemeler</h2>
-      ${azalan.slice(0, 5).map((m) => `<div class="cizgili-satir"><span>${esc(m.ad)}</span>
+      ${azalan.slice(0, 3).map((m) => `<div class="cizgili-satir"><span>${esc(m.ad)}</span>
         <span class="etiket-kutu ${yeterDurumu(m.yeter_gun)}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün yeter`}</span></div>`).join('')}
       <button class="ikincil tam" data-git="stok">Tüm stok</button>
     </section>` : ''}
-    ${fiyatKarti(fiyatlar)}
     <p class="ekip-dip">${simge('tamam')}Faturaların ve hesapların CoffeeStock ekibinin kontrolünde.</p>`;
   sayacBaslat(icerik);
   teslimatKartiBagla(icerik, () => ozetSekmesi(icerik));
@@ -764,7 +744,7 @@ async function stokFarkiSekmesi(icerik) {
         : '<p class="bilgi">Bu hafta kayıp yok.</p>'}
     </section>` : ''}
     <button class="dev tam" id="belge-ac">📄 Raporu aç</button>
-    <p class="bilgi kucuk-yazi ortala">Tüm malzemeler, haftalık grafik ve notlar raporda. PDF olarak kaydedebilir ya da paylaşabilirsin.</p>`;
+    <p class="bilgi kucuk-yazi ortala">Bütün malzemeler ve grafik · PDF ya da Excel</p>`;
 
   // Rapor belgesi: kâğıt görünümlü, tek sütun; telefondan PDF olarak kaydedilir / yazdırılır.
   const belgeHtml = () => `
@@ -942,11 +922,6 @@ async function malzemeleriGetir(fiyatli = true) {
 // saklanır (toplam kontrolü için). Ekranlarda her fiyat KDV dahildir; fiyat girilen alanlarda "KDV dahil" yazar
 // (toptancılar çoğunlukla "+KDV" fiyat söyler; yanlış karşılaştırma olmasın).
 
-// "45,00 ₺ · KDV dahil" gibi tek satırlık fiyat yazısı.
-function fiyatYazisi(dahil) {
-  return `${tl.format(Number(dahil))} · KDV dahil`;
-}
-
 // Satır güncellendi mi kontrol eder (yetki yoksa veritabanı sessizce 0 satır günceller).
 async function guncelle(tablo, id, alanlar) {
   const { data, error } = await sb.from(tablo).update(alanlar).eq('id', id).select('id');
@@ -959,20 +934,21 @@ async function malzemeSekmesi(icerik, patron, duzenlenen = null) {
   const aktifler = malzemeler.filter((m) => m.aktif);
   const pasifler = malzemeler.filter((m) => !m.aktif);
   const d = duzenlenen;
+  // Satır sade: ad + fiyat. Dokununca açılır: fiyat geçmişi ve düzenle / pasife al.
   const satir = (m) => `
-    <div class="satir">
-      <div class="genis">${esc(m.ad)}
+    <details class="satir malzeme-satir" data-gecmis="${esc(m.id)}">
+      <summary><span class="genis">${esc(m.ad)}
         <small>${Number(m.fiyat) > 0
           ? `1 ${BIRIMLER[m.birim].fiyatBirimi}: ${tl.format(Number(m.fiyat))}`
-          : '<span class="uyari">Fiyat girilmemiş</span>'}</small>
-        <details class="gecmis" data-gecmis="${esc(m.id)}"><summary>Fiyat geçmişi</summary>
-          <div><p class="bilgi">Yükleniyor…</p></div></details></div>
+          : '<span class="uyari">Fiyat girilmemiş</span>'}</small></span>
+        <span class="kontrol-ok" aria-hidden="true">${simge('ok')}</span></summary>
+      <div class="malzeme-gecmis"><p class="bilgi">Yükleniyor…</p></div>
       ${!patron ? '' : m.aktif
-        ? `<span class="dugmeler">
+        ? `<div class="dugmeler">
             <button class="ikincil kucuk" data-duzenle="${esc(m.id)}">Düzenle</button>
-            <button class="ikincil kucuk" data-aktif="${esc(m.id)}" data-deger="0">Pasife al</button></span>`
-        : `<button class="ikincil kucuk" data-aktif="${esc(m.id)}" data-deger="1">Aktif et</button>`}
-    </div>`;
+            <button class="ikincil kucuk" data-aktif="${esc(m.id)}" data-deger="0">Pasife al</button></div>`
+        : `<div class="dugmeler"><button class="ikincil kucuk" data-aktif="${esc(m.id)}" data-deger="1">Aktif et</button></div>`}
+    </details>`;
 
   icerik.innerHTML = `
     ${patron ? `
@@ -1246,8 +1222,8 @@ async function fiyatGecmisiAc(det) {
     }
     kutu.innerHTML = data.length ? data.map((f) => {
       const iptal = iptaller.has(f.giris_id);
-      return `<div class="gecmis-satir${iptal ? ' iptal' : ''}">${tarihYaz(f.tarih)} ·
-        <b>${fiyatYazisi(f.fiyat)}</b> · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</div>`;
+      return `<div class="fg-satir${iptal ? ' iptal' : ''}"><b>${tl.format(Number(f.fiyat))}</b>
+        <small>${tarihYaz(f.tarih)} · ${KAYNAKLAR[f.kaynak]}${f.degistiren_ad ? ` (${esc(f.degistiren_ad)})` : ''}${iptal ? ' · fatura iptal edildi' : ''}</small></div>`;
     }).join('') : '<p class="bilgi">Henüz kayıt yok.</p>';
   } catch (err) {
     delete det.dataset.yuklendi;
@@ -3115,7 +3091,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = 'b8a55f4b16';
+const SURUM = '899e43440f';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });

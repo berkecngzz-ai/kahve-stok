@@ -792,3 +792,34 @@ label.dev svg { width: 24px; height: 24px; margin-right: 10px; flex: none; }
 .teslim-sor label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 16px; }
 .teslim-sor input[type="radio"] { width: 22px; height: 22px; margin: 0; }
 .teslim-sor input[type="date"] { width: auto; min-height: 40px; }
+
+/* =====================================================================================
+   Sakin renk düzeni (2026-11-01). İlkeler:
+   · Kırmızı yalnız gerçekten sorun olduğunda (normalden yüksek kayıp, hata). Kaybı kırmızıyla göstermek insanı
+     daha kaygılı ve temkinli yapar (Mormann, Bazley & Cronqvist, "In the Red"); normal sınırdaki kayıp nötr kalır.
+   · Renk tek başına anlam taşımaz: her durumun yanında yazı ya da işaret var (kırmızı-yeşil renk körlüğü).
+   · Sıcak nötr zemin (krem, sıcak gri) soğuk griden daha sakin; yazı kontrastı en az 4.5:1.
+   ===================================================================================== */
+:root { --soluk: #6d5f54; --kirmizi: #b4442e; --kirmizi-zemin: #f9e8e2; }
+@media (prefers-color-scheme: dark) { :root { --soluk: #b3a597; --kirmizi: #f2a08a; } }
+/* Haftalık grafik: bu hafta açık krem; yalnız normalden yüksek haftalar renkli */
+.mini-cubuklar div:last-child i { background: rgba(246, 239, 230, .62); }
+.mini-cubuklar i.yuksek, .mini-cubuklar div:last-child i.yuksek { background: #d9774f; }
+.kahraman::after { background: radial-gradient(circle, color-mix(in srgb, var(--vurgu) 22%, transparent), transparent 70%); }
+.kahraman.kirmizi .dev-rakam { color: #ffcbb7; }
+.kahraman.kirmizi .durum-yazi { background: rgba(217, 119, 79, .2); color: #ffcbb7; }
+/* Malzeme satırı: dokununca açılır */
+details.malzeme-satir { display: block; padding: 0; }
+details.malzeme-satir > summary { display: flex; align-items: center; gap: 12px; padding: 12px 0; cursor: pointer; list-style: none; }
+details.malzeme-satir > summary::-webkit-details-marker { display: none; }
+details.malzeme-satir .genis { flex: 1; min-width: 0; font-weight: 700; }
+details.malzeme-satir .genis small { font-weight: 500; }
+details.malzeme-satir .kontrol-ok { transition: transform .2s var(--yay); }
+details.malzeme-satir[open] .kontrol-ok { transform: rotate(90deg); }
+details.malzeme-satir .malzeme-gecmis { font-size: 14.5px; padding: 0 0 8px; }
+details.malzeme-satir .dugmeler { display: flex; gap: 8px; padding-bottom: 14px; }
+.fg-satir { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 0;
+  border-top: 1px dashed var(--cizgi); }
+.fg-satir b { font-variant-numeric: tabular-nums; }
+.fg-satir small { color: var(--soluk); text-align: right; }
+.fg-satir.iptal { text-decoration: line-through; opacity: .6; }
