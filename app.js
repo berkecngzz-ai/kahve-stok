@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=899e43440f';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=5354be7538';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=899e43440f';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=899e43440f';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=899e43440f';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=899e43440f';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=899e43440f';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=5354be7538';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=5354be7538';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=5354be7538';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=5354be7538';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=5354be7538';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=899e43440f';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=5354be7538';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -2193,7 +2193,12 @@ async function aiIleOku(bloblar, model = undefined) {
   for (const b of bloblar) kucukler.push(await fotoKucult(b, 1600, 0.78));   // gönderilecek boyut
   const gorseller = await Promise.all(kucukler.map(blobDataUrl));
   const t1 = performance.now();
-  const { data, error } = await sb.functions.invoke('fatura-oku', { body: { gorseller, model } });
+  let { data, error } = await sb.functions.invoke('fatura-oku', { body: { gorseller, model } });
+  // Ağ kesintisi (yoğun mekan Wi-Fi'ı): sunucuya hiç ulaşılmadıysa bir kez daha denenir; yedek okumaya hemen düşülmez.
+  if (error?.name === 'FunctionsFetchError') {
+    await sureBekle(1500);
+    ({ data, error } = await sb.functions.invoke('fatura-oku', { body: { gorseller, model } }));
+  }
   const t2 = performance.now();
   if (error) {
     let govde = null;
@@ -2511,16 +2516,21 @@ async function malGeldi(kutu, user, bitti) {
   const siniflandirHepsi = () => {
     const ctx = { malzemeler, defter: dr.data, tedarikciAnahtar: tedarikciAnahtari(), tedarikciAdi: sonuc.tedarikci };
     // Defter önce; AI kararı varsa (fotoğraf ya da metin eşleştirmesi) o, yoksa kurallar.
-    sonuc.satirlar.forEach((s) => { s.karar = aiIleSiniflandir(s, ctx); s.cevap = null; });
+    sonuc.satirlar.forEach((s) => {
+      s.karar = aiIleSiniflandir(s, ctx);
+      s.cevap = null;
+      // AI miktarı stok birimine çevirmişse ("3 koli" → 36 lt) belgedeki paket sayısına dönülür; ilk okuma izde kalır.
+      if (s.karar.miktarDuzelt) { s.okunan_miktar = s.miktar; s.okunan_birim = s.birim; s.miktar = s.karar.miktarDuzelt; }
+    });
   };
 
   // ---------- Onay (sayım yalnız şüphede) ----------
   // Okuma güçlü olduğu için barista her kalemi saymaz: okunan liste gösterilir, "Hepsi geldi" ile tek dokunuşta onaylanır.
   // Yalnız şüpheli kalem kör sayılır (faturadaki miktar gösterilmeden): miktar okunamadı, paket içi bilinmiyor, ürün
-  // okuma kendi içinde tutmadı ya da barista "Farklı geldi" dedi. Fark / okuma hatası kararı aynı. Ürün eşleşmesi emin
+  // paket içi AI'yla çelişiyor ve faturanın matematiği çözemedi, okuma kendi içinde tutmadı ya da barista "Farklı geldi" dedi. Fark / okuma hatası kararı aynı. Ürün eşleşmesi emin
   // değilse (soru) sayı sorulmaz; özet ekranında "Bu ürün X değil" seçeneği çıkar.
   const stokAdayi = (s) => s.karar.sinif === 'eslesti' || s.karar.sinif === 'soru';
-  const sayilmali = (s) => s.zorla || s.miktar == null || s.karar.stokBirimi || sonuc.notlar?.includes('okuma_tutarsiz');
+  const sayilmali = (s) => s.zorla || s.miktar == null || s.karar.stokBirimi || s.karar.say || sonuc.notlar?.includes('okuma_tutarsiz');
   const OLCU = { kg: 'kg', g: 'g', lt: 'litre', ml: 'ml' };
   // Paket içi bilinmiyorsa (stokBirimi) barista malzemenin kendi biriminde sayar: kg / litre / adet.
   const STOK_SAYIM = { g: ['kg', 1000], ml: ['litre', 1000], adet: ['adet', 1] };
@@ -3091,7 +3101,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '899e43440f';
+const SURUM = '5354be7538';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });

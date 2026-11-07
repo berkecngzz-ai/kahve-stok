@@ -208,7 +208,19 @@ export function aiIleSiniflandir(satir, ctx) {
   if (yeniMalzeme) return soruSor(yeniMalzeme, carpanBul(birim, yeniMalzeme.birim, satir.metin));
   if (d?.sonuc === 'takip_disi') return { sinif: 'takip_disi', kaynak: 'defter' };
   if (d?.sonuc === 'malzeme' && malzemeBul.has(d.malzeme_id)) {
-    return { sinif: 'eslesti', malzeme_id: d.malzeme_id, carpan: Number(d.carpan), kaynak: 'defter' };
+    const carpan = Number(d.carpan), miktar = Number(satir.miktar), aiStok = Number(satir.ai?.stok_miktari);
+    const karar = { sinif: 'eslesti', malzeme_id: d.malzeme_id, carpan, kaynak: 'defter' };
+    // Defterdeki paket içi doğrudur ama AI bu kez miktarı başka birimde okumuş olabilir ("3 koli" yerine 36): stok hesabı
+    // çelişiyorsa faturanın matematiğine (tutar ÷ birim fiyat) bakılır; o da çözmezse barista sayar.
+    if (miktar > 0 && aiStok > 0 && Math.abs(miktar * carpan - aiStok) > 0.01 * aiStok) {
+      const tutar = Number(satir.tutar_haric ?? satir.tutar_belge ?? satir.tutar_dahil), bf = Number(satir.birim_fiyat);
+      const paket = tutar > 0 && bf > 0 ? tutar / bf : NaN, n = Math.round(paket);
+      const tamMi = n >= 1 && Math.abs(paket - n) <= 0.02 * n;
+      if (tamMi && Math.abs(n * carpan - aiStok) <= 0.01 * aiStok) return { ...karar, ...(n === miktar ? {} : { miktarDuzelt: n }) };
+      if (tamMi && n === miktar && aiStok > miktar * carpan) return karar;   // AI paket içini büyük hesaplamış: miktar doğru
+      return { ...karar, say: true };
+    }
+    return karar;
   }
   const ai = satir.ai;
   if (!ai) return siniflandir(satir, ctx);
@@ -242,6 +254,20 @@ export function aiIleSiniflandir(satir, ctx) {
   // Ürün adındaki paket içi ("25'Lİ", "(500'lü)") AI'nın stok hesabıyla çelişiyor: hangisinin doğru olduğu belgeden
   // anlaşılmaz (3 paket mi 3 bardak mı?). Barista geleni sayar: "Kaç paket geldi? 1 paket = 25 adet".
   if (paketIci && aiCarpan && Math.abs(paketIci - aiCarpan) / paketIci > 0.01) {
+    // Önce faturanın kendi matematiği: tutar ÷ birim fiyat, belgedeki gerçek paket sayısıdır. Tam sayıysa çelişki çözülür:
+    //  · okunan miktarla aynı → miktar doğru, AI'nın stok hesabı yanlış ("10 adet 1 kg" → AI 100 kg dese de 10 kg)
+    //  · farklı ama paket sayısı × paket içi = AI'nın stoğu → AI miktarı stok birimine çevirmiş ("3 koli" → 36 lt)
+    const tutar = Number(satir.tutar_haric ?? satir.tutar_belge ?? satir.tutar_dahil), bf = Number(satir.birim_fiyat);
+    const paket = tutar > 0 && bf > 0 ? tutar / bf : NaN;
+    const n = Math.round(paket);
+    if (n >= 1 && Math.abs(paket - n) <= 0.02 * n && paketIci > 1) {
+      // AI paket içini daha büyük hesaplamışsa yanılmıştır. Daha küçükse ("36 adet × 44,55", 12'li koli) miktar şişe de koli
+      // de olabilir: matematik ikisini de doğrular, tahmin edilmez, barista sayar.
+      if (n === miktar) return aiCarpan > paketIci ? soruSor(m, paketIci, { kaynak: 'ai' }) : soruSor(m, paketIci, { kaynak: 'ai', say: true });
+      if (Math.abs(n * paketIci - Number(ai.stok_miktari)) <= 0.01 * Number(ai.stok_miktari)) {
+        return soruSor(m, paketIci, { kaynak: 'ai', miktarDuzelt: n });
+      }
+    }
     return paketIci > 1 ? soruSor(m, paketIci, { kaynak: 'ai', say: true }) : soruSor(m, null, { kaynak: 'ai' });
   }
   // AI emin değil, düşük güven ya da baş isim yok: yine barista sayar (değilse "değil" der).

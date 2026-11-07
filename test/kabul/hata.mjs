@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DOMParser } from '@xmldom/xmldom';
 import { readSalesFile } from '../../satis-okuma.js';
 const BURA = dirname(fileURLToPath(import.meta.url));
+const BUGUN = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(new Date());
 const URL_ = process.env.KABUL_URL ?? 'http://localhost:8788';
 const U = JSON.parse(readFileSync(join(BURA, 'cikti', 'uygulama.json'), 'utf8'));
 const sifre = JSON.parse(readFileSync(join(BURA, '..', '..', '.local-work', 'kabul-hesaplar.json'), 'utf8'));
@@ -22,18 +23,18 @@ async function redBekle(senaryo, fn) {
 }
 const fireK = (m) => [{ malzeme_id: A.malz.SUT, miktar: m }];
 for (const [ad, m] of [['sıfır', 0], ['negatif', -5], ['aşırı büyük', 1e13], ['metin', 'abc'], ['boş', null]]) {
-  await redBekle(`Fire miktarı ${ad}`, () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: '2026-10-28', p_aciklama: 'x', p_kalemler: fireK(m) }));
+  await redBekle(`Fire miktarı ${ad}`, () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: BUGUN, p_aciklama: 'x', p_kalemler: fireK(m) }));
 }
-await redBekle('Sayım miktarı negatif', () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'sayim', p_tarih: '2026-10-28', p_aciklama: null, p_kalemler: fireK(-1) }));
+await redBekle('Sayım miktarı negatif', () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'sayim', p_tarih: BUGUN, p_aciklama: null, p_kalemler: fireK(-1) }));
 for (const [ad, t] of [['gelecek', '2026-11-05'], ['bir yıldan eski', '2025-01-01'], ['geçersiz', '2026-13-45']]) {
   await redBekle(`Fire tarihi ${ad}`, () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: t, p_aciklama: 'x', p_kalemler: fireK(10) }));
 }
-await redBekle('Boş fire (kalem yok)', () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: '2026-10-28', p_aciklama: 'x', p_kalemler: [] }));
+await redBekle('Boş fire (kalem yok)', () => B.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: BUGUN, p_aciklama: 'x', p_kalemler: [] }));
 await redBekle('Elle mal kabul miktar sıfır', () => B.sb.rpc('elle_mal_kabul', { p_istek: randomUUID(), p_aciklama: 'x', p_kalemler: fireK(0) }));
 // --- Çift gönderim: aynı istek kimliği (çift tıklama) ve iki oturumdan eşzamanlı ---
 {
   const istek = randomUUID(), once = await sayGir({ tur: 'fire' });
-  const r = await Promise.all([B.sb, B.sb, B2oturum.sb, B2oturum.sb].map((sb) => sb.rpc('giris_kaydet_tek', { p_istek: istek, p_tur: 'fire', p_tarih: '2026-10-28', p_aciklama: 'çift', p_kalemler: fireK(100) })));
+  const r = await Promise.all([B.sb, B.sb, B2oturum.sb, B2oturum.sb].map((sb) => sb.rpc('giris_kaydet_tek', { p_istek: istek, p_tur: 'fire', p_tarih: BUGUN, p_aciklama: 'çift', p_kalemler: fireK(100) })));
   const idler = new Set(r.map((x) => x.data)), sonra = await sayGir({ tur: 'fire' });
   kaydet('Aynı fire 4 kez (2 oturum, eşzamanlı)', 'tek kayıt', `${sonra - once} yeni kayıt, ${idler.size} farklı kimlik, hatalar: ${r.filter((x) => x.error).length}`, sonra - once === 1 && idler.size === 1);
 }
@@ -70,7 +71,7 @@ for (const [ad, icerik, isim] of [['Bozuk XLSX (zip değil)', Buffer.from('PK\x0
 }
 // --- Depoda olmayan dosya / yarım işlem ---
 await redBekle('Belge kaydı, dosya depoya yüklenmemiş', () => B.sb.rpc('belge_kaydet', { p: { istek_id: randomUUID(), tur: 'fatura', kaynak: 'ai', dosyalar: [`${A.mekan}/${randomUUID()}/1.jpg`],
-  tarih: '2026-10-28', toplamlar: { genel: 10 }, satirlar: [{ metin: 'x', miktar: 1, birim: 'adet', tutar_dahil: 10, sinif: 'belirsiz' }] } }));
+  tarih: BUGUN, toplamlar: { genel: 10 }, satirlar: [{ metin: 'x', miktar: 1, birim: 'adet', tutar_dahil: 10, sinif: 'belirsiz' }] } }));
 {
   const once = await sayGir({ tur: 'fatura' });
   await B.sb.storage.from('fatura-belgeleri').upload(`${A.mekan}/${randomUUID()}/1.jpg`, Buffer.from('yarım'));
@@ -78,7 +79,7 @@ await redBekle('Belge kaydı, dosya depoya yüklenmemiş', () => B.sb.rpc('belge
 }
 await redBekle('Fatura satır miktarı negatif', async () => {
   const yol = `${A.mekan}/${randomUUID()}/1.xml`; await B.sb.storage.from('fatura-belgeleri').upload(yol, Buffer.from('<x/>'));
-  const r = await B.sb.rpc('belge_kaydet', { p: { istek_id: randomUUID(), tur: 'fatura', kaynak: 'xml', dosyalar: [yol], tarih: '2026-10-28', toplamlar: { genel: -10 },
+  const r = await B.sb.rpc('belge_kaydet', { p: { istek_id: randomUUID(), tur: 'fatura', kaynak: 'xml', dosyalar: [yol], tarih: BUGUN, toplamlar: { genel: -10 },
     satirlar: [{ metin: 'Espresso', miktar: -1, birim: 'adet', tutar_dahil: -10, sinif: 'eslesti', malzeme_id: A.malz.ESP, carpan: 1000, barista_onayi: true, gelen_miktar: -1, sayim: 'sayildi', teslimat: 'tam' }] } });
   return r;
 });

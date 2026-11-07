@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anahtar, kelimeler, benzerlik, carpanBul, siniflandir, turevUrunMu, basIsimVarMi } from '../../eslestirme.js';
+import { anahtar, kelimeler, benzerlik, carpanBul, siniflandir, turevUrunMu, basIsimVarMi, aiIleSiniflandir } from '../../eslestirme.js';
 
 test('anahtar SQL ile aynı', () => {
   assert.equal(anahtar('SÜTAŞ Süt 1L x12, İÇİM!'), 'sutas sut 1l x12 icim');
@@ -117,3 +117,50 @@ test('paket içi dilim/porsiyon ve parantezli adet çarpanı; parantezsiz "12 ad
   assert.equal(carpanBul('adet', 'adet', 'Cookie 12 adet'), 1);
   assert.equal(carpanBul('adet', 'adet', 'Brownie'), 1);
 });
+
+// Canlı AI (2026-11-08): aynı görselde paket içi hesabı değişebiliyor. Faturanın matematiği (tutar ÷ birim fiyat) çözer.
+{
+  const mz = [{ id: 'S', ad: 'Süt (tam yağlı)', birim: 'ml', aktif: true }, { id: 'E', ad: 'Espresso çekirdeği', birim: 'g', aktif: true }];
+  const ctx = { malzemeler: mz, defter: [], tedarikciAnahtar: 'x', tedarikciAdi: 'TEST' };
+  const ai = (id, stok) => ({ karar: 'malzeme', malzeme_id: id, stok_miktari: stok, guven: 0.9 });
+  const ES = 'Espresso Çekirdek Kahve 1 kg', SU = "Tam Yağlı Süt 1 L (12'li koli)";
+  const stok = (s, k) => (k.miktarDuzelt ?? s.miktar) * k.carpan;
+  test('AI paket içini yanlış hesaplar (10 adet 1 kg → 100 kg): miktar × birim fiyat tutuyorsa 10 kg, sayım yok', () => {
+    const s = { metin: ES, miktar: 10, birim: 'adet', birim_fiyat: 1090.91, tutar_haric: 10909.1, ai: ai('E', 100000) };
+    const k = aiIleSiniflandir(s, ctx);
+    assert.equal(k.say, undefined); assert.equal(stok(s, k), 10000);
+  });
+  test('AI miktarı stok birimine çevirir (10.000 g): belgedeki 10 pakete döner, stok 10 kg', () => {
+    const s = { metin: ES, miktar: 10000, birim: 'g', birim_fiyat: 1090.91, tutar_haric: 10909.1, ai: ai('E', 10000) };
+    const k = aiIleSiniflandir(s, ctx);
+    assert.equal(k.say, undefined); assert.equal(k.miktarDuzelt, 10); assert.equal(stok(s, k), 10000);
+  });
+  test('AI koliyi şişeye çevirir (36 adet, koli fiyatı): 3 koli, stok 36 L', () => {
+    const s = { metin: SU, miktar: 36, birim: 'adet', birim_fiyat: 534.65, tutar_haric: 1603.95, ai: ai('S', 36000) };
+    const k = aiIleSiniflandir(s, ctx);
+    assert.equal(k.miktarDuzelt, 3); assert.equal(k.carpan, 12000); assert.equal(stok(s, k), 36000);
+  });
+  test('Miktar koli mi şişe mi belirsiz (36 adet × 44,55, 12li koli): tahmin yok, barista sayar', () => {
+    const k = aiIleSiniflandir({ metin: SU, miktar: 36, birim: 'adet', birim_fiyat: 44.55, tutar_haric: 1603.8, ai: ai('S', 36000) }, ctx);
+    assert.equal(k.say, true);
+  });
+  const dctx = { ...ctx, defter: [{ tedarikci_anahtar: 'x', metin_anahtar: anahtar(SU), birim: 'adet', sonuc: 'malzeme', malzeme_id: 'S', carpan: 12000, guncelleme: '2026-11-01' }] };
+  test('Defter: normal okuma (3 adet = 3 koli) değişmez', () => {
+    const s = { metin: SU, miktar: 3, birim: 'adet', birim_fiyat: 534.65, tutar_haric: 1603.95, ai: ai('S', 36000) };
+    const k = aiIleSiniflandir(s, dctx);
+    assert.equal(k.sinif, 'eslesti'); assert.equal(k.say, undefined); assert.equal(k.miktarDuzelt, undefined); assert.equal(stok(s, k), 36000);
+  });
+  test('Defter: AI 36 okudu, koli fiyatından 3 koli çıkar, stok 36 L', () => {
+    const s = { metin: SU, miktar: 36, birim: 'adet', birim_fiyat: 534.65, tutar_haric: 1603.95, ai: ai('S', 36000) };
+    const k = aiIleSiniflandir(s, dctx);
+    assert.equal(k.miktarDuzelt, 3); assert.equal(stok(s, k), 36000);
+  });
+  test('Defter: 36 × 44,55 belirsiz: barista sayar', () => {
+    const k = aiIleSiniflandir({ metin: SU, miktar: 36, birim: 'adet', birim_fiyat: 44.55, tutar_haric: 1603.8, ai: ai('S', 36000) }, dctx);
+    assert.equal(k.say, true);
+  });
+  test('Faturanın matematiği çözemiyorsa (birim fiyat yok) barista sayar', () => {
+    const k = aiIleSiniflandir({ metin: ES, miktar: 10, birim: 'adet', birim_fiyat: null, tutar_haric: 10909.1, ai: ai('E', 100000) }, ctx);
+    assert.equal(k.say, true);
+  });
+}

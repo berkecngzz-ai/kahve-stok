@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const BURA = dirname(fileURLToPath(import.meta.url));
+const BUGUN = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(new Date());
 const URL_ = process.env.KABUL_URL ?? 'http://localhost:8788';
 const U = JSON.parse(readFileSync(join(BURA, 'cikti', 'uygulama.json'), 'utf8'));
 const sifre = JSON.parse(readFileSync(join(BURA, '..', '..', '.local-work', 'kabul-hesaplar.json'), 'utf8'));
@@ -71,7 +72,7 @@ await dene('A mekanına malzeme ekleme (mekan_id zorlayarak)', 'B patron', 'red'
 await dene('A klasörüne dosya yükleme (depo)', 'B patron', 'red', () => PB.sb.storage.from('fatura-belgeleri').upload(`${A.mekan}/${randomUUID()}/x.xml`, new Blob(['<x/>'])));
 await dene("A'nın üyesini çıkarma", 'B patron', 'red', () => PB.sb.rpc('uye_cikar', { p_user_id: BA2.uid }));
 await dene("A kafeye mekan_id ile fire girme", 'B barista', 'red', async () => {
-  const r = await BB1.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: '2026-10-28', p_aciklama: 'x',
+  const r = await BB1.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: BUGUN, p_aciklama: 'x',
     p_kalemler: [{ malzeme_id: A.malz.SUT, miktar: 1 }] });
   return r;
 });
@@ -104,7 +105,7 @@ await dene('Barista belge satır fiyatlarını okuma', 'A barista', 'bos', () =>
 const cikar = await PA.sb.rpc('uye_cikar', { p_user_id: BA2.uid });
 sonuc.push({ senaryo: 'Patron baristayı çıkarır', hesap: 'A patron', beklenen: 'izin', gercek: cikar.error ? `hata: ${cikar.error.message}` : 'çıkarıldı', durum: cikar.error ? 'KALDI' : 'GEÇTİ' });
 await dene('Çıkarılan barista A girişlerini okuma', 'A barista2 (çıkarıldı)', 'bos', () => BA2.sb.from('girisler').select('id').limit(3));
-await dene('Çıkarılan barista fire girme', 'A barista2 (çıkarıldı)', 'red', () => BA2.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: '2026-10-28', p_aciklama: 'x', p_kalemler: [{ malzeme_id: A.malz.SUT, miktar: 1 }] }));
+await dene('Çıkarılan barista fire girme', 'A barista2 (çıkarıldı)', 'red', () => BA2.sb.rpc('giris_kaydet_tek', { p_istek: randomUUID(), p_tur: 'fire', p_tarih: BUGUN, p_aciklama: 'x', p_kalemler: [{ malzeme_id: A.malz.SUT, miktar: 1 }] }));
 await dene('Çıkarılan barista eski davet koduyla tekrar katılma', 'A barista2 (çıkarıldı)', 'izin', async () => {
   const { data } = await PA.sb.from('mekanlar').select('davet_kodu').single();
   return BA2.sb.rpc('mekana_katil', { p_kod: data.davet_kodu, p_ad: 'Deniz TEST' });
