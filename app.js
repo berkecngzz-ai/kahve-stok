@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=5354be7538';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=99214376ce';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=5354be7538';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=5354be7538';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=5354be7538';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=5354be7538';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=5354be7538';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=99214376ce';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=99214376ce';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=99214376ce';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=99214376ce';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=99214376ce';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=5354be7538';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=99214376ce';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -1328,6 +1328,8 @@ async function girisSekmesi(icerik, user, patron) {
 
   // Fatura satırında tutar (KDV dahil). Fiyatı doğrulanmadıysa küçük not.
   const tutarYaz = (k) => (k.uyarilar?.includes('fiyat_kontrol') ? ' · <i>fiyat kontrol bekliyor</i>'
+    : k.uyarilar?.includes('irsaliye') ? ' · <i>irsaliye, fiyatı faturayla gelir</i>'
+    : k.uyarilar?.includes('irsaliyede') ? `${k.tutar == null ? '' : ` · ${tl.format(Number(k.tutar))}`} · <i>mal irsaliyeyle girmişti, stoğa tekrar eklenmedi</i>`
     : k.tutar == null ? '' : ` · ${tl.format(Number(k.tutar))}`);
   const kalemYaz = (k) => {
     if (k.stok_disi) return `${esc(k.satir_metni)} <i>(stoğa eklenmedi)</i>${tutarYaz(k)}`;
@@ -1339,7 +1341,10 @@ async function girisSekmesi(icerik, user, patron) {
   const bugun = bugunStr();
   // Listede sağdaki tutar: fatura KDV dahil toplam; fire güncel fiyatla TL; satış ürün adedi; sayım malzeme sayısı.
   const girisTutari = (g, satirlar) => {
-    if (g.tur === 'fatura') return tlYaz(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0));
+    if (g.tur === 'fatura') {
+      if (g.belge_genel_toplam == null && satirlar.length && satirlar.every((k) => k.uyarilar?.includes('irsaliye'))) return 'İrsaliye';
+      return tlYaz(g.belge_genel_toplam ?? satirlar.reduce((t, k) => t + Number(k.tutar ?? 0), 0));
+    }
     if (g.tur === 'satis') return `${sayiYaz(satirlar.reduce((t, k) => t + Number(k.miktar), 0))} ürün`;
     if (g.tur === 'fire') {
       // Ürün firesi de (2 Americano) reçeteyle malzemeye çevrilmiş hareketlerden TL'ye çevrilir.
@@ -2520,7 +2525,11 @@ async function malGeldi(kutu, user, bitti) {
       s.karar = aiIleSiniflandir(s, ctx);
       s.cevap = null;
       // AI miktarı stok birimine çevirmişse ("3 koli" → 36 lt) belgedeki paket sayısına dönülür; ilk okuma izde kalır.
-      if (s.karar.miktarDuzelt) { s.okunan_miktar = s.miktar; s.okunan_birim = s.birim; s.miktar = s.karar.miktarDuzelt; }
+      if (s.karar.miktarDuzelt || s.karar.birimDuzelt) {
+        s.okunan_miktar = s.miktar; s.okunan_birim = s.birim;
+        if (s.karar.miktarDuzelt) s.miktar = s.karar.miktarDuzelt;
+        if (s.karar.birimDuzelt) s.birim = s.karar.birimDuzelt;
+      }
     });
   };
 
@@ -2667,9 +2676,9 @@ async function malGeldi(kutu, user, bitti) {
     const faturaGunuOlur = sonuc.tarih >= enEski;
     const secili = (v) => ((teslim ?? 'bugun') === v ? 'checked' : '');
     return `<fieldset class="teslim-sor"><legend>Mal ne zaman geldi?</legend>
-        <p class="bilgi kucuk-yazi">Faturanın tarihi ${esc(kisaTarih(sonuc.tarih))}.</p>
+        <p class="bilgi kucuk-yazi">${sonuc.irsaliye ? "İrsaliyenin" : "Faturanın"} tarihi ${esc(kisaTarih(sonuc.tarih))}.</p>
         <label><input type="radio" name="teslim" value="bugun" ${secili('bugun')}> Bugün</label>
-        ${faturaGunuOlur ? `<label><input type="radio" name="teslim" value="${esc(sonuc.tarih)}" ${secili(sonuc.tarih)}> Faturadaki gün (${esc(kisaTarih(sonuc.tarih))})</label>` : ''}
+        ${faturaGunuOlur ? `<label><input type="radio" name="teslim" value="${esc(sonuc.tarih)}" ${secili(sonuc.tarih)}> ${sonuc.irsaliye ? "İrsaliyedeki" : "Faturadaki"} gün (${esc(kisaTarih(sonuc.tarih))})</label>` : ''}
         <label><input type="radio" name="teslim" value="baska" ${teslim && teslim !== sonuc.tarih ? 'checked' : ''}> Başka gün
           <input type="date" id="teslim-gun" min="${enEski}" max="${bugun}" value="${teslim && teslim !== sonuc.tarih ? esc(teslim) : ''}"></label>
       </fieldset>`;
@@ -2679,8 +2688,9 @@ async function malGeldi(kutu, user, bitti) {
     const stokta = sonuc.satirlar.filter((s) => stokAdayi(s) && s.cevap === 'evet');
     // Stok listesinde karşılığı olmayan satırlar (deterjan, peçete…) sessizce geçilir; burada gösterilmez.
     const bekleyen = sonuc.satirlar.filter((s) => s.karar.sinif === 'kurulum');
-    const toplamVar = sonuc.toplamlar.genel != null;
-    const kontrol = toplamVar ? toplamKontrol(sonuc) : { tutuyor: false, sebep: 'toplam_yok' };
+    // İrsaliyede fiyat ve toplam yoktur: toplam sorulmaz, mal stoğa girer, fiyatı faturası gelince eklenir.
+    const toplamVar = sonuc.irsaliye === true || sonuc.toplamlar.genel != null;
+    const kontrol = sonuc.irsaliye ? { tutuyor: true } : toplamVar ? toplamKontrol(sonuc) : { tutuyor: false, sebep: 'toplam_yok' };
     const tutmuyor = toplamVar && !kontrol.tutuyor;
     const kalem = (s) => {
       const m = malzemeBul.get(s.karar.malzeme_id);
@@ -2700,7 +2710,8 @@ async function malGeldi(kutu, user, bitti) {
           <span class="kalem-durum" aria-hidden="true">${tutmuyor && s.sayim !== 'sayildi' ? '⏳' : farkli ? '⚠️' : '✓'}</span></li>`;
     };
     kutu.innerHTML = `<div class="sade-ekran">
-        <h2>📦 ${esc(sonuc.tedarikci ?? 'Fatura')}</h2>
+        <h2>📦 ${esc(sonuc.tedarikci ?? (sonuc.irsaliye ? 'İrsaliye' : 'Fatura'))}</h2>
+        ${sonuc.irsaliye ? '<p class="bilgi">İrsaliye: fiyat yok. Mal stoğa girer, fiyatı faturası gelince eklenir.</p>' : ''}
         ${tutmuyor ? `<div class="sade-uyari">⚠️ Toplam tutmuyor, faturaya tekrar bak.
             <button class="dev ikincil" id="tekrar-cek">📷 Tekrar çek</button></div>` : ''}
         ${stokta.some((s) => s.goz_onayi) ? '<p class="bilgi">Faturadan okunanlar. Gelenle aynıysa kaydet; farklı olanın altındaki "Farklı geldi"ye dokun.</p>' : ''}
@@ -2790,6 +2801,7 @@ async function malGeldi(kutu, user, bitti) {
         istek_id: istek, tur: 'fatura', kaynak: sonuc.kaynak, dosya_ozeti: await dosyaOzeti(dosyalar[0].dosya),
         ettn: sonuc.ettn, fatura_no: sonuc.fatura_no, tedarikci: sonuc.tedarikci, tedarikci_vkn: sonuc.tedarikci_vkn,
         tarih: sonuc.tarih, toplamlar: sonuc.toplamlar, ayni_olabilir_onay: ayniOnay, ...(teslim ? { teslim_tarihi: teslim } : {}),
+        ...(sonuc.irsaliye ? { irsaliye: true } : {}),
         ai_okuma_id: sonuc.ai_okuma_id ?? null,
         dosyalar: dosyalar.map((d) => d.yuklenen),
         okunan: { kaynak: sonuc.kaynak, guven: sonuc.guven, netlik: sonuc.netlik ?? null, notlar: sonuc.notlar,
@@ -3020,6 +3032,8 @@ function belgeKarti(k, b) {
     </form>`;
   }
   const satirToplam = b.satirlar.reduce((t, s) => t + Number(s.tutar_dahil ?? 0), 0);
+  // İrsaliye: sunucu toplamı boş bırakır (toplam_tutuyor null); faturada toplam her zaman vardır.
+  const irsaliye = b.genel_toplam == null && b.toplam_tutuyor == null;
   const bekleyen = b.satirlar.filter((s) => s.durum === 'bekliyor');
   const eslesmeBekleyen = bekleyen.filter((s) => s.sebep === 'eslesme');
   const malzemelerJson = esc(JSON.stringify(k.malzemeler));
@@ -3027,9 +3041,10 @@ function belgeKarti(k, b) {
     <b>📦 ${esc(b.tedarikci ?? 'Tedarikçi okunamadı')}</b> · ${b.tarih ? tarihYaz(b.tarih) : 'tarih yok'}
       ${b.fatura_no ? ` · ${esc(b.fatura_no)}` : ''} · ${esc(b.kaynak.toUpperCase())}
     <small class="bilgi">${esc(b.giren_ad)} · ${zamanYaz(b.olusturma)}</small>
-    <p class="${b.toplam_tutuyor ? 'tamam' : 'hata'}">Genel toplam ${b.genel_toplam != null ? tl.format(b.genel_toplam) : '?'} ·
+    ${irsaliye ? '<p class="bilgi">İrsaliye: fiyat yok, fiyatı faturası gelince eklenir.</p>'
+      : `<p class="${b.toplam_tutuyor ? 'tamam' : 'hata'}">Genel toplam ${b.genel_toplam != null ? tl.format(b.genel_toplam) : '?'} ·
       satırlar ${tl.format(satirToplam)}${Number(b.indirim) ? ` · indirim ${tl.format(b.indirim)}` : ''}
-      ${b.toplam_tutuyor ? '✓' : '✗ toplam tutmuyor, fotoğrafı kontrol et'}</p>
+      ${b.toplam_tutuyor ? '✓' : '✗ toplam tutmuyor, fotoğrafı kontrol et'}</p>`}
     ${dosyaDugmesi}
     ${b.satirlar.map((s) => s.durum !== 'bekliyor'
       ? `<div class="kurulum-satir cozuldu">${s.durum === 'stokta' ? '✓' : '—'} ${esc(s.metin)}
@@ -3055,7 +3070,7 @@ function belgeKarti(k, b) {
         </form>`).join('')}
     <div class="dugmeler belge-dugmeleri">
       ${eslesmeBekleyen.length ? `<button class="ikincil kucuk" data-kalanlar data-id="${esc(b.id)}">Kalanların hepsi takip dışı (${eslesmeBekleyen.length})</button>` : ''}
-      ${!b.toplam_tutuyor ? `<button class="kucuk" data-onayla data-id="${esc(b.id)}">Rakamlar doğru, onayla</button>` : ''}
+      ${!b.toplam_tutuyor && !irsaliye ? `<button class="kucuk" data-onayla data-id="${esc(b.id)}">Rakamlar doğru, onayla</button>` : ''}
       <button class="ikincil kucuk" data-reddet data-id="${esc(b.id)}">Belgeyi reddet</button>
     </div></div>`;
 }
@@ -3101,7 +3116,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '5354be7538';
+const SURUM = '99214376ce';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });

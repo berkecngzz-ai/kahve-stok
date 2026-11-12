@@ -547,8 +547,15 @@ export function aiSonucunuCevir(ai) {
   const toplamTutar = (ai.satirlar ?? []).reduce((t, s) => t + (s.tutar ?? 0), 0);
   const pay = Math.max(1, 0.01 * (ai.satirlar?.length ?? 0));
   const genel = toplamlar.genel != null ? toplamlar.genel + (toplamlar.indirim ?? 0) : null;
-  const haricTutar = genel != null && toplamlar.kdv > pay && Math.abs(toplamTutar + toplamlar.kdv - genel) <= pay;
-  const dahilTutar = genel != null && Math.abs(toplamTutar - genel) <= pay;
+  let haricTutar = genel != null && toplamlar.kdv > pay && Math.abs(toplamTutar + toplamlar.kdv - genel) <= pay;
+  let dahilTutar = genel != null && Math.abs(toplamTutar - genel) <= pay;
+  // Satır tutarları iskonto DÜŞÜLMÜŞ yazılmışsa (satırda "İskonto %10 → Tutar"; altta "Fat. İnd. Tutarı" yalnız bilgi)
+  // satırlar indirimsiz genel toplamı verir: indirim ikinci kez düşülmez.
+  if (!haricTutar && !dahilTutar && (toplamlar.indirim ?? 0) > 0 && toplamlar.genel != null) {
+    if (toplamlar.kdv > pay && Math.abs(toplamTutar + toplamlar.kdv - toplamlar.genel) <= pay) haricTutar = true;
+    else if (Math.abs(toplamTutar - toplamlar.genel) <= pay) dahilTutar = true;
+    if (haricTutar || dahilTutar) toplamlar.indirim = 0;
+  }
   const dahil = haricTutar ? false : dahilTutar ? true : ai.tutarlar_kdv_dahil === true;
   const satirlar = (ai.satirlar ?? []).map((s) => ({
     metin: String(s.metin ?? '').trim() || '(okunamadı)',
@@ -589,12 +596,27 @@ export function aiSonucunuCevir(ai) {
   if (ai.okunabilirlik === 'bulanik') notlar.push('bulanik');
   // Belgenin bir kısmı (alt toplam) görünmüyorsa AI'nın verdiği toplam kullanılmaz: barista faturadan yazar.
   if (ai.okunabilirlik === 'eksik') { notlar.push('eksik_gorunuyor'); toplamlar.genel = null; }
-  if (ai.belge_turu === 'diger') notlar.push('fatura_degil');
+  // e-İrsaliye / sevk irsaliyesi: mal geldi ama fiyat yok. Fiyatı ve toplamı hiç yazmayan belge de irsaliye sayılır
+  // (fiyat sonra faturayla gelir). Toplam sorulmaz, mal stoğa girer.
+  const fiyatsiz = toplamlar.genel == null && satirlar.length > 0
+    && satirlar.every((u) => u.tutar_belge == null && u.birim_fiyat == null);
+  const irsaliye = ai.belge_turu === 'irsaliye' || (fiyatsiz && ai.belge_turu !== 'diger');
+  if (ai.belge_turu === 'diger' && !irsaliye) notlar.push('fatura_degil');
   if (satirlar.some((u) => carpmaSatiriKarisik(u))) notlar.push('satir_karisik');
   if (!satirlar.length) notlar.push('satir_yok');
-  if (toplamlar.genel == null) notlar.push('toplam_yok');
+  if (toplamlar.genel == null && !irsaliye) notlar.push('toplam_yok');
+  // Satırların KDV dahil toplamı genel toplamı kuruşu kuruşuna veriyor ama okunan "KDV hariç toplam" tutmuyor: alt
+  // toplamlar bölümü yanlış okunmuş (buruşuk fişte damga üstünde "1.183" → "1.163"). Satırlar doğruysa ara toplamlar da
+  // satırlardan bellidir; okunan yanlış ara toplam kontrolü düşürmesin.
+  const ilk = toplamKontrol({ toplamlar, satirlar });
+  if (!ilk.tutuyor && ilk.sebep === 'haric_fark') {
+    const harics = Math.round(satirlar.reduce((t, u) => t + u.tutar_haric, 0) * 100) / 100;
+    toplamlar.kdv_haric = harics;
+    toplamlar.kdv = Math.round((toplamlar.genel + (toplamlar.indirim ?? 0) - harics) * 100) / 100;
+    notlar.push('ara_toplam_duzeltildi');
+  }
   const tarih = /^\d{4}-\d{2}-\d{2}$/.test(ai.tarih ?? '') ? ai.tarih : null;
-  return { kaynak: 'ai', ettn: null, fatura_no: ai.fatura_no ?? null, tedarikci: ai.tedarikci ?? null,
+  return { kaynak: 'ai', ettn: null, fatura_no: ai.fatura_no ?? null, tedarikci: ai.tedarikci ?? null, irsaliye,
            tedarikci_vkn: (ai.vkn ?? '').replace(/\D/g, '') || null, tarih, toplamlar, satirlar, notlar, guven: 1 };
 }
 

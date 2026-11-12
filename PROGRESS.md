@@ -1,5 +1,33 @@
 # İlerleme notları
 
+## Gerçek tedarikçi belgeleri testi (2026-11-13) · CANLIDA
+- 5 gerçek belge (Metro termal e-fatura, SMB/Algida dondurma e-faturası, Sütaş e-irsaliye, Arslanlar DVG şurup e-faturası,
+  Söylemezoğlu e-irsaliye). Yeni test mekânı "Colombia Coffee TEST" (yerel). İlk durum: AI eşleştirme 9/19; irsaliye hiç
+  kaydedilemiyordu ("fatura değil" / "en alttaki toplamı yaz"); çamaşır suyu ve maden suyu "Kaynak suyu"na, KAYMAK dondurma
+  KAYNAK suyuna gidiyordu; dondurmalar takip dışı sayılıyordu (AI "aromalı süt ≠ süt" kuralını "Antep fıstıklı dondurma ≠
+  Dondurma" diye genelliyordu).
+- sql/36 (CANLIDA): e-İRSALİYE. belge_kaydet 'irsaliye': true → fiyat/toplam istenmez, mal stoğa girer, kalem 'irsaliye'
+  etiketli (tutar görevi açılmaz, maliyete girmez). Sonra gelen FATURA aynı malzemenin açık irsaliyeleriyle eski→yeni MAHSUP
+  edilir (irsaliye_mahsuplari): mahsup kısmı stoğa ikinci kez girmez, fatura kalemi tutarıyla kalır (birim maliyet doğru),
+  kalem 'irsaliyede' etiketli ("mal irsaliyeyle girmişti"). Önce aynı tedarikçi; başka tedarikçi yalnız miktar birebir.
+  Pencere −62/+7 gün. Mahsuplu irsaliye, faturası iptal edilmeden iptal edilemez. Test: test/irsaliye_test.sql.
+  Geri al: scripts/geri-al-36.sql.
+- fatura-oku (v8+): belge_turu 'irsaliye'; satıcı ≠ alıcı; miktar/birim YALNIZ miktar sütunu (paket yazısı çarpılmaz);
+  satır iskontosu; toptancı termal satır biçimi; kısaltma/marka/tedarikçi adından tür; boyut aynı olmalı; "her SU su
+  değildir"; GENEL tür adı (Dondurma, Süt) tüm çeşitleri kapsar; temperature 0 (aynı belge hep aynı sonuç).
+- eslestirme.js: farkliTamlama (çamaşır suyu ≠ kaynak suyu, karamel şurubu ≠ vanilya şurubu), boyutCelisir (40 cl ≠ 33 cl;
+  AI karıştırırsa doğru boyuttaki malzemeye geçer), yarım eşleşmede tek harf farkı sayılmaz (KAYMAK ≠ KAYNAK), paket
+  yazıları 12TV / 6BSX4 / 2X12, okuma düzeltmesi (miktar koli içiyle çarpılmışsa tutar÷birim fiyat; "1 lt" kova → adet),
+  satır hesabı tutmuyorsa (tutar > miktar × fiyat) barista sayar.
+- okuma.js: irsaliye bayrağı; satırda iskonto düşülmüşse altta yazan "Fat. İnd." ikinci kez düşülmez; satırlar genel toplamı
+  tutuyorsa yanlış okunan ara toplam (damga altında 1.183 → 1.163) satırlardan düzeltilir.
+- Sonuç: canlı AI 3 tur üst üste 19/19 doğru, hiçbir satırda zorunlu sayım yok; eski setler C 22/23 (1 satır artık barista
+  sayar), D 16/16. Uçtan uca (yerel): stok 10/10, fiyatlar faturalardan, faturalar irsaliyeleri mahsup etti (süt 180 L, 360
+  değil). Kabul: 93/0 uyuşmazlık, izolasyon 73/0, hata 23/0, mükerrer 19/0. Komutlar: bash scripts/okuma-testi.sh
+  test/kabul/cikti/gercek gpt-4.1-mini · node test/kabul/gercek_belgeler.mjs (yerel sunucu açıkken).
+- Açık not: ikinci okuma modeli gpt-4.1 bu belgelerde mini'den kötü okudu (yalnız ilk okuma tutmazsa devreye girer; tutmayan
+  ikinci okuma kullanılmaz). Model değişikliği yapılmadı.
+
 ## Patron dili sadeleştirme (2026-10-27) · CANLIDA (764d2bf, yalnız ön yüz)
 - Ekranda "açık −X TL" yerine "kayıp X TL" (eksi işaretsiz; ayrıntılı rapor belgesinde işaret kalır). Teknik notlar
   (90 gün ortalaması, "Gün" açıklaması, fiyat doğrulama dili) ve liste/başlıklardaki "KDV dahil" etiketleri kaldırıldı;

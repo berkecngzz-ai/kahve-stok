@@ -46,21 +46,61 @@ function levenshtein(a, b) {
 const kok = (w) => w.replace(/(lari|leri|lar|ler|si|su|i|u)$/, '').replace(/g$/, 'k').replace(/b$/, 'p').replace(/d$/, 't');
 
 // İki kelime "aynı" mı: biri ötekinin başı (süt / sütü), aynı kök ya da tek harf farkı (okuma hatası).
-function kelimeUyar(a, b) {
+// lev: false → tek harf farkı sayılmaz ("KAYMAK" ≠ "KAYNAK": iki ayrı gerçek kelime).
+function kelimeUyar(a, b, lev = true) {
   if (a.length < 3 || b.length < 3) return a === b;
   if (a.startsWith(b) || b.startsWith(a)) return true;
   const ka = kok(a), kb = kok(b);
   if (ka.length >= 3 && kb.length >= 3 && (ka === kb || ka.startsWith(kb) || kb.startsWith(ka))) return true;
-  return Math.min(a.length, b.length) >= 4 && levenshtein(a, b) <= 1;
+  return lev && Math.min(a.length, b.length) >= 4 && levenshtein(a, b) <= 1;
 }
 
 // Malzeme adının satır metnine benzerliği (0–1): malzeme kelimelerinin kaçı satırda var.
+// Tek harf farkı yalnız TÜM kelimeler tutuyorsa sayılır (okuma hatası); yarım eşleşmede "KAYMAK"ı "KAYNAK" yapmaz.
 export function benzerlik(malzemeAdi, satirMetni) {
   const mk = kelimeler(malzemeAdi);
   const sk = kelimeler(satirMetni);
   if (!mk.length || !sk.length) return 0;
-  const tutan = mk.filter((m) => sk.some((s) => kelimeUyar(m, s))).length;
-  return tutan / mk.length;
+  const gevsek = mk.filter((m) => sk.some((s) => kelimeUyar(m, s))).length;
+  if (gevsek === mk.length) return 1;
+  return mk.filter((m) => sk.some((s) => kelimeUyar(m, s, false))).length / mk.length;
+}
+
+// Paket boyutları (ml / g / oz cinsinden): "Kaynak suyu 33 cl" → [{tur:'ml', d:330}]
+function boyutlar(metin) {
+  const ham = String(metin ?? '').replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
+  const kat = { kg: ['g', 1000], gr: ['g', 1], g: ['g', 1], lt: ['ml', 1000], l: ['ml', 1000], ml: ['ml', 1], cl: ['ml', 10], oz: ['oz', 1] };
+  return [...ham.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|gr|g|lt|l|ml|cl|oz)(?![a-zçğıöşü])/g)]
+    .map((x) => ({ tur: kat[x[2]][0], d: Math.round(Number(x[1].replace(',', '.')) * kat[x[2]][1] * 1000) / 1000 }));
+}
+// Malzeme adında boyut yazıyorsa ("Kaynak suyu 33 cl") satırda aynı türden BAŞKA bir boyut var ve aynısı yok → farklı ürün.
+export function boyutCelisir(malzemeAdi, satirMetni) {
+  const mb = boyutlar(malzemeAdi);
+  if (!mb.length) return false;
+  const sb = boyutlar(satirMetni);
+  return mb.some((m) => sb.some((x) => x.tur === m.tur) && !sb.some((x) => x.tur === m.tur && Math.abs(x.d - m.d) < 1e-6));
+}
+
+// Malzemenin baş ismi satırda tamlama olarak başka bir belirtilenle geçiyor mu: "Kaynak suyu" ↔ "ÇAMAŞIR SUYU",
+// "MADEN SUYU"; "Vanilya şurubu" ↔ "KARAMEL ŞURUBU". Aynı tür değil, başka ürün. (Kısaltma: "KAY.SUYU" kaynak suyudur.)
+// Baş isim satırda eksiz geçiyorsa ("ESPRESSO HARMANI ÇEKİRDEK") tamlama değildir; bu kural uygulanmaz.
+export function farkliTamlama(malzemeAdi, satirMetni, markaKelimeleri = []) {
+  const mk = kelimeler(malzemeAdi);
+  if (mk.length < 2) return false;
+  const bas = mk[mk.length - 1], belirten = mk.slice(0, -1);
+  const marka = new Set(markaKelimeleri);
+  const sk = kelimeler(satirMetni);
+  return sk.some((w, j) => {
+    if (j === 0 || !kelimeUyar(bas, w, false) || !/[iu]$/.test(w) || w.length < 4) return false;
+    const onceki = sk[j - 1];
+    if (marka.has(onceki) || belirten.some((b) => kelimeUyar(b, onceki, false))) return false;
+    // Satırda malzemenin belirteni başka yerde de geçiyorsa (ör. "KAYNAK DOĞAL SUYU") farklı ürün sayılmaz.
+    return !belirten.some((b) => sk.some((x) => kelimeUyar(b, x, false)));
+  });
+}
+// Bu satır bu malzeme OLAMAZ mı (boyut farkı ya da başka tamlama)?
+export function baskaUrun(malzemeAdi, satirMetni, marka = []) {
+  return boyutCelisir(malzemeAdi, satirMetni) || farkliTamlama(malzemeAdi, satirMetni, marka);
 }
 
 // Belge birimi → malzeme birimi çarpanı (1 belge birimi = kaç g / ml / adet). Bulunamazsa null.
@@ -70,7 +110,12 @@ export function carpanBul(belgeBirimi, malzemeBirimi, metin) {
     .replace(/^\s*\d+(?:[.,]\d+)?\s*[x×*]\s*\d[\d.]*(?:,\d+)?\s*/, '');   // fişteki "6 x 41,00 " öneki ürün adı değil
   // Çoklu paket: "x12", "12x", "12'li", "12 li" (fiyat değil: "x 41,00" sayılmaz)
   let coklu = 1;
-  const c1 = ham.match(/(?:^|\s|\*)x\s*(\d{1,4})(?![\d.,])/) || ham.match(/\b(\d{1,4})\s*x(?:\s|$)/)
+  // İç içe paket: "6BSX4" (6'lı × 4), "6 LI X 4" → 24
+  const ic = ham.match(/\b(\d{1,2})\s*[a-zçğıöşü'’]{0,3}\s*x\s*(\d{1,2})(?![\d.,a-zçğıöşü])/);
+  const c1 = (ic && Number(ic[1]) > 1 && Number(ic[2]) > 1 ? [ic[0], String(Number(ic[1]) * Number(ic[2]))] : null)
+          || ham.match(/(?:^|\s|\*)x\s*(\d{1,4})(?![\d.,])/) || ham.match(/\b(\d{1,4})\s*x(?:\s|$)/)
+          // Dağıtıcı kısaltması: "12TV" (kutuda 12)
+          || ham.match(/\b(\d{1,3})\s*tv\b/)
           || ham.match(/\b(\d{1,4})\s*['’]?\s*l[iıuü](?![a-zçğıöşü])/)
           // Paket içi dilim / porsiyon ("San Sebastian (12 dilim)") ya da parantez içinde adet ("(6 adet)").
           // Parantezsiz "12 adet" sipariş miktarı olabilir: paket içi sayılmaz.
@@ -222,21 +267,54 @@ export function aiIleSiniflandir(satir, ctx) {
     }
     return karar;
   }
-  const ai = satir.ai;
-  if (!ai) return siniflandir(satir, ctx);
+  if (!satir.ai) return siniflandir(satir, ctx);
+  const ai = { ...satir.ai };
   const marka = kelimeler(ctx.tedarikciAdi);
   if (ai.karar === 'takip_disi' && ai.guven >= AI_TAKIP_DISI_GUVEN) {
     // Satır bir malzemenin adını ya da türünü söyleyen baş ismini ("ESPRESSO HARMANI ÇEKİRDEK" → çekirdek) taşıyor ve
     // başka bir ürün (tamlama: "bardak kapağı", "süt kreması") değilse AI'nın "takip dışı" kararına güvenilmez:
     // yanlış "takip dışı" malzemeyi sessizce stoktan düşürür. Barista sayar ya da "değil" der.
     const benzeyen = [...malzemeBul.values()].find((x) => (benzerlik(x.ad, satir.metin) === 1 || basIsimTamVarMi(x.ad, satir.metin))
-      && !turevUrunMu(x.ad, satir.metin, marka, { sifat: false }));
+      && !turevUrunMu(x.ad, satir.metin, marka, { sifat: false }) && !baskaUrun(x.ad, satir.metin, marka));
     if (benzeyen) return soruSor(benzeyen, carpanBul(birim, benzeyen.birim, satir.metin));
     return { sinif: 'takip_disi', kaynak: 'ai' };
   }
-  const m = ai.karar !== 'takip_disi' ? malzemeBul.get(ai.malzeme_id) : null;
+  let m = ai.karar !== 'takip_disi' ? malzemeBul.get(ai.malzeme_id) : null;
+  // AI'nın seçtiği malzemenin boyutu satırla çelişiyor ("40CL" satır → "Kaynak suyu 33 cl"): aynı adlı, boyutu tutan
+  // malzeme varsa o; yoksa bu malzeme değildir.
+  if (m && boyutCelisir(m.ad, satir.metin)) {
+    const ad = kelimeler(m.ad).join(' ');
+    const dogru = [...malzemeBul.values()].find((x) => x !== m && kelimeler(x.ad).join(' ') === ad && !boyutCelisir(x.ad, satir.metin));
+    if (!dogru) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+    m = dogru;
+    ai.stok_miktari = null;      // AI'nın stok hesabı öbür boyuta göreydi
+  }
   // AI listede karşılık bulamadı ya da emin değil: kurallar denenir (benzeyen varsa sorulur, yoksa geçilir).
   if (!m) return siniflandir(satir, ctx);
+  if (farkliTamlama(m.ad, satir.metin, marka)) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
+  // Okuma düzeltmeleri (bir kez): faturanın kendi matematiği ve ürün adındaki paket boyu
+  //  · birim ölçü (lt/ml/kg/g) okundu ama ürün adında başka bir paket boyu var ("1 AD" 5.5LT kova → "1 lt") → birim adet
+  //  · miktar paket içiyle çarpılmış okundu ("4 Adet" 750 ML*12 → 48): tutar ÷ birim fiyat tam sayı ve miktarı bölüyor →
+  //    belgedeki miktar odur; AI'nın stok hesabı bu yanlış miktara dayandığı için kullanılmaz.
+  if (!ctx.okumaDuzeltildi) {
+    const mk = Number(satir.miktar);
+    const birimD = ['lt', 'ml', 'kg', 'g'].includes(birim) && carpanBul(birim, m.birim, satir.metin) == null
+      && carpanBul('adet', m.birim, satir.metin) != null ? 'adet' : null;
+    const tutar = Number(satir.tutar_haric ?? satir.tutar_belge ?? satir.tutar_dahil), bf = Number(satir.birim_fiyat);
+    const q = tutar > 0 && bf > 0 ? tutar / bf : NaN, rq = Math.round(q);
+    const miktarD = rq >= 1 && Math.abs(q - rq) <= 0.02 * rq && mk > rq && mk % rq === 0 ? rq : null;
+    if (birimD || miktarD) {
+      const k = aiIleSiniflandir({ ...satir, birim: birimD ?? birim, miktar: miktarD ?? satir.miktar,
+        ai: { ...satir.ai, stok_miktari: miktarD ? null : satir.ai.stok_miktari } }, { ...ctx, okumaDuzeltildi: true });
+      return { ...k, ...(miktarD && k.miktarDuzelt == null ? { miktarDuzelt: miktarD } : {}), ...(birimD ? { birimDuzelt: birimD } : {}) };
+    }
+    // Satırın kendi hesabı tutmuyor: tutar, miktar × birim fiyattan BÜYÜK (iskonto küçültür, büyütmez). Fişte çarpan satırı
+    // başka ürüne verilmiş olabilir ("3 X 24,75" peçetenin, bardağa da yazılmış). Miktara güvenilmez: barista sayar.
+    if (mk > 0 && bf > 0 && tutar > mk * bf * 1.02 + 0.05) {
+      const k = aiIleSiniflandir(satir, { ...ctx, okumaDuzeltildi: true });
+      return ['soru', 'eslesti'].includes(k.sinif) ? { ...k, say: true } : k;
+    }
+  }
   // Satır başka bir ürün (tamlama: süt kreması, bardak kapağı, badem sütü): o malzeme değil → geçilir.
   // Yalnız -lı/-li sıfatı (vanilyalı süt; ama marka da olabilir: "ANADOLU") → sessizce geçilmez, barista sayar ya da "değil" der.
   if (turevUrunMu(m.ad, satir.metin, marka, { sifat: false })) return { sinif: 'belirsiz', aday_malzeme_id: m.id };
@@ -295,8 +373,9 @@ export function siniflandir(satir, ctx) {
   // Benzerlik: malzeme adları + defterde bir malzemeye bağlanmış eski satır metinleri.
   const puan = new Map();
   const defterden = new Set();     // daha önce doğrulanmış bir satıra benzediği için aday olan malzemeler
+  const marka = kelimeler(ctx.tedarikciAdi);
   for (const m of ctx.malzemeler) {
-    if (m.aktif === false) continue;
+    if (m.aktif === false || baskaUrun(m.ad, satir.metin, marka)) continue;
     const p = benzerlik(m.ad, satir.metin);
     if (p >= 0.5) puan.set(m.id, Math.max(puan.get(m.id) ?? 0, p));
   }

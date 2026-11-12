@@ -6,8 +6,8 @@
 //   | Ak Çiftlik Tam Yağlı Süt 1L | 24 Adet | 924,00 | Süt 24 L |
 //   Ara toplam **1.776,00**, KDV **17,76**, genel toplam **1.793,76 TL**
 
-import { anahtar, kelimeler } from './eslestirme.js?v=5354be7538';
-import { trSayi } from './okuma.js?v=5354be7538';
+import { anahtar, kelimeler } from './eslestirme.js?v=99214376ce';
+import { trSayi } from './okuma.js?v=99214376ce';
 
 const BIRIM_CEVIR = { l: ['ml', 1000], lt: ['ml', 1000], litre: ['ml', 1000], ml: ['ml', 1],
   kg: ['g', 1000], g: ['g', 1], gr: ['g', 1], adet: ['adet', 1] };
@@ -84,13 +84,15 @@ export function karsilastir(beklenen, sonuc, malzemeAdi) {
       aciklama = durum === 'dogru' ? 'Takip dışı' : 'Yanlışlıkla takip dışı sayıldı';
     } else if (evet) {
       const ad = malzemeAdi.get(k.malzeme_id) ?? '?';
-      const stok = Number(s.miktar) * k.carpan;
+      const stok = Number(k.miktarDuzelt ?? s.miktar) * k.carpan;
+      const nasil = k.say || k.stokBirimi || s.miktar == null ? ' (barista sayar)' : k.sinif === 'soru' ? ' (tek dokunuş onay)' : ' (otomatik)';
       if (b.beklenen.tur === 'takip_disi') { durum = 'yanlis'; aciklama = `${ad} ${stok} sayıldı (takip dışı olmalıydı)`; }
       else if (b.beklenen.tur === 'malzeme') {
         const adTutar = anahtar(ad) === anahtar(b.beklenen.malzeme);
         const miktarTutar = Math.abs(stok - b.beklenen.miktar) <= Math.max(0.5, b.beklenen.miktar * 0.005);
-        durum = adTutar && miktarTutar ? 'dogru' : 'yanlis';
-        aciklama = `${ad} ${stok} ${b.beklenen.birim}${k.sinif === 'soru' ? ' (baristaya sorulur)' : ' (otomatik)'}`
+        // Barista sayacaksa stok onun saydığı olur: malzeme doğruysa doğru sayılır.
+        durum = adTutar && (miktarTutar || nasil === ' (barista sayar)') ? 'dogru' : 'yanlis';
+        aciklama = `${ad} ${stok} ${b.beklenen.birim}${nasil}`
           + (durum === 'yanlis' ? ` — beklenen ${b.beklenen.malzeme} ${b.beklenen.miktar}` : '');
       } else { durum = 'bilinmiyor'; aciklama = `${ad} ${stok}`; }
     }
