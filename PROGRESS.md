@@ -17,7 +17,12 @@
   atmak yerine kuruluma (patrona) düşsün mü + 180 L canlıya nasıl girilsin.
 - Starbucks 15 Kas demo sayımı (hepsi 20 L idi) sayim_duzelt ile gerçekçi değerlere çekildi (CANLIDA; süt 14 L, espresso 650 g…;
   betik .local-work/demo-sayim-duzelt.sql). Dönem canlıda satis_gun 0 → amber "satış raporu eksik".
-- Sıradaki adım: süt kararı ("değil" satırı kuruluma mı düşsün + 180 L nasıl girilsin).
+- Süt kararı (kullanıcı, 2026-11-15): genel kural AYNI kalır — stok listesinde olmayan / "Bu ürün X değil" denen satır
+  takip dışı (kod değişmedi). Selen'in 180 L'si (CANLIDA): patronun açtığı "Süt yarım yağlı" malzemesinin birimi g → ml
+  düzeltildi (32 TL/L), irsaliye satırı belge_satiri_stokla ile girdi (giriş 15 Kas, 'irsaliye' etiketli). Betik:
+  .local-work/sut-yarim-yagli.sql. Not: malzeme hiç sayılmadığı için Stok'ta "Henüz sayılmayanlar"da durur; ilk sayımdan
+  sonra miktarı görünür. Tariflerde yok → satışta düşmez.
+- Sıradaki adım: kullanıcı isterse "Süt yarım yağlı" tariflere eklensin; barista ilk sayımı yapsın.
 
 ## Tasarım kuralları + durum hesapları (2026-11-15) · CANLIDA
 - CLAUDE.md'ye "Tasarım kuralları" eklendi (renk yalnız müdahalede, yeşil yok, IBM Plex Sans, gölge/gradyan yok,
