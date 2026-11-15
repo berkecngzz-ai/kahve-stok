@@ -1,8 +1,8 @@
 # İlerleme notları
 
-## Satış raporu eksik dönem + Özet sadeleştirme (2026-11-15) · YEREL, ONAY BEKLİYOR (canlıya alınmadı)
+## Satış raporu eksik dönem + Özet sadeleştirme (2026-11-15) · CANLIDA (7353ce1)
 - Canlı hata: Starbucks 27 Eki–15 Kas (19 gün) satış raporu yok → satılan her şey fark sayıldı, 2.479 TL kırmızı.
-  sql/39 (YEREL): acik_trendi'ye `satis_gun` (dönemde satış raporu olan gün; başlangıç günü hariç, bitiş günü dahil).
+  sql/39 (CANLIDA): acik_trendi'ye `satis_gun` (dönemde satış raporu olan gün; başlangıç günü hariç, bitiş günü dahil).
   patron-hesap.js `satisEksik`: satis_gun < gun − ⌊gun/7⌋ (haftada 1 kapalı gün hoş görülür); alan yoksa eski davranış.
   Eksik dönem: farkDurumu mod 'satis_eksik' (sorun değil), normal seviye geçmişine girmez; Özet amber kart
   "Satış raporu eksik, stok farkı hesaplanamıyor" + "Satış raporunu yükle"; Fark nereden gizli; Rapor'da amber kutu,
@@ -15,8 +15,9 @@
 - Selen'in 180 L süt irsaliyesi (Sütaş, 15 Kas 18:47) stoğa girmedi: özet ekranında "Bu ürün Barista süt değil"e basılmış
   (satır "SÜT YARIM YAĞLI 1 L") → satır sessizce düşüldü, boş irsaliye kaydedildi. Açık karar: "değil" satırı sessizce
   atmak yerine kuruluma (patrona) düşsün mü + 180 L canlıya nasıl girilsin.
-- Açık: canlı demo sayımı (hepsi 20 L) düzeltmesi hazır ama çalıştırılmadı (canlı yazma izni): .local-work/demo-sayim-duzelt.sql.
-- Sıradaki adım: kullanıcı onayı → sql/39 canlıya (SQL Editor) → push → demo sayım düzeltmesi → süt kararı.
+- Starbucks 15 Kas demo sayımı (hepsi 20 L idi) sayim_duzelt ile gerçekçi değerlere çekildi (CANLIDA; süt 14 L, espresso 650 g…;
+  betik .local-work/demo-sayim-duzelt.sql). Dönem canlıda satis_gun 0 → amber "satış raporu eksik".
+- Sıradaki adım: süt kararı ("değil" satırı kuruluma mı düşsün + 180 L nasıl girilsin).
 
 ## Tasarım kuralları + durum hesapları (2026-11-15) · CANLIDA
 - CLAUDE.md'ye "Tasarım kuralları" eklendi (renk yalnız müdahalede, yeşil yok, IBM Plex Sans, gölge/gradyan yok,
