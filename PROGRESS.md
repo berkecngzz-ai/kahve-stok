@@ -1,5 +1,24 @@
 # İlerleme notları
 
+## Starbucks Marmaris 28 Eki–15 Kas simülasyonu (2026-11-15) · CANLIDA (veri), kod değişmedi
+- Yedek: Desktop\kahve-stok-yedek\2026-11-15_starbucks-simulasyon-oncesi. Betikler: .local-work/demo-hafta3/ (uret3.py →
+  oku3.mjs [uygulamanın Excel okuyucusu] → sql_yap3.py → yukle3.py [depo] → yukle.sql; deger.sql = patron görünümü).
+  19 kasa Excel'i, 14 e-fatura XML, 5 fire, 3 ve 10 Kas sayımı, 15 Kas sayımı sayim_duzelt ile. Geçmiş tarihli kayıtlar patron
+  yetkisiyle girilip barista işleri Selen'e, saatler gerçek güne çekildi (satış satırlarının olusturma'sı dahil). AI/OpenAI yok.
+- Gizli gerçek: kayıt dışı kayıp (3–10 Kas sorunlu: süt 8 L, espresso 250 g), menü dışı "Sıcak Çikolata", 9 Kas süt 36→32,
+  7 Kas espresso zammı 790→840.
+- SONUÇ: hesap doğru — fiş çakışması olmayan 3–10 Kas'ta uygulama gerçeği buldu (süt 12,57 L ↔ 12,6; çik. sos 700 ↔ 690 ml;
+  espresso 248 ↔ 250 g; karamel 130 ↔ 150 ml). Teslimat farkı görevi doğru (4 L, 248 TL). Satış günü sayımı doğru.
+- BULGU 1 (KRİTİK, düzeltilmedi): satis_satirlari anahtarı 'F|fis_no|ürün|tür' — TARİH YOK. Fiş no günlük sıfırlanan kasada
+  (ÖKC, Z raporu) ertesi günün aynı numaralı satırları "mükerrer" sayılıp atılıyor → satış eksik → sahte stok farkı. Simde
+  176 içecek düştü (28 Eki–3 Kas + 15 Kas), 27 Eki–3 Kas farkı 4.584 TL göründü (gerçek ≈1.200). Ekran bunu "N satır daha önce
+  yüklenmişti, iki kez sayılmadı" diye güven verici dille söylüyor. Öneri: anahtara tarih + mevcut anahtarları taşıma + düşen
+  günleri yeniden işleme.
+- BULGU 2: fiyat_degisimleri son iki faturayı karşılaştırıyor → 7 Kas zammı, 11 Kas aynı fiyatlı ikinci fatura gelince uyarıdan
+  düştü (15 Kas'ta görünmüyor).
+- BULGU 3: menü dışı ürün (Sıcak Çikolata ~4 L süt + 0,7 L sos/hafta) takip dışı → stok farkına sessizce biniyor; patron
+  "çikolata sosunda fark var" görür, nedeni görmez.
+
 ## Satış raporu eksik dönem + Özet sadeleştirme (2026-11-15) · CANLIDA (7353ce1)
 - Canlı hata: Starbucks 27 Eki–15 Kas (19 gün) satış raporu yok → satılan her şey fark sayıldı, 2.479 TL kırmızı.
   sql/39 (CANLIDA): acik_trendi'ye `satis_gun` (dönemde satış raporu olan gün; başlangıç günü hariç, bitiş günü dahil).
