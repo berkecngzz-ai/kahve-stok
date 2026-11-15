@@ -54,7 +54,8 @@ test('dönem ve kaç gün yeter', () => {
   assert.equal(donemYaz('2026-09-25', '2026-10-02'), '25 Eyl – 2 Eki');
   assert.equal(yeterDurumu(null), null);
   assert.equal(yeterDurumu(0), 'az');
-  assert.equal(yeterDurumu(2), 'az');
+  assert.equal(yeterDurumu(1), 'az');
+  assert.equal(yeterDurumu(2), 'dikkat');
   assert.equal(yeterDurumu(5), 'dikkat');
   assert.equal(yeterDurumu(6), 'iyi');
 });

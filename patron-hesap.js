@@ -66,7 +66,7 @@ export function donemYaz(baslangic, bitis) {
 // Stok kaç gün yeter → 'az' (≤2 gün), 'dikkat' (≤5 gün), 'iyi'. Tahmin yoksa null.
 export function yeterDurumu(gun) {
   if (gun == null) return null;
-  return gun <= 2 ? 'az' : gun <= 5 ? 'dikkat' : 'iyi';
+  return gun < 2 ? 'az' : gun <= 5 ? 'dikkat' : 'iyi';     // < 2 gün kırmızı, 2–5 amber, sonrası nötr
 }
 
 // Haftalık açık TL trendi için sade SVG çubuk grafiği (eski → yeni, soldan sağa). Ekran okuyucu için başlık + özet.

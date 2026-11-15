@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=99214376ce';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=f75e7a5646';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=99214376ce';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=99214376ce';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=99214376ce';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=99214376ce';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=99214376ce';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=f75e7a5646';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=f75e7a5646';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=f75e7a5646';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=f75e7a5646';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=f75e7a5646';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=99214376ce';
+  ACIK_ORAN_ESIGI, ACIK_TL_ESIGI } from './patron-hesap.js?v=f75e7a5646';
 
 const app = document.getElementById('app');
 // Patron ekranında kayıp eksi işaretsiz, "kayıp" kelimesiyle yazılır (−209 TL yerine "209 TL kayıp").
@@ -453,7 +453,9 @@ function gunlukKontrolKarti({ kontrol, fiyatlar, eksik, son, satisBekleyen = [],
       `Reçetesi yok: ${tarifsiz.slice(0, 4).map((x) => `${x.urun} (${sayiYaz(x.adet)})`).join(', ')}${tarifsiz.length > 4 ? '…' : ''}. Takip edeceksen reçetesini gir`, 'ayar']);
   }
   if (kontrol.son_sayim && !satisBekliyor && (!kontrol.son_satis || gunFarki(kontrol.son_sayim, kontrol.son_satis) > 3)) {
-    maddeler.push(['sari', '💰', 'Son haftanın satış raporu yüklenmedi', 'Kasadan satış raporunu yükle; yoksa satılanlar kayıp görünür', 'satis']);
+    // Kaç gündür rapor yok: son satış gününden (hiç yoksa ilk sayımdan) bugüne
+    const raporsuz = gunFarki(kontrol.bugun, kontrol.son_satis ?? kontrol.son_sayim);
+    maddeler.push(['sari', '💰', `${raporsuz} gündür satış raporu yüklenmedi`, 'Kasadan satış raporunu yükle; yoksa satılanlar kayıp görünür', 'satis']);
   }
   if (Number(eksik?.bekleyen_fatura) || ekipteSatis) {
     maddeler.push(['bilgi', '⏳', `${[eksik.bekleyen_fatura ? `${eksik.bekleyen_fatura} fatura` : '', ekipteSatis
@@ -588,15 +590,13 @@ async function ozetSekmesi(icerik) {
 
 // ---------- Stok: şu an elde ne var (son sayım + sonraki hareketler) ----------
 
-// Rakamın güvenilirliği: bugün sayıldıysa doğrulanmış; sayımdan sonra satış girilmediyse tahmini (satış raporu haftalık);
-// eksi çıktıysa ya da okunmayı bekleyen fatura varsa kontrol gerekli.
+// Rakamın güvenilirliği: bugün sayıldıysa doğrulanmış; değilse hesapla bulunur (≈). Eksi çıktıysa ya da okunmayı bekleyen
+// fatura varsa kontrol gerekli. Satış raporu uyarısı burada değil, Özet'teki yapılacaklarda.
 function stokGuveni(m, bugun, faturaBekliyor) {
-  if (Number(m.simdi) < 0) return ['kontrol', 'Kontrol gerekli', 'Hesap eksiye düştü: bir giriş eksik olabilir'];
-  if (faturaBekliyor && Number(m.gelen) === 0 && m.sayim_tarih !== bugun) return ['kontrol', 'Kontrol gerekli', 'Okunmayı bekleyen fatura var'];
-  if (m.sayim_tarih === bugun) return ['dogru', 'Bugün sayıldı', ''];
-  // Bugün sayılmadıysa rakam hesapla bulunur: kesin değil, tahmini. Son sayımın ne kadar eski olduğu görünür.
-  const gun = Math.round((new Date(`${bugun}T12:00:00`) - new Date(`${m.sayim_tarih}T12:00:00`)) / 864e5);
-  return ['tahmin', 'Tahmini', `Son sayım: ${gun === 1 ? 'dün' : `${gun} gün önce`}${Number(m.satis) === 0 ? ' · sonrasında satış raporu yok' : ''}`];
+  if (Number(m.simdi) < 0) return ['kontrol', 'Hesap eksiye düştü: bir giriş eksik olabilir'];
+  if (faturaBekliyor && Number(m.gelen) === 0 && m.sayim_tarih !== bugun) return ['kontrol', 'Okunmayı bekleyen fatura var'];
+  if (m.sayim_tarih === bugun) return ['dogru', ''];
+  return ['tahmin', ''];
 }
 
 async function stokSekmesi(icerik) {
@@ -611,23 +611,31 @@ async function stokSekmesi(icerik) {
   const tahminiDeger = sayilan.filter((m) => kontrolde.has(m.malzeme_id) && Number(m.fiyat) > 0).length;
   const fiyatsiz = sayilan.filter((m) => !(Number(m.fiyat) > 0) && Number(m.simdi) > 0);
   const azSayi = sayilan.filter((m) => yeterDurumu(m.yeter_gun) === 'az').length;
+  // Tek satır: solda ad, sağda miktar + gün. Ayrıntı (son sayım, kullanım, açıklama) satıra dokununca açılır.
   const satir = (m) => {
     const durum = yeterDurumu(m.yeter_gun);
-    const [guven, guvenAd, guvenNeden] = stokGuveni(m, r.tarih, faturaBekliyor);
-    const doluluk = m.yeter_gun == null ? null : Math.max(4, Math.min(100, (Number(m.yeter_gun) / 14) * 100));
+    const [guven, guvenNeden] = stokGuveni(m, r.tarih, faturaBekliyor);
     const kullanilan = Number(m.satis) + Number(m.fire);
-    const hareket = [Number(m.gelen) ? `${okunurMiktar(m.gelen, m.birim)} geldi` : '',
-      kullanilan ? `${okunurMiktar(kullanilan, m.birim)} kullanıldı` : ''].filter(Boolean).join(', ');
-    return `<div class="stok-satir ${durum || ''}">
-      <div class="sol"><b>${esc(m.ad)}</b>${m.aktif === false ? ' <span class="guven tahmin">Pasif · elde kalan</span>' : ''}${guven !== 'dogru' ? ` <span class="guven ${guven}">${guvenAd}</span>` : ''}
-        <small>${hareket ? `${esc(kisaTarih(m.sayim_tarih))} sayımı ${okunurMiktar(m.sayilan, m.birim)}; sonra ${hareket}`
-          : `${m.sayim_tarih === r.tarih ? 'Bugün' : esc(kisaTarih(m.sayim_tarih))} sayıldı`}</small></div>
-      <div class="sag"><span class="orta-rakam">${okunurMiktar(Math.max(0, m.simdi), m.birim)}</span>
-        ${m.yeter_gun != null ? `<span class="etiket-kutu ${durum}">${m.yeter_gun < 1 ? 'Bugün bitebilir' : `≈ ${m.yeter_gun} gün`}</span>` : ''}
-        ${guvenNeden ? `<small class="guven-neden">${esc(guvenNeden)}</small>` : ''}</div>
-      ${doluluk != null ? `<div class="yeter-cubuk ${durum || ''}" aria-hidden="true"><span style="width:${doluluk.toFixed(0)}%"></span></div>` : ''}
-    </div>`;
+    const sayimGunu = m.sayim_tarih === r.tarih ? 'Bugün' : kisaTarih(m.sayim_tarih);
+    const ayrinti = [
+      `Son sayım: ${esc(sayimGunu)} · ${okunurMiktar(m.sayilan, m.birim)}`,
+      Number(m.gelen) ? `Sonra gelen: ${okunurMiktar(m.gelen, m.birim)}` : '',
+      kullanilan ? `Sonra kullanılan: ${okunurMiktar(kullanilan, m.birim)}${Number(m.fire) ? ` (fire ${okunurMiktar(m.fire, m.birim)})` : ''}` : '',
+      Number(m.gunluk) > 0 ? `Günde ≈ ${okunurMiktar(m.gunluk, m.birim)} kullanılıyor` : '',
+      guven === 'tahmin' ? 'Bugün sayılmadı: miktar son sayım ve sonraki hareketlerden hesaplandı' : '',
+      m.aktif === false ? 'Pasif malzeme: elde kalan gösteriliyor' : '',
+      guvenNeden ? `<span class="uyari">${esc(guvenNeden)}</span>` : '',
+    ].filter(Boolean);
+    const gun = m.yeter_gun == null ? '' : m.yeter_gun < 1 ? 'Bugün biter' : `≈ ${m.yeter_gun} gün`;
+    return `<details class="stok-satir ${durum || ''}">
+      <summary><span class="ad">${guven === 'kontrol' ? '<span class="uyari" aria-label="Kontrol gerekli">⚠ </span>' : ''}${esc(m.ad)}</span>
+        <span class="miktar">${okunurMiktar(Math.max(0, m.simdi), m.birim)}</span>
+        ${gun ? `<span class="etiket-kutu ${durum}">${gun}</span>` : '<span></span>'}</summary>
+      <ul class="stok-ayrinti">${ayrinti.map((x) => `<li>${x}</li>`).join('')}</ul>
+    </details>`;
   };
+  // En az kalan üstte; günü hesaplanamayanlar en altta
+  sayilan.sort((a, b) => (a.yeter_gun ?? Infinity) - (b.yeter_gun ?? Infinity) || a.ad.localeCompare(b.ad, 'tr'));
   icerik.innerHTML = `
     <section class="kart kahraman">
       <div class="etiket">Elde olan malın değeri</div>
@@ -3116,7 +3124,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = '99214376ce';
+const SURUM = 'f75e7a5646';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });
