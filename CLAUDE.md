@@ -19,6 +19,25 @@
 - Benden bir şey isteyeceksen sade Türkçeyle, numaralı adımlarla yaz. Teknik terimi açıkla.
 - Bir seferde tek bir şey iste.
 
+## Tasarım kuralları
+- Temel ilke: bir bilgi patronun kararını değiştirmiyorsa ana ekranda durmasın, detaya insin.
+- Referans: Braun (az ama iyi, süs yok), IBM (veri disiplini), Apple (kolay kullanım).
+- Her uyarı kaynağına bağlanır: dokunulunca neden çıktığını gösteren detay açılır.
+- Renk sadece müdahale gerektiğinde: amber #B7791F dikkat, kırmızı #B42318 sorun.
+  Normal durum renksizdir (nötr kart + ✓ ikonu). Yeşil kullanılmaz. Rakamlar nötr renkte.
+  Açık tema: renkli öğede açık tonlu zemin + aynı rengin koyu yazısı.
+  Koyu tema: aynı rengin koyu tonlu zemini + açık tonlu yazısı (açık kutu kullanma).
+  Normal kartlar her iki temada nötr yüzeyde kalır.
+  Zemin krem / koyu temada koyu nötr; marka kahvesi sadece üst barda. Gradyan, gölge, süs yok.
+- Font: IBM Plex Sans. Serif yok. Rakamlar tabular (font-variant-numeric: tabular-nums), sağa hizalı.
+- Boşluklar 8px ızgarası. Dokunma alanı en az 44px. Ekran başına tek ana eylem.
+- Değeri yazmayan grafik yok.
+- Dil: "kayıp" değil "stok farkı". Eksi işareti yok ("389 TL fark"). Teknik terim yok.
+- Veri dürüstlüğü: eski veri eski olduğunu söyler; tahmin ≈ ile gösterilir; dayanağı olmayan
+  tahmin gösterilmez. "Geçen hafta" sadece gerçekten geçen haftaysa kullanılır.
+- Her ekran değişikliğinde 390px genişlikte, açık ve koyu temada ekran görüntüsü al,
+  önce bana göster, onayımdan sonra canlıya al.
+
 ## Güvenlik
 - Veri ya da tablo silen, geri alınamayan her işlemden önce sor.
 - Anahtar, şifre, token'ı asla sohbete, koda ya da commit'e yazma; sadece secrets/ortam değişkeni.

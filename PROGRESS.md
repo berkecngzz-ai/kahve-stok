@@ -1,5 +1,18 @@
 # İlerleme notları
 
+## Tasarım kuralları + durum hesapları (2026-11-15) · CANLIDA
+- CLAUDE.md'ye "Tasarım kuralları" eklendi (renk yalnız müdahalede, yeşil yok, IBM Plex Sans, gölge/gradyan yok,
+  her ekran değişikliğinde 390px açık+koyu görüntü → onay → canlı).
+- sql/38 (CANLIDA): mekanlar.sayim_sikligi (7/14/30), fark_esigi (%5), fark_siniri_tl (500 TL) + mekan_ayarlari /
+  mekan_ayar_kaydet; acik_trendi'ye gun + kullanilan_tl; sayım isteği bekliyor → goruldu → tamamlandi
+  (sayim_talebi_gordum). Test: test/sayim_ayarlari_test.sql. Geri al: scripts/geri-al-38.sql.
+- patron-hesap.js: sayimGecikti (sıklık + 2 gün), farkDurumu (< 4 aynı uzunlukta [±1 gün] geçerli dönem → oran eşiği;
+  ≥ 4 → son 8'in medyanı × 1,5; her iki modda haftalık TL sınırı, dönem uzunluğuna ölçekli; neden: tl/oran/normal),
+  gunTahminiVar (satış raporu son 3 günde yüklenmediyse gün tahmini yok). Test: test/js/durum-kurallari.test.mjs.
+- Özet: durum kartı (amber sayım gerekiyor + Sayım iste / kırmızı "<malzeme>de fark var" / nötr ✓), kırmızı kart ve
+  "fark var" satırları uyarı detayına açılır (beklenen, sayılan, fark, hesaba giren kayıtlar). Ayarlar → Mekan'da üç ayar.
+- Ekran görüntüleri: ekran-goruntuleri/v2/ (yalnız yerel, .gitignore).
+
 ## Patron ekranları sadeleştirme (2026-11-15) · CANLIDA
 - Kural: bilgi patronun kararını değiştirmiyorsa ana ekranda durmaz. "Kayıp" yerine "stok farkı" (barista suçlanmasın),
   eksi işareti yok (eksik/fazla yazılır; CSV rakamları işaretli kalır).

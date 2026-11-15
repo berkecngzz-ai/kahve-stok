@@ -10,3 +10,6 @@ RAPOR.md
 scripts/simulasyon/cikti/
 # Kabul testi çıktıları (üretilen veri, raporlar)
 test/kabul/cikti/
+
+# Ekran görüntüleri yalnız bu bilgisayarda (demo verisi; depo herkese açık)
+ekran-goruntuleri/

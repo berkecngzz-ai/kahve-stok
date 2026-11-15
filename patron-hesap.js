@@ -37,12 +37,13 @@ export const miktarTl = (miktar, birim, fiyat) =>
   (Number(fiyat) > 0 ? Number(miktar) * Number(fiyat) / BOLEN[birim] : null);
 
 // Rapor satırının durumu: 'buyuk' (kırmızı), 'normal' (yeşil), 'fazla' (sarı: girilmemiş satış/fatura olabilir).
-export function acikDurumu(x) {
+// esik: oran (0,05 = %5); mekânın "fark eşiği" ayarı. Verilmezse eski sabit.
+export function acikDurumu(x, esik = ACIK_ORAN_ESIGI) {
   const fark = Number(x.fark);
   const kullanilan = Number(x.satis || 0) + Number(x.fire || 0);
   const oran = kullanilan > 0 ? Math.abs(fark) / kullanilan : (fark ? Infinity : 0);
   const tl = Math.abs(Number(x.fark_tl ?? miktarTl(fark, x.birim, x.fiyat) ?? 0));
-  if (oran <= ACIK_ORAN_ESIGI || tl <= ACIK_TL_ESIGI) return 'normal';
+  if (oran <= esik || tl <= ACIK_TL_ESIGI) return 'normal';
   return fark < 0 ? 'buyuk' : 'fazla';
 }
 
@@ -124,4 +125,57 @@ export function raporCsv(r, mekanAdi = '') {
   satirlar.push([], ['Toplam eksik (TL)', sayi(Math.abs(Number(r.toplam_acik_tl) || 0), 2)], ['Toplam fazla (TL)', sayi(r.toplam_fazla_tl, 2)]);
   for (const u of r.uyarilar ?? []) satirlar.push(['Uyarı', u]);
   return `﻿${satirlar.map((s) => s.map(hucre).join(';')).join('\r\n')}\r\n`;
+}
+
+// ---------- Durum kuralları (Özet / Stok / Rapor) ----------
+const gunArasi = (a, b) => Math.round((new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)) / 864e5);
+
+// Sayım gecikti: son sayımdan bu yana geçen gün > sayım sıklığı + 2 gün.
+export function sayimGecikti(sonSayim, bugun, siklik = 7) {
+  if (!sonSayim) return false;
+  return gunArasi(bugun, sonSayim) > Number(siklik) + 2;
+}
+
+// Ortanca
+export function medyan(dizi) {
+  const d = [...dizi].sort((x, y) => x - y);
+  if (!d.length) return null;
+  const o = Math.floor(d.length / 2);
+  return d.length % 2 ? d[o] : (d[o - 1] + d[o]) / 2;
+}
+
+// Geçerli dönem: başlangıcı var ve dönemde kullanılan mal değeri bilinir (satış/fire girilmiş).
+const gecerliDonem = (d) => Boolean(d?.baslangic) && Number(d.kullanilan_tl) > 0;
+
+// Dönemin fark durumu. trend: yeni → eski (ilk eleman değerlendirilen dönem). esikYuzde: mekânın fark eşiği (%).
+// sinirTl: haftalık fark sınırı (TL); dönem uzunluğuna göre ölçeklenir (14 günlük dönemde 2 katı).
+// Sorun = (aşağıdaki kural) VEYA fark TL sınırını aştı. neden: 'tl' | 'normal' | 'oran' | null (hangisi aşıldı).
+//  · Değerlendirilen dönemle AYNI uzunlukta (±1 gün) önceki geçerli dönem sayısı ≥ 4 → normal = son 8'inin medyanı;
+//    fark medyanın 1,5 katını aşarsa sorun.
+//  · Daha azsa → oran = fark ÷ kullanılan mal değeri; eşiği aşarsa sorun. Normal seviye gösterilmez.
+//  · Kullanılan mal değeri yoksa (satış girilmemiş) oran hesaplanamaz: oran kuralı sorun demez (TL sınırı yine geçerli).
+export function farkDurumu(trend, esikYuzde = 5, sinirTl = 500) {
+  const d = trend?.[0];
+  if (!d) return null;
+  const fark = Math.abs(Number(d.acik_tl) || 0);
+  const gun = Number(d.gun);
+  const tlSiniri = Number(sinirTl) > 0 ? Math.round(Number(sinirTl) * (gun > 0 ? Math.max(1, gun / 7) : 1)) : null;
+  const tlAsildi = tlSiniri != null && fark > tlSiniri;
+  const onceki = trend.slice(1).filter((x) => gecerliDonem(x) && (!Number.isFinite(gun) || Math.abs(Number(x.gun) - gun) <= 1));
+  if (gecerliDonem(d) && onceki.length >= 4) {
+    const normal = medyan(onceki.slice(0, 8).map((x) => Math.abs(Number(x.acik_tl) || 0)));
+    const normalAsildi = fark > normal * 1.5;
+    return { mod: 'normal', fark, normal, oran: fark / Number(d.kullanilan_tl), tlSiniri, haftalikSinir: Number(sinirTl),
+      sorun: normalAsildi || tlAsildi, neden: tlAsildi ? 'tl' : normalAsildi ? 'normal' : null };
+  }
+  const oran = gecerliDonem(d) ? fark / Number(d.kullanilan_tl) : null;
+  const oranAsildi = oran != null && oran * 100 > Number(esikYuzde);
+  return { mod: 'oran', fark, normal: null, oran, tlSiniri, haftalikSinir: Number(sinirTl),
+    sorun: oranAsildi || tlAsildi, neden: tlAsildi ? 'tl' : oranAsildi ? 'oran' : null };
+}
+
+// Gün tahmini yalnız satış raporu son 3 gün içinde yüklendiyse (yoksa kullanım bilinmez, tahmin dayanaksız).
+export function gunTahminiVar(sonSatisYukleme, bugun) {
+  if (!sonSatisYukleme) return false;
+  return gunArasi(bugun, String(sonSatisYukleme).slice(0, 10)) <= 3;
 }

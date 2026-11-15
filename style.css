@@ -518,7 +518,7 @@ body.belge-acik { overflow: hidden; }
 
 /* =====================================================================================
    TASARIM — "Espresso & Krema" (2026-10)
-   Krema zemin, espresso koyusu ana renk, terrakota vurgu. Rakamlar Fraunces (serif), metinler Manrope.
+   Krema zemin, espresso koyusu ana renk. (Yazı tipi ve renkler aşağıdaki "TASARIM KURALLARI" katmanında.)
    Bu blok yukarıdaki eski stillerin üstüne yazar; aynı sınıflarla çalışır.
    ===================================================================================== */
 :root {
@@ -887,3 +887,86 @@ details.malzeme-satir .dugmeler { display: flex; gap: 8px; padding-bottom: 14px;
 .nokta { background: color-mix(in srgb, var(--soluk) 60%, transparent); }
 .nokta.buyuk, .rapor-satir.buyuk .nokta { background: var(--durum-kirmizi); }
 .nokta.fazla, .rapor-satir.fazla .nokta { background: var(--durum-amber); }
+
+/* =====================================================================================
+   TASARIM KURALLARI (2026-11-15, CLAUDE.md "Tasarım kuralları"): Braun / IBM / Apple.
+   IBM Plex Sans, serif yok, rakamlar tabular. Renk yalnız müdahale gerektiğinde: amber dikkat, kırmızı sorun;
+   normal durum renksiz (nötr kart + ✓), yeşil yok. Gradyan, gölge, süs yok. 8px ızgarası, dokunma alanı ≥ 44px.
+   Bu blok yukarıdakilerin üstüne yazar.
+   ===================================================================================== */
+:root {
+  --yazi: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --rakam: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --golge: none; --golge-buyuk: none;
+  --yesil: var(--metin); --yesil-zemin: var(--kahve-acik);
+  --vurgu: var(--metin); --vurgu-zemin: var(--kahve-acik);
+}
+body { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+h1 { font-weight: 700; letter-spacing: -.01em; }
+h2 { font-weight: 600; letter-spacing: 0; }
+b, strong { font-weight: 600; }
+.dev-rakam, .buyuk-rakam, .orta-rakam, .hepsi-tamam, .kod, .belge h1, .karsilama h1, .sayac input, .rakam-kutu input,
+.sirali li::before { font-family: var(--yazi); letter-spacing: -.01em; font-weight: 600; }
+*, *::before, *::after { box-shadow: none !important; text-shadow: none !important; }
+.kart { padding: 16px; border-radius: 16px; border: 1px solid var(--cizgi); background: var(--kart); }
+/* Koyu marka kartı yok: değer kartları nötr yüzeyde */
+.kahraman { background: var(--kart) !important; color: var(--metin); border: 1px solid var(--cizgi); }
+.kahraman::before, .kahraman::after { display: none !important; }
+.kahraman .etiket, .kahraman .bilgi, .kahraman small, .kahraman label { color: var(--soluk); }
+.kahraman .buyuk-rakam, .kahraman .dev-rakam { color: var(--metin); }
+.kahraman .uyari { color: var(--kirmizi); }
+.kahraman select { background: var(--zemin); color: var(--metin); border-color: var(--cizgi); }
+.durum-yazi.iyi, .kahraman .durum-yazi.iyi { background: var(--kahve-acik); color: var(--metin); }
+.durum-yazi.uyari, .kahraman .durum-yazi.uyari { background: var(--kirmizi-zemin); color: var(--kirmizi); }
+/* Ana eylem: nötr koyu (koyu temada açık); marka kahvesi yalnız üst bardaki işarette */
+.dev, button.dev { background: var(--metin); color: var(--kart); border: 0; }
+.dev.ikincil, button.ikincil { background: var(--kahve-acik); color: var(--metin); }
+.alt-menu { background: var(--kart); border: 1px solid var(--cizgi); }
+.alt-menu button.secili { background: var(--metin); color: var(--kart); }
+.rozet { background: var(--kahve-acik); color: var(--metin); }
+button, .dev, select, input, label.dugme, .kucuk { min-height: 44px; }
+.metin-dugme { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* Özet durum kartı */
+.ozet-durum { display: block; width: 100%; text-align: left; font: inherit; color: var(--metin); }
+.ozet-durum .durum-baslik { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3; display: flex; align-items: center; gap: 8px; }
+.ozet-durum .durum-ust { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ozet-durum .durum-cumle { margin: 8px 0 0; }
+.ozet-durum .durum-alt { display: block; margin: 8px 0 0; font-size: 14px; color: var(--soluk); }
+.ozet-durum .durum-istendi { margin: 16px 0 0; font-weight: 600; }
+.ozet-durum .durum-dugme { margin-top: 16px; width: 100%; min-height: 48px; border-radius: 12px; font-weight: 600;
+  background: var(--durum-amber); color: #fff; border: 0; }
+.ozet-durum.normal { background: var(--kart); border-color: var(--cizgi); }
+.ozet-durum.normal .tik { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  border: 1.5px solid var(--metin); font-size: 13px; font-weight: 700; }
+.ozet-durum.amber { background: var(--sari-zemin); border-color: color-mix(in srgb, var(--durum-amber) 45%, transparent); }
+.ozet-durum.amber .durum-baslik, .ozet-durum.amber .durum-istendi { color: var(--sari); }
+.ozet-durum.kirmizi { background: var(--kirmizi-zemin); border-color: color-mix(in srgb, var(--durum-kirmizi) 40%, transparent); cursor: pointer; }
+.ozet-durum.kirmizi .durum-baslik, .ozet-durum.kirmizi .kontrol-ok { color: var(--kirmizi); }
+@media (prefers-color-scheme: dark) { .ozet-durum .durum-dugme { color: #1c1612; } }
+
+/* Fark nereden: dokunulabilir satır */
+.kaynak-satir { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%;
+  padding: 12px 0; background: none; border: 0; border-top: 1px solid var(--cizgi); border-radius: 0; text-align: left;
+  font: inherit; color: var(--metin); }
+.kaynak-satir:first-of-type { border-top: 0; }
+.kaynak-satir .ad small { display: block; color: var(--soluk); font-size: 14px; }
+.kaynak-satir .rakam, .rakam { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.kaynak-satir .kontrol-ok { color: var(--soluk); }
+
+/* Uyarı detayı: hesap tablosu */
+.hesap { margin-top: 8px; }
+.hesap-satir { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px; align-items: baseline;
+  padding: 8px 0; border-top: 1px solid var(--cizgi); }
+.hesap-satir:first-child { border-top: 0; }
+.hesap-satir small { color: var(--soluk); }
+.hesap-satir.kalin { font-weight: 600; }
+.hesap-satir.sonuc { font-weight: 700; border-top: 2px solid var(--metin); }
+.hesap-satir .rakam { min-width: 64px; }
+.geri { margin-bottom: 8px; }
+@media (prefers-color-scheme: dark) {
+  .ozet-durum .durum-dugme { background: color-mix(in srgb, var(--durum-amber) 38%, var(--kart)); color: var(--sari);
+    border: 1px solid color-mix(in srgb, var(--durum-amber) 60%, transparent); }
+}
+/* Sınıfsız düğme de nötr ana eylem rengi (marka kahvesi değil); sınıflı düğmeler kendi kuralını korur */
+button { background: var(--metin); color: var(--kart); }
