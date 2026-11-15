@@ -9,7 +9,9 @@
   7 Kas espresso zammı 790→840.
 - SONUÇ: hesap doğru — fiş çakışması olmayan 3–10 Kas'ta uygulama gerçeği buldu (süt 12,57 L ↔ 12,6; çik. sos 700 ↔ 690 ml;
   espresso 248 ↔ 250 g; karamel 130 ↔ 150 ml). Teslimat farkı görevi doğru (4 L, 248 TL). Satış günü sayımı doğru.
-- BULGU 1 (KRİTİK, düzeltilmedi): satis_satirlari anahtarı 'F|fis_no|ürün|tür' — TARİH YOK. Fiş no günlük sıfırlanan kasada
+- BULGU 1 (KRİTİK) → sql/40_fis_tarihli_anahtar.sql YAZILDI + test geçti (test/fis_tarihli_anahtar_test.sql), CANLIYA ALINMADI.
+  Kalan: diff review → canlıya sql/40 → 8 günü (28 Eki–3 Kas, 15 Kas) yeniden işle (belge durumunu 'bekliyor' yapıp aynı
+  satırlarla satis_raporu_isle; .local-work/demo-hafta3/pos/satirlar.json) → deger.sql ile doğrula. Eski bulgu: satis_satirlari anahtarı 'F|fis_no|ürün|tür' — TARİH YOK. Fiş no günlük sıfırlanan kasada
   (ÖKC, Z raporu) ertesi günün aynı numaralı satırları "mükerrer" sayılıp atılıyor → satış eksik → sahte stok farkı. Simde
   176 içecek düştü (28 Eki–3 Kas + 15 Kas), 27 Eki–3 Kas farkı 4.584 TL göründü (gerçek ≈1.200). Ekran bunu "N satır daha önce
   yüklenmişti, iki kez sayılmadı" diye güven verici dille söylüyor. Öneri: anahtara tarih + mevcut anahtarları taşıma + düşen
