@@ -75,7 +75,8 @@ export function yeterDurumu(gun) {
 export function trendSvg(donemler, { genislik = 340, yukseklik = 150, normal = null } = {}) {
   const liste = [...donemler].reverse();
   if (!liste.length) return '';
-  const deger = liste.map((d) => Math.abs(Number(d.acik_tl) || 0));
+  // Satış raporu eksik dönemin farkı anlamsızdır: sütun çizilmez, yerine "rapor eksik" yazılır.
+  const deger = liste.map((d) => (satisEksik(d) ? 0 : Math.abs(Number(d.acik_tl) || 0)));
   const enBuyuk = Math.max(...deger, normal ?? 0, 1);
   const alt = 22, ust = 20, aralik = genislik / liste.length;
   const cubukG = Math.min(34, aralik * 0.56);
@@ -85,6 +86,10 @@ export function trendSvg(donemler, { genislik = 340, yukseklik = 150, normal = n
     const y = Math.min(yBul(deger[i]), yukseklik - alt - 2);
     const x = i * aralik + (aralik - cubukG) / 2;
     const etiket = new Date(`${d.bitis}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+    if (satisEksik(d)) {
+      return `<text class="grafik-deger soluk" x="${(i * aralik + aralik / 2).toFixed(1)}" y="${yukseklik - alt - 6}" text-anchor="middle">rapor eksik</text>
+      <text class="grafik-etiket" x="${(i * aralik + aralik / 2).toFixed(1)}" y="${yukseklik - 6}" text-anchor="middle">${etiket}</text>`;
+    }
     return `<rect class="${d.buyuk ? 'cubuk-kirmizi' : 'cubuk-normal'}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cubukG.toFixed(1)}"
         height="${(yukseklik - alt - y).toFixed(1)}" rx="4"></rect>
       <text class="grafik-deger" x="${(x + cubukG / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle">${kisa(deger[i])}</text>
@@ -92,7 +97,7 @@ export function trendSvg(donemler, { genislik = 340, yukseklik = 150, normal = n
   }).join('');
   const normalCizgi = normal != null && normal > 0
     ? `<line class="grafik-normal" x1="0" x2="${genislik}" y1="${yBul(normal).toFixed(1)}" y2="${yBul(normal).toFixed(1)}"></line>` : '';
-  const ozet = liste.map((d, i) => `${donemYaz(d.baslangic, d.bitis)}: ${kisa(deger[i])}`).join(', ');
+  const ozet = liste.map((d, i) => `${donemYaz(d.baslangic, d.bitis)}: ${satisEksik(d) ? 'satış raporu eksik' : kisa(deger[i])}`).join(', ');
   return `<svg class="grafik" viewBox="0 0 ${genislik} ${yukseklik}" role="img" aria-label="Haftalık stok farkı: ${ozet}${normal != null
     ? `; normal seviye ${kisa(normal)}` : ''}">
     <line class="grafik-taban" x1="0" x2="${genislik}" y1="${yukseklik - alt}" y2="${yukseklik - alt}"></line>${normalCizgi}${cubuklar}</svg>`;
@@ -144,8 +149,18 @@ export function medyan(dizi) {
   return d.length % 2 ? d[o] : (d[o - 1] + d[o]) / 2;
 }
 
-// Geçerli dönem: başlangıcı var ve dönemde kullanılan mal değeri bilinir (satış/fire girilmiş).
-const gecerliDonem = (d) => Boolean(d?.baslangic) && Number(d.kullanilan_tl) > 0;
+// Dönemin satış verisi eksik mi? Dönemde satış raporu olan gün sayısı (satis_gun, sql/39) dönem gününden azsa —
+// haftada 1 kapalı gün hoş görülür (7 gün → en az 6, 19 gün → en az 17). Satışı girilmemiş günde satılan her şey
+// "fark" görünür; bu dönemde stok farkı hesaplanamaz. Sunucu alanı göndermiyorsa (eski sürüm) eksik sayılmaz.
+export function satisEksik(d) {
+  if (!d || d.satis_gun == null || !d.baslangic) return false;
+  const gun = Number(d.gun);
+  if (!(gun > 0)) return false;
+  return Number(d.satis_gun) < gun - Math.floor(gun / 7);
+}
+
+// Geçerli dönem: başlangıcı var, satış verisi tam ve dönemde kullanılan mal değeri bilinir (satış/fire girilmiş).
+const gecerliDonem = (d) => Boolean(d?.baslangic) && !satisEksik(d) && Number(d.kullanilan_tl) > 0;
 
 // Dönemin fark durumu. trend: yeni → eski (ilk eleman değerlendirilen dönem). esikYuzde: mekânın fark eşiği (%).
 // sinirTl: haftalık fark sınırı (TL); dönem uzunluğuna göre ölçeklenir (14 günlük dönemde 2 katı).
@@ -154,23 +169,28 @@ const gecerliDonem = (d) => Boolean(d?.baslangic) && Number(d.kullanilan_tl) > 0
 //    fark medyanın 1,5 katını aşarsa sorun.
 //  · Daha azsa → oran = fark ÷ kullanılan mal değeri; eşiği aşarsa sorun. Normal seviye gösterilmez.
 //  · Kullanılan mal değeri yoksa (satış girilmemiş) oran hesaplanamaz: oran kuralı sorun demez (TL sınırı yine geçerli).
+//  · Dönemin satış verisi eksikse (satisEksik) fark yargılanmaz: mod 'satis_eksik', sorun yok (ekran amber uyarı verir).
 export function farkDurumu(trend, esikYuzde = 5, sinirTl = 500) {
   const d = trend?.[0];
   if (!d) return null;
   const fark = Math.abs(Number(d.acik_tl) || 0);
   const gun = Number(d.gun);
   const tlSiniri = Number(sinirTl) > 0 ? Math.round(Number(sinirTl) * (gun > 0 ? Math.max(1, gun / 7) : 1)) : null;
+  if (satisEksik(d)) {
+    return { mod: 'satis_eksik', fark, normal: null, oran: null, tlSiniri, haftalikSinir: Number(sinirTl), gun,
+      satisGun: Number(d.satis_gun), sorun: false, neden: null };
+  }
   const tlAsildi = tlSiniri != null && fark > tlSiniri;
   const onceki = trend.slice(1).filter((x) => gecerliDonem(x) && (!Number.isFinite(gun) || Math.abs(Number(x.gun) - gun) <= 1));
   if (gecerliDonem(d) && onceki.length >= 4) {
     const normal = medyan(onceki.slice(0, 8).map((x) => Math.abs(Number(x.acik_tl) || 0)));
     const normalAsildi = fark > normal * 1.5;
-    return { mod: 'normal', fark, normal, oran: fark / Number(d.kullanilan_tl), tlSiniri, haftalikSinir: Number(sinirTl),
+    return { mod: 'normal', fark, normal, oran: fark / Number(d.kullanilan_tl), tlSiniri, haftalikSinir: Number(sinirTl), gun,
       sorun: normalAsildi || tlAsildi, neden: tlAsildi ? 'tl' : normalAsildi ? 'normal' : null };
   }
   const oran = gecerliDonem(d) ? fark / Number(d.kullanilan_tl) : null;
   const oranAsildi = oran != null && oran * 100 > Number(esikYuzde);
-  return { mod: 'oran', fark, normal: null, oran, tlSiniri, haftalikSinir: Number(sinirTl),
+  return { mod: 'oran', fark, normal: null, oran, tlSiniri, haftalikSinir: Number(sinirTl), gun,
     sorun: oranAsildi || tlAsildi, neden: tlAsildi ? 'tl' : oranAsildi ? 'oran' : null };
 }
 
@@ -178,4 +198,26 @@ export function farkDurumu(trend, esikYuzde = 5, sinirTl = 500) {
 export function gunTahminiVar(sonSatisYukleme, bugun) {
   if (!sonSatisYukleme) return false;
   return gunArasi(bugun, String(sonSatisYukleme).slice(0, 10)) <= 3;
+}
+
+// ---------- Durum kartı alt satırı ----------
+export const yaklasikTl = (n) => tlYaz(n >= 100 ? Math.round(n / 10) * 10 : Math.round(n));
+const yuzde = (oran) => `%${new Intl.NumberFormat('tr-TR', { maximumFractionDigits: oran < 0.1 ? 1 : 0 }).format(oran * 100)}`;
+// Tek karşılaştırma: "19 günde 2.479 TL fark · bu dönemin sınırı 1.357 TL" (TL sınırı aşıldı),
+// "7 günde 389 TL fark · normali ~210 TL" (yeterli geçmiş) ya da "7 günde 389 TL fark · kullanımın %4'ü" (az geçmiş).
+export function farkSatiri(fd) {
+  const bas = `${Number(fd.gun) > 0 ? `${fd.gun} günde ` : ''}${tlYaz(fd.fark)} fark`;
+  if (fd.neden === 'tl') return `${bas} · bu dönemin sınırı ${tlYaz(fd.tlSiniri)}`;
+  if (fd.mod === 'normal') return `${bas} · normali ~${yaklasikTl(fd.normal)}`;
+  if (fd.oran == null) return bas;
+  if (fd.oran < 0.001) return `${bas} · kullanımın %0,1'inden az`;
+  const y = yuzde(fd.oran);
+  return `${bas} · kullanımın ${y}'${yuzdeEki(y)}`;
+}
+// Yüzdenin iyelik eki (okunuşa göre): %4'ü, %5'i, %6'sı, %10'u, %20'si, %4,2'si
+export function yuzdeEki(metin) {
+  const d = String(metin).replace(/\D/g, '');
+  const son = d.slice(-1);
+  if (son !== '0') return { 1: 'i', 2: 'si', 3: 'ü', 4: 'ü', 5: 'i', 6: 'sı', 7: 'si', 8: 'i', 9: 'u' }[son];
+  return { 1: 'u', 2: 'si', 3: 'u', 4: 'ı', 5: 'si', 6: 'ı', 7: 'i', 8: 'i', 9: 'ı' }[d.slice(-2, -1)] ?? 'ı';
 }

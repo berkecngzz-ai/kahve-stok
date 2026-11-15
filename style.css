@@ -290,6 +290,7 @@ body.patron main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .grafik .cubuk-kirmizi { fill: var(--kirmizi); }
 .grafik-taban { stroke: var(--cizgi); }
 .grafik-deger { font-size: 11px; font-weight: 700; fill: var(--metin); }
+.grafik-deger.soluk { font-weight: 500; fill: var(--soluk); }
 .grafik-etiket { font-size: 11px; fill: var(--soluk); }
 .cizgili-satir { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--cizgi); }
 .cizgili-satir:first-of-type { border-top: 0; }
@@ -970,3 +971,11 @@ button, .dev, select, input, label.dugme, .kucuk { min-height: 44px; }
 }
 /* Sınıfsız düğme de nötr ana eylem rengi (marka kahvesi değil); sınıflı düğmeler kendi kuralını korur */
 button { background: var(--metin); color: var(--kart); }
+
+/* Stok listesi: ürün adı ana yazı renginde (genel summary kuralı soluk yapıyordu); kartın üstünde boşluk yok. */
+.kart.liste-kart { padding-top: 0; padding-bottom: 0; }
+details.stok-satir { margin-top: 0; padding-top: 0; }
+details.stok-satir > summary { color: var(--metin); }
+.liste-kart > p:last-child { margin: 4px 0 14px; }
+/* Rapor kartındaki amber kutu: nötr kart üstünde açık temada da okunur (eski koyu kart rengi kalmıştı). */
+.kahraman .durum-kart.sari { background: var(--sari-zemin); border-color: color-mix(in srgb, var(--sari) 45%, transparent); color: var(--metin); }

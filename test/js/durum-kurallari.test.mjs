@@ -1,7 +1,7 @@
 // Patron ekranlarının durum kuralları: sayım gecikmesi, fark durumu (oran / medyan), gün tahmini.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sayimGecikti, farkDurumu, gunTahminiVar, medyan, acikDurumu } from '../../patron-hesap.js';
+import { sayimGecikti, farkDurumu, gunTahminiVar, medyan, acikDurumu, satisEksik, farkSatiri, trendSvg } from '../../patron-hesap.js';
 
 const donem = (acik, kullanilan, gun = 7, baslangic = '2026-10-01') => ({ acik_tl: -acik, kullanilan_tl: kullanilan, gun, baslangic });
 
@@ -84,4 +84,46 @@ test('haftalık TL sınırı: oran eşiği aşılmasa da sınır aşılırsa sor
   const onceki = [600, 620, 580, 610].map((x) => donem(x, 28000));
   const m = farkDurumu([donem(700, 28000), ...onceki], 5, 500);
   assert.equal(m.mod, 'normal'); assert.equal(m.neden, 'tl'); assert.equal(m.sorun, true);
+});
+
+// Canlı hata (2026-11-15): 27 Eki – 15 Kas, 19 gün satış raporu yok → satılan her şey fark sayıldı, 2.479 TL kırmızı.
+test('satış raporu eksik dönemde stok farkı hesaplanmaz (amber, sorun değil)', () => {
+  const canli = { baslangic: '2026-10-27', bitis: '2026-11-15', gun: 19, satis_gun: 0, acik_tl: -2479, kullanilan_tl: 300 };
+  assert.equal(satisEksik(canli), true);
+  const d = farkDurumu([canli, donem(200, 9000)], 5, 500);
+  assert.equal(d.mod, 'satis_eksik');
+  assert.equal(d.sorun, false);           // TL sınırı (1.357 TL) aşılsa da kırmızı değil
+  assert.equal(d.neden, null);
+  assert.equal(d.gun, 19); assert.equal(d.satisGun, 0);
+  // Haftada 1 kapalı gün hoş görülür: 7 günde 6, 19 günde 17 satış günü yeter
+  assert.equal(satisEksik({ ...canli, gun: 7, satis_gun: 6 }), false);
+  assert.equal(satisEksik({ ...canli, gun: 7, satis_gun: 5 }), true);
+  assert.equal(satisEksik({ ...canli, satis_gun: 17 }), false);
+  assert.equal(satisEksik({ ...canli, satis_gun: 16 }), true);
+  // Sunucu alanı göndermiyorsa (eski sürüm) eski davranış
+  assert.equal(satisEksik({ ...canli, satis_gun: undefined }), false);
+  assert.equal(farkDurumu([{ ...canli, satis_gun: undefined }], 5, 500).sorun, true);
+});
+
+test('satış raporu eksik dönem normal seviye geçmişine girmez', () => {
+  const eksik = { ...donem(5000, 9000), satis_gun: 0 };
+  const t = [donem(389, 9725), eksik, donem(200, 9000), donem(210, 9000), donem(220, 9000)];
+  assert.equal(farkDurumu(t, 5).mod, 'oran');   // eksik dönem sayılmadı: 3 geçerli dönem
+  assert.equal(farkDurumu([donem(389, 9725), eksik, donem(200, 9000), donem(210, 9000), donem(220, 9000), donem(230, 9000)], 5).normal, 215);
+});
+
+test('grafik: satış raporu eksik dönemde sütun yok, "rapor eksik" yazar', () => {
+  const svg = trendSvg([{ baslangic: '2026-10-27', bitis: '2026-11-15', gun: 19, satis_gun: 0, acik_tl: -2479 },
+    { baslangic: '2026-10-20', bitis: '2026-10-27', gun: 7, satis_gun: 7, acik_tl: -200 }]);
+  assert.match(svg, /rapor eksik/);
+  assert.doesNotMatch(svg, /2\.479 TL/);
+  assert.equal((svg.match(/<rect/g) ?? []).length, 1);
+});
+
+test('durum kartı alt satırı: tek karşılaştırma', () => {
+  const canli = { baslangic: '2026-10-27', bitis: '2026-11-15', gun: 19, satis_gun: 19, acik_tl: -2479, kullanilan_tl: 90000 };
+  assert.equal(farkSatiri(farkDurumu([canli], 5, 500)), '19 günde 2.479 TL fark · bu dönemin sınırı 1.357 TL');
+  assert.equal(farkSatiri(farkDurumu([donem(389, 9725)], 5, 500)), "7 günde 389 TL fark · kullanımın %4'ü");
+  const onceki = [200, 220, 180, 250].map((x) => donem(x, 9000));
+  assert.equal(farkSatiri(farkDurumu([donem(389, 9725), ...onceki], 5, 10000)), '7 günde 389 TL fark · normali ~210 TL');
 });
