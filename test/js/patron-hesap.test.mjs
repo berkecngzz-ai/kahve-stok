@@ -65,7 +65,9 @@ test('trend grafiği: eski hafta solda, kırmızı hafta işaretli, ekran okuyuc
     { baslangic: '2026-10-16', bitis: '2026-10-23', acik_tl: -215 },
     { baslangic: '2026-10-09', bitis: '2026-10-16', acik_tl: -914, buyuk: true },
   ]);
-  assert.match(svg, /aria-label="Haftalık açık \(TL\): 9–16 Ekim: −914 TL, 16–23 Ekim: −215 TL"/);
+  assert.match(svg, /aria-label="Haftalık stok farkı: 9–16 Ekim: 914 TL, 16–23 Ekim: 215 TL"/);
+  assert.ok(svg.includes('>914 TL<') && !svg.includes('−'));
+  assert.ok(trendSvg([{ baslangic: '2026-10-16', bitis: '2026-10-23', acik_tl: -215 }], { normal: 300 }).includes('grafik-normal'));
   assert.equal((svg.match(/cubuk-kirmizi/g) || []).length, 1);
   assert.ok(svg.indexOf('16 Eki') < svg.indexOf('23 Eki'));
   assert.equal(trendSvg([]), '');
@@ -78,7 +80,7 @@ test('rapor CSV: Excel Türkçe biçimi, günlük birim, tırnak kaçışı', as
       sayilan: 33040, fark: -17360, fark_tl: -763.84 }, { ad: 'Yeni', birim: 'g', durum: 'ilk_sayim' }] });
   assert.ok(csv.startsWith('﻿'));
   const satir = csv.split('\r\n');
-  assert.equal(satir[2], '"Süt; tam";litre;48;108;104,8;0,8;50,4;33,04;-17,36;-763,84;Yüksek açık');
+  assert.equal(satir[2], '"Süt; tam";litre;48;108;104,8;0,8;50,4;33,04;-17,36;-763,84;Normalden yüksek fark');
   assert.equal(satir.length, 8);                     // başlık 2 + 1 malzeme + boş + 2 toplam + uyarı + son satır sonu
   assert.ok(csv.includes('Uyarı;"a; b"'));
 });

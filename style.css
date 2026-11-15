@@ -823,3 +823,67 @@ details.malzeme-satir .dugmeler { display: flex; gap: 8px; padding-bottom: 14px;
 .fg-satir b { font-variant-numeric: tabular-nums; }
 .fg-satir small { color: var(--soluk); text-align: right; }
 .fg-satir.iptal { text-decoration: line-through; opacity: .6; }
+
+/* =====================================================================================
+   DURUM RENKLERİ (2026-11-15): renk yalnız durum anlatır. Normal yeşil #2E7D4F · dikkat amber #B7791F ·
+   sorun kırmızı #B42318. Zemin açık, yazı aynı tonun koyusu (kontrast ≥ 4.5:1); rakamlar nötr.
+   Marka kahvesi yalnız üst barda ve koyu kartta. Ekranda tek durum rengi baskın: satırlar nötr, yalnız nokta renkli.
+   ===================================================================================== */
+:root {
+  --yesil: #1f6a40; --yesil-zemin: #e8f3ec; --durum-yesil: #2E7D4F;
+  --sari: #8a5a10; --sari-zemin: #fbf2e1; --durum-amber: #B7791F;
+  --kirmizi: #a3201a; --kirmizi-zemin: #fdecea; --durum-kirmizi: #B42318;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --yesil: #8fd1a9; --yesil-zemin: #16291e; --durum-yesil: #5fb784;
+    --sari: #e8b865; --sari-zemin: #2d2311; --durum-amber: #d9a24a;
+    --kirmizi: #f2a39a; --kirmizi-zemin: #331a17; --durum-kirmizi: #e2675c;
+  }
+}
+/* Özet durum kartı: tek cümle + küçük alt satır */
+.ozet-durum { border: 1px solid transparent; }
+.ozet-durum .durum-baslik { font-size: 22px; font-weight: 800; line-height: 1.25; }
+.ozet-durum .durum-cumle { margin: 6px 0 0; font-size: 16px; line-height: 1.45; }
+.ozet-durum .durum-alt { margin: 8px 0 0; font-size: 14px; color: var(--soluk); }
+.ozet-durum .durum-istendi { margin: 12px 0 0; font-weight: 700; font-size: 15px; }
+.ozet-durum .durum-dugme { margin-top: 14px; width: 100%; min-height: 48px; border-radius: 14px; font-weight: 800;
+  background: var(--durum-amber); color: #fff; border: 0; }
+.ozet-durum.yesil { background: var(--yesil-zemin); border-color: color-mix(in srgb, var(--durum-yesil) 35%, transparent); }
+.ozet-durum.yesil .durum-baslik { color: var(--yesil); }
+.ozet-durum.amber { background: var(--sari-zemin); border-color: color-mix(in srgb, var(--durum-amber) 40%, transparent); }
+.ozet-durum.amber .durum-baslik, .ozet-durum.amber .durum-istendi { color: var(--sari); }
+.ozet-durum.kirmizi { background: var(--kirmizi-zemin); border-color: color-mix(in srgb, var(--durum-kirmizi) 35%, transparent); }
+.ozet-durum.kirmizi .durum-baslik { color: var(--kirmizi); }
+.ozet-durum.notr { background: var(--kart); }
+@media (prefers-color-scheme: dark) { .ozet-durum .durum-dugme { color: #1c1612; } }
+/* Yapman gerekenler: nötr satırlar, küçük durum noktası */
+.yapilacaklar h2 { margin-bottom: 4px; }
+.yapilacak { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 0; text-align: left;
+  background: none; border: 0; border-top: 1px solid var(--cizgi); color: var(--metin); border-radius: 0; min-height: 0; font: inherit; }
+.yapilacak:first-of-type { border-top: 0; }
+.yapilacak .kontrol-metin { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.yapilacak .kontrol-metin b { font-size: 16px; line-height: 1.3; }
+.yapilacak .kontrol-metin small { color: var(--soluk); font-size: 14px; }
+.yapilacak .kontrol-ok { color: var(--soluk); }
+.durum-nokta { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--soluk); }
+.durum-nokta.kirmizi { background: var(--durum-kirmizi); }
+.durum-nokta.amber { background: var(--durum-amber); }
+.sirali .ad .durum-nokta { width: 8px; height: 8px; margin-right: 8px; vertical-align: middle; }
+/* Grafik: nötr sütunlar, kırmızı yalnız normalden yüksek hafta, normal seviye ince kesik çizgi */
+.grafik .cubuk-normal { fill: color-mix(in srgb, var(--soluk) 45%, var(--kart)); }
+.grafik .cubuk-kirmizi { fill: var(--durum-kirmizi); }
+.grafik-normal { stroke: var(--soluk); stroke-width: 1; stroke-dasharray: 4 4; }
+.grafik-deger { font-size: 10.5px; }
+.yapilacak { border-top: 0; }
+.yapilacak + .yapilacak { border-top: 1px solid var(--cizgi); }
+/* Teslimat çubuğu nötr: renk durum kartında */
+.teslim-cubuk { background: var(--kahve-acik); }
+.teslim-cubuk span { background: color-mix(in srgb, var(--soluk) 70%, var(--kart)); }
+/* Rakamlar nötr: durum yalnız yazılı etiket ve noktada; normal satırın noktası gri */
+.buyuk-rakam.iyi, .buyuk-rakam.uyari, .orta-rakam.uyari, .tutar.uyari, b.uyari { color: inherit; }
+.nokta.normal, .cizgili-satir.normal .nokta { background: color-mix(in srgb, var(--soluk) 60%, transparent); }
+.kahraman .buyuk-rakam.iyi, .kahraman .buyuk-rakam.uyari { color: inherit; }
+.nokta { background: color-mix(in srgb, var(--soluk) 60%, transparent); }
+.nokta.buyuk, .rapor-satir.buyuk .nokta { background: var(--durum-kirmizi); }
+.nokta.fazla, .rapor-satir.fazla .nokta { background: var(--durum-amber); }

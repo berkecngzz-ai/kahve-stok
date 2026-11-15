@@ -1,5 +1,18 @@
 # İlerleme notları
 
+## Patron ekranları sadeleştirme (2026-11-15) · CANLIDA
+- Kural: bilgi patronun kararını değiştirmiyorsa ana ekranda durmaz. "Kayıp" yerine "stok farkı" (barista suçlanmasın),
+  eksi işareti yok (eksik/fazla yazılır; CSV rakamları işaretli kalır).
+- Özet: durum kartı (sayım > 7 gün → amber "Sayım gerekiyor" + Sayım iste; fark yüksek → kırmızı "<malzeme>de fark var";
+  değilse yeşil). Normal seviye = önceki ≤6 dönemin ortancası (normalSeviye). "Yapman gerekenler" ≤3 satır, nötr satır +
+  durum noktası; "Fark nereden" ≤3, 10 TL altı gizli. Kalkanlar: mini çubuk grafik, önceki hafta kıyası, azalan kartı.
+- sql/37 (CANLIDA): sayim_talepleri + sayim_iste() (patron) + sayim_talebi(); isteğin ardından ilk geniş sayım isteği
+  kapatır. Barista ana ekranı "X haftalık sayım istedi" der. Test: test/sayim_talebi_test.sql. Geri al: scripts/geri-al-37.sql.
+- Rapor: haftalık grafik ana ekranda, sütun üstünde tutar, kesik çizgi normal seviye. Renk yalnız durum: yeşil #2E7D4F,
+  amber #B7791F, kırmızı #B42318 (açık zemin + koyu ton yazı); rakamlar nötr.
+- Stok (aynı gün, f75e7a5646): tek satır ad | miktar | gün, detay dokununca, en az kalan üstte, <2 kırmızı / 2–5 amber /
+  >5 nötr; koyu temada kırmızı zemin düzeltildi.
+
 ## Gerçek tedarikçi belgeleri testi (2026-11-13) · CANLIDA
 - 5 gerçek belge (Metro termal e-fatura, SMB/Algida dondurma e-faturası, Sütaş e-irsaliye, Arslanlar DVG şurup e-faturası,
   Söylemezoğlu e-irsaliye). Yeni test mekânı "Colombia Coffee TEST" (yerel). İlk durum: AI eşleştirme 9/19; irsaliye hiç

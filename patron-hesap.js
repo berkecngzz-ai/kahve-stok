@@ -69,27 +69,32 @@ export function yeterDurumu(gun) {
   return gun < 2 ? 'az' : gun <= 5 ? 'dikkat' : 'iyi';     // < 2 gün kırmızı, 2–5 amber, sonrası nötr
 }
 
-// Haftalık açık TL trendi için sade SVG çubuk grafiği (eski → yeni, soldan sağa). Ekran okuyucu için başlık + özet.
-export function trendSvg(donemler, { genislik = 320, yukseklik = 120 } = {}) {
+// Haftalık stok farkı grafiği (eski → yeni, soldan sağa): her sütunun üstünde tutarı ("1.267 TL"); normal seviye verilirse
+// ince kesik çizgi. Sütunlar nötr; yalnız normalden yüksek hafta kırmızı. Ekran okuyucu için başlık + özet.
+export function trendSvg(donemler, { genislik = 340, yukseklik = 150, normal = null } = {}) {
   const liste = [...donemler].reverse();
   if (!liste.length) return '';
   const deger = liste.map((d) => Math.abs(Number(d.acik_tl) || 0));
-  const enBuyuk = Math.max(...deger, 1);
-  const alt = 22, ust = 18, aralik = genislik / liste.length;
-  const cubukG = Math.min(36, aralik * 0.6);
+  const enBuyuk = Math.max(...deger, normal ?? 0, 1);
+  const alt = 22, ust = 20, aralik = genislik / liste.length;
+  const cubukG = Math.min(34, aralik * 0.56);
+  const yBul = (v) => yukseklik - alt - (v / enBuyuk) * (yukseklik - alt - ust);
+  const kisa = (v) => `${new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(Math.round(v))} TL`;
   const cubuklar = liste.map((d, i) => {
-    const h = Math.max(2, (deger[i] / enBuyuk) * (yukseklik - alt - ust));
+    const y = Math.min(yBul(deger[i]), yukseklik - alt - 2);
     const x = i * aralik + (aralik - cubukG) / 2;
-    const y = yukseklik - alt - h;
-    const sinif = d.buyuk ? 'cubuk-kirmizi' : 'cubuk-normal';
     const etiket = new Date(`${d.bitis}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-    return `<rect class="${sinif}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cubukG.toFixed(1)}" height="${h.toFixed(1)}" rx="4"></rect>
-      <text class="grafik-deger" x="${(x + cubukG / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${deger[i] >= 1000 ? sayi(deger[i] / 1000, 1) + 'b' : sayi(deger[i], 0)}</text>
+    return `<rect class="${d.buyuk ? 'cubuk-kirmizi' : 'cubuk-normal'}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cubukG.toFixed(1)}"
+        height="${(yukseklik - alt - y).toFixed(1)}" rx="4"></rect>
+      <text class="grafik-deger" x="${(x + cubukG / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle">${kisa(deger[i])}</text>
       <text class="grafik-etiket" x="${(x + cubukG / 2).toFixed(1)}" y="${yukseklik - 6}" text-anchor="middle">${etiket}</text>`;
   }).join('');
-  const ozet = liste.map((d, i) => `${donemYaz(d.baslangic, d.bitis)}: ${tlYaz(-deger[i])}`).join(', ');
-  return `<svg class="grafik" viewBox="0 0 ${genislik} ${yukseklik}" role="img" aria-label="Haftalık açık (TL): ${ozet}">
-    <line class="grafik-taban" x1="0" x2="${genislik}" y1="${yukseklik - alt}" y2="${yukseklik - alt}"></line>${cubuklar}</svg>`;
+  const normalCizgi = normal != null && normal > 0
+    ? `<line class="grafik-normal" x1="0" x2="${genislik}" y1="${yBul(normal).toFixed(1)}" y2="${yBul(normal).toFixed(1)}"></line>` : '';
+  const ozet = liste.map((d, i) => `${donemYaz(d.baslangic, d.bitis)}: ${kisa(deger[i])}`).join(', ');
+  return `<svg class="grafik" viewBox="0 0 ${genislik} ${yukseklik}" role="img" aria-label="Haftalık stok farkı: ${ozet}${normal != null
+    ? `; normal seviye ${kisa(normal)}` : ''}">
+    <line class="grafik-taban" x1="0" x2="${genislik}" y1="${yukseklik - alt}" y2="${yukseklik - alt}"></line>${normalCizgi}${cubuklar}</svg>`;
 }
 
 // Haftalık raporu Excel'in Türkçe ayarında doğrudan açılan CSV'ye çevirir (noktalı virgül, ondalık virgül, BOM).
@@ -110,13 +115,13 @@ export function raporCsv(r, mekanAdi = '') {
     ['Malzeme', 'Birim', 'Önceki sayım', 'Gelen', 'Kullanılan (satış)', 'Fire', 'Olması gereken', 'Sayılan',
       'Fark (miktar)', 'Fark (TL)', 'Durum'],
   ];
-  const DURUM = { buyuk: 'Yüksek açık', normal: 'Normal', fazla: 'Fazla çıktı' };
+  const DURUM = { buyuk: 'Normalden yüksek fark', normal: 'Normal', fazla: 'Fazla çıktı' };
   for (const x of r.satirlar.filter((y) => y.durum === 'tamam')) {
     const b = BOLEN[x.birim];
     satirlar.push([x.ad, BUYUK_AD[x.birim], sayi(x.baslangic / b), sayi(x.gelen / b), sayi(x.satis / b), sayi(x.fire / b),
       sayi(x.beklenen / b), sayi(x.sayilan / b), sayi(x.fark / b), sayi(x.fark_tl, 2), DURUM[acikDurumu(x)]]);
   }
-  satirlar.push([], ['Toplam açık (TL)', sayi(r.toplam_acik_tl, 2)], ['Toplam fazla (TL)', sayi(r.toplam_fazla_tl, 2)]);
+  satirlar.push([], ['Toplam eksik (TL)', sayi(Math.abs(Number(r.toplam_acik_tl) || 0), 2)], ['Toplam fazla (TL)', sayi(r.toplam_fazla_tl, 2)]);
   for (const u of r.uyarilar ?? []) satirlar.push(['Uyarı', u]);
   return `﻿${satirlar.map((s) => s.map(hucre).join(';')).join('\r\n')}\r\n`;
 }
