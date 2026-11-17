@@ -1,0 +1,49 @@
+GENEL DOĞRULUK: %91.4 (532/582 kontrol, 3 tur)
+
+TUZAKLAR (kaç turda geçti):
+  3/3  Koli çarpanı: Arslanlar '750ML*12' → 4 şişe (48 değil)
+  0/3  Koli çarpanı: Söylemezoğlu 25 koli → 360 şişe
+  3/3  Gider ayrımı: jüt ip, reklam, temizlik stoğa girmiyor
+  3/3  Belirsiz kalem: 'MEYVE 400 TL' için kg soruluyor
+  0/3  Gramaj yok: ŞOK Mis peynir işaretleniyor
+  3/3  İrsaliye: fiyat uydurulmuyor
+  3/3  Süt: Sütaş 180 L doğru okunuyor
+
+BELGE: tur puanları | süre (ilk tur, sn)
+  01_sutas_irsaliye.jpg          %88 / %88 / %88 | 15.2
+  02_smb_temmuz.jpg              %0 / %100 / %100 | 180.0
+  03_salipazari_fis.jpg          %100 / %100 / %100 | 14.4
+  04_matbaa_fis.jpg              %100 / %100 / %100 | 14.0
+  05_arslanlar_fatura.jpg        %100 / %100 / %100 | 31.5
+  06_sok_fis.jpg                 %67 / %67 / %67 | 24.4
+  07_manav_fis.jpg               %100 / %100 / %100 | 13.4
+  08_metro_5670.jpg              %94 / %94 / %92 | 21.4
+  09_metro_5669.jpg              %71 / %71 / %71 | 14.7
+  10_soylemezoglu_irsaliye.jpg   %94 / %94 / %94 | 13.9
+  11_smb_agustos.jpg             %100 / %100 / %100 | 30.7
+
+HATALAR (belge → alan: kaç turda başarısız):
+  01_sutas_irsaliye.jpg
+    [3/3] belge_no: beklenen `S202026000011209` ↔ gelen `5202026000011209`
+  02_smb_temmuz.jpg
+    [1/3] okuma: beklenen `çıktı` ↔ gelen `yok/hata`
+  06_sok_fis.jpg
+    [3/3] Mis Dilimli Tam Yağlı / sınıf: beklenen `stok` ↔ gelen `gider`
+    [3/3] Mis Dilimli Tam Yağlı / stok miktarı: beklenen `4.0` ↔ gelen `None`
+    [3/3] Mis Dilimli Tam Yağlı / eksik bilgiyi işaretledi: beklenen `işaretli` ↔ gelen `None`
+  08_metro_5670.jpg
+    [3/3] genel_toplam: beklenen `887.71` ↔ gelen `867.71`
+    [3/3] Polonez Jambon 50g dilimli / stok miktarı: beklenen `3` ↔ gelen `None`
+    [2/3] Plastik kasa poşeti / tutar: beklenen `1.0` ↔ gelen `0.83`
+    [2/3] belge_no: beklenen `1H12026000005670` ↔ gelen `1H1202600005670`
+  09_metro_5669.jpg
+    [3/3] belge_no: beklenen `1H12026000005669` ↔ gelen `1H1202600005669`
+    [3/3] Plastik kasa poşeti / tutar: beklenen `2.99` ↔ gelen `2.49`
+    [3/3] Asperox Sarı Güç Leke Temizleyici 1L / tutar: beklenen `119.9` ↔ gelen `99.92`
+    [3/3] Camsil Cam Temizleyici 500ml / tutar: beklenen `133.8` ↔ gelen `111.5`
+    [3/3] Asperox Mavi Güç Kir Çözücü 1L / tutar: beklenen `119.9` ↔ gelen `99.92`
+    [3/3] Macromax Mikrofiber Cam Bezi 2'li / miktar: beklenen `2` ↔ gelen `1`
+    [3/3] Macromax Mikrofiber Cam Bezi 2'li / tutar: beklenen `259.8` ↔ gelen `118.09`
+    [3/3] Domestos Pro Çamaşır Suyu 10L / tutar: beklenen `759.9` ↔ gelen `633.25`
+  10_soylemezoglu_irsaliye.jpg
+    [3/3] Premium Maden Suyu 25cl cam / stok miktarı: beklenen `120` ↔ gelen `5`

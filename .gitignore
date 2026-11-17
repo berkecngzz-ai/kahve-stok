@@ -13,3 +13,12 @@ test/kabul/cikti/
 
 # Ekran görüntüleri yalnız bu bilgisayarda (demo verisi; depo herkese açık)
 ekran-goruntuleri/
+
+# fatura-test: ham sonuçlar ve çalışma günlükleri (rapor-canli-3tur.txt özeti commit edilir)
+fatura-test/results/
+fatura-test/canli-calisma.log
+fatura-test/__pycache__/
+fatura-test/readers/__pycache__/
+
+# Gerçek fatura fotoğrafları (depo herkese açık) — asla commit edilmez
+fatura-test/data/

@@ -1,5 +1,23 @@
 # İlerleme notları
 
+## Pilot öncesi: sql/40 CANLIDA + fatura okuma testi (2026-11-17)
+- ⚠️ DİKKAT: depo HERKESE AÇIK (GitHub Pages). fatura-test/data/images/ gerçek fatura fotoğrafları içeriyor (tedarikçi adı, VKN, fatura no).
+  Yerel commit var, PUSH EDİLMEDİ. Push'tan önce: depoyu private yap ya da bu klasörü git'ten çıkar (karar kullanıcıda).
+- sql/40 (CANLIDA): satış satırı anahtarına tarih eklendi; 9.885 mevcut satır taşındı (0 eski biçim kaldı). Canlıda rollback'li doğrulama:
+  iki FARKLI günün Z raporu (ikisinde de fiş 1–2) ikisi de sayıldı. SINIR: AYNI gün + aynı fiş no + aynı ürün (iki kasa / vardiya
+  başı Z) hâlâ mükerrer sayılır — sql/41 önerisi: anahtara saat (zaman) eklemek (saatsiz raporlarda yine çakışır; farklı biçimde
+  yüklenen aynı rapor çift sayılma riski). Karar bekliyor. Starbucks'ta düşen 8 günün (28 Eki–3 Kas, 15 Kas) yeniden işlenmesi YAPILMADI.
+- fatura-test/ (11 gerçek belge, elle doğrulanmış cevap): mock puanlayıcı 4 bilinçli hatayı yakaladı. Canlı okuyucu (fatura-oku,
+  gpt-4.1-mini) 3 tur × 11 = 33 okuma, ≈ $0,09, belge başı 13–31 sn. Bağlayıcı: fatura-test/readers/uygulama_okuyucu.mjs +
+  fatura-test/canli_test.sh (test yolunu açar/kapatır, görüntüleri siler); yeniden puanlama (harcamasız): yeniden_puanla.py.
+  Özet: fatura-test/rapor-canli-3tur.txt (ham sonuçlar results/ içinde, git dışı). Genel %91,4 (birim dönüşümü sonrası).
+  Gerçek bulgular: (1) Söylemezoğlu "685X4" koli içi okunamadı → uygulama carpan=1 verip 120 yerine 5 şişe yazıyor, sayım sorusu
+  YOK (sessiz eksik) — öneri eslestirme.js ~satır 354: belge birimi 'diger' + kural yok + aiCarpan==1 + adet malzeme → carpan=null (barista sayar);
+  (2) belge no hanesi okuma hataları (S→5, bir sıfır düşmesi) — içerik izi (sql/33) mükerrer korumasını sürdürür; (3) Macromax
+  miktar/tutar yanlış (09); (4) 08 genel toplam 887,71→867,71 (uygulamanın toplam kontrolü yakalar); (5) ŞOK "Mis Dilimli" adında
+  "peynir" yok → takip dışı (tasarım gereği, sessiz). Test düzeneği kaynaklı olanlar: KDV hariç tutarın dahile çevrilmemesi (09 tutarları),
+  02'deki tek 180 sn zaman aşımı (sunucu 9 sn'de okumuştu; CLI takıldı).
+
 ## Starbucks Marmaris 28 Eki–15 Kas simülasyonu (2026-11-15) · CANLIDA (veri), kod değişmedi
 - Yedek: Desktop\kahve-stok-yedek\2026-11-15_starbucks-simulasyon-oncesi. Betikler: .local-work/demo-hafta3/ (uret3.py →
   oku3.mjs [uygulamanın Excel okuyucusu] → sql_yap3.py → yukle3.py [depo] → yukle.sql; deger.sql = patron görünümü).
