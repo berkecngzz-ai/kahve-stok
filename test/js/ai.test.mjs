@@ -152,3 +152,18 @@ test('tedarikçi adındaki kelime marka sayılır, -lu/-li ile bitse de türev d
   // kural yolunda da (AI'sız okuma) aynı
   assert.equal(siniflandir({ metin: 'ANADOLU SÜT 1 LT', miktar: 12, birim: 'adet' }, { ...ctx, tedarikciAdi: 'Anadolu Süt Dağıtım' }).sinif, 'soru');
 });
+
+test('Koli içi okunamayan satır sessizce 1 sayılmaz: barista sayar (Söylemezoğlu "685X4")', () => {
+  const su = [{ id: 'su', ad: 'Su', birim: 'adet', aktif: true }];
+  const c = { malzemeler: su, defter: [], tedarikciAnahtar: '' };
+  const k = aiIleSiniflandir({ metin: 'MADEN SUYU 685X4', miktar: 5, birim: 'diger', ai: e('malzeme', 'su', 5, 0.9) }, c);
+  assert.equal(k.sinif, 'soru');
+  assert.equal(k.carpan, null);            // 5 şişe yazılmaz
+  assert.equal(k.say, true);               // barista geleni sayar
+  // AI koli içini biliyorsa (çarpan > 1) eskisi gibi çalışır
+  const k2 = aiIleSiniflandir({ metin: 'MADEN SUYU KOLI', miktar: 5, birim: 'diger', ai: e('malzeme', 'su', 120, 0.9) }, c);
+  assert.equal(k2.carpan, 24);
+  // belge birimi adetse (gerçekten adet) etkilenmez
+  const k3 = aiIleSiniflandir({ metin: 'MADEN SUYU', miktar: 5, birim: 'adet', ai: e('malzeme', 'su', 5, 0.9) }, c);
+  assert.equal(k3.carpan, 1);
+});

@@ -350,6 +350,9 @@ export function aiIleSiniflandir(satir, ctx) {
   }
   // AI emin değil, düşük güven ya da baş isim yok: yine barista sayar (değilse "değil" der).
   // Çarpan yalnızca kuralla ya da AI'nın hesabıyla bulunduysa kullanılır; ikisi de yoksa stok biriminde sayılır.
+  // Belge birimi koli/paket ('diger'), kural yok, AI da içinde kaç tane olduğunu bulamamış (çarpan ≤ 1): "25 koli" 25 şişe
+  // sayılırdı ("685X4" gibi okunamayan koli içi sessizce 5 şişe yazmıştı). Çarpan boş kalır: barista geleni sayar.
+  if (birim === 'diger' && m.birim === 'adet' && kural == null && !(aiCarpan > 1)) return soruSor(m, null, { kaynak: 'ai', say: true });
   const carpan = kural ?? (aiCarpan ? Math.round(aiCarpan * 1e6) / 1e6 : null);
   return soruSor(m, carpan, { kaynak: 'ai' });
 }

@@ -7,7 +7,7 @@
 // AI'nın okuduğu toplamlarla karşılaştırılır, tutmazsa okuma şüphelidir. İrsaliye karekodunda tutar yoktur.
 // Çözme cihazda yapılır (internet ve AI yok).
 
-import { kdvOranlariniCoz } from './okuma.js?v=d05ced2f53';
+import { kdvOranlariniCoz } from './okuma.js?v=e73d108b6d';
 
 const ETTN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
