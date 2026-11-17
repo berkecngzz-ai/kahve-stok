@@ -24,12 +24,12 @@ Model değiştirmek için: `READER_MODEL=claude-haiku-5-5 python run_test.py`
 - **Her kalem:** bulundu mu, stok/gider sınıfı, miktar, stok miktarı (birim serbest), tutar (±%2)
 - **Tuzaklar** (gerçek hayatta stok hesabını bozan durumlar):
   - "750 ML\*12" koli çarpanı → 4 şişe olmalı, 48 değil
-  - Söylemezoğlu 25 koli → 360 şişe
+  - Tedarikçi I 25 koli → 360 şişe
   - Jüt ip / reklam / temizlik stoğa girmemeli
   - "MEYVE 400 TL" → kg sorulmalı
-  - ŞOK peynirde gramaj yok → işaretlenmeli
+  - Tedarikçi F peynirde gramaj yok → işaretlenmeli
   - İrsaliyede fiyat uydurulmamalı
-  - Sütaş 180 L süt doğru okunmalı
+  - Tedarikçi A 180 L süt doğru okunmalı
 
 ## Okuyucu çıktı şeması
 `scorer.py` dosyasının başında. Kendi okuyucun farklı şema dönüyorsa `readers/command_reader.py` içinde dönüştür.

@@ -7,13 +7,13 @@ GT = {d["dosya"]: d for d in json.load(open(os.path.join(os.path.dirname(__file_
 def read(image_path):
     d = copy.deepcopy(GT[os.path.basename(image_path)])
     f = d["dosya"]
-    if f == "05_arslanlar_fatura.jpg":           # koli çarpanı hatası
+    if f == "05_tedarikci_e_fatura.jpg":           # koli çarpanı hatası
         for k in d["kalemler"]:
             k["miktar"] *= 12; k["stok_miktar"] *= 12
-    if f == "07_manav_fis.jpg":                  # belirsizliği görmezden gelir
+    if f == "07_tedarikci_g_fis.jpg":                  # belirsizliği görmezden gelir
         d["kalemler"][0].update(miktar=1, stok_miktar=1, belirsiz=None)
-    if f == "09_metro_5669.jpg":                 # temizliği stok sanar
+    if f == "09_tedarikci_h_belge2.jpg":                 # temizliği stok sanar
         d["kalemler"][5]["sinif"] = "stok"
-    if f == "02_smb_temmuz.jpg":                 # toplamı yanlış okur
+    if f == "02_tedarikci_b_temmuz.jpg":                 # toplamı yanlış okur
         d["genel_toplam"] = 9036.99
     return d

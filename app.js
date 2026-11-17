@@ -1,12 +1,12 @@
-import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=d05ced2f53';
+import { readSalesFile, salesFileKind, KurulumIsler } from './satis-okuma.js?v=e73d108b6d';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=d05ced2f53';
-import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=d05ced2f53';
-import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=d05ced2f53';
-import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=d05ced2f53';
-import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=d05ced2f53';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=e73d108b6d';
+import { dosyaTuru, dosyaOzeti, xmlDosyaOku, pdfOku, pdfIlkSayfa, fotolariOku, toplamKontrol, aiSonucunuCevir } from './okuma.js?v=e73d108b6d';
+import { anahtar, aiIleSiniflandir, carpanBul } from './eslestirme.js?v=e73d108b6d';
+import { karekodOnce, karekodBul, karekodlaKarsilastir, karekoduUygula } from './karekod.js?v=e73d108b6d';
+import { ayniMiktar, teslimatKarari, satirEsle, kesinKaynak } from './mal-kabul.js?v=e73d108b6d';
 import { okunurMiktar, tlYaz, miktarTl, acikDurumu, acikOrani, donemYaz, yeterDurumu, trendSvg, raporCsv,
-  sayimGecikti, farkDurumu, gunTahminiVar, satisEksik, farkSatiri, yuzdeEki, yaklasikTl } from './patron-hesap.js?v=d05ced2f53';
+  sayimGecikti, farkDurumu, gunTahminiVar, satisEksik, farkSatiri, yuzdeEki, yaklasikTl } from './patron-hesap.js?v=e73d108b6d';
 
 const app = document.getElementById('app');
 // Patron ekranında stok farkı eksi işaretsiz yazılır (−209 TL yerine "209 TL fark"). "Kayıp" denmez: fark okuma ya da
@@ -3290,7 +3290,7 @@ async function goster() {
 // GitHub Pages dosyaları telefonda ~10 dakika önbellekte tutar. Yayınlanan sürüm surum.json'da (scripts/surum.mjs
 // yazar); önbelleksiz okunur. Açılışta yeni sürüm varsa sayfa yeni sürümün adresiyle açılır (o adres önbellekte yoktur).
 // Uygulama arka plandan dönünce yeni sürüm varsa kimsenin işini yarıda kesmemek için yalnız "Güncelle" düğmesi çıkar.
-const SURUM = 'd05ced2f53';
+const SURUM = 'e73d108b6d';
 async function yeniSurum() {
   try {
     const r = await fetch(`surum.json?t=${Date.now()}`, { cache: 'no-store' });

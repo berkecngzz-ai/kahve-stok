@@ -1,20 +1,22 @@
 # İlerleme notları
 
 ## Pilot öncesi: sql/40 CANLIDA + fatura okuma testi (2026-11-17)
-- ⚠️ DİKKAT: depo HERKESE AÇIK (GitHub Pages). fatura-test/data/images/ gerçek fatura fotoğrafları içeriyor (tedarikçi adı, VKN, fatura no).
-  Yerel commit var, PUSH EDİLMEDİ. Push'tan önce: depoyu private yap ya da bu klasörü git'ten çıkar (karar kullanıcıda).
+- Depo açık kalıyor (GitHub Pages). Gerçek fatura fotoğrafları ve doğru-cevap dosyası (fatura-test/data/) git'e GİRMEZ (.gitignore);
+  tedarikçi adları raporlarda genelleştirildi (Tedarikçi A, B…).
+- Koli içi okunamayan satırda (ör. "685X4") çarpan boş kalır, barista sayar (eslestirme.js; test eklendi). YAYINDA.
+- Starbucks demo: anahtar hatasıyla düşen satış satırları yeniden işlendi (19 gün, yedek: .local-work/yedek/). 27 Eki–3 Kas açığı 4.584 → 1.191 TL.
+- sql/41 (aynı gün aynı fiş no için saat): İPTAL — yapılmayacak. Çekirdek kural: her gün için tek satış kaydı, çakışan gün yüklenmez.
 - sql/40 (CANLIDA): satış satırı anahtarına tarih eklendi; 9.885 mevcut satır taşındı (0 eski biçim kaldı). Canlıda rollback'li doğrulama:
   iki FARKLI günün Z raporu (ikisinde de fiş 1–2) ikisi de sayıldı. SINIR: AYNI gün + aynı fiş no + aynı ürün (iki kasa / vardiya
-  başı Z) hâlâ mükerrer sayılır — sql/41 önerisi: anahtara saat (zaman) eklemek (saatsiz raporlarda yine çakışır; farklı biçimde
-  yüklenen aynı rapor çift sayılma riski). Karar bekliyor. Starbucks'ta düşen 8 günün (28 Eki–3 Kas, 15 Kas) yeniden işlenmesi YAPILMADI.
+  başı Z) mükerrer sayılır — sql/41 İPTAL (günlük Z raporu akışı zaten sökülüyor, yerine "tek tarih tek kayıt" gelecek).
 - fatura-test/ (11 gerçek belge, elle doğrulanmış cevap): mock puanlayıcı 4 bilinçli hatayı yakaladı. Canlı okuyucu (fatura-oku,
   gpt-4.1-mini) 3 tur × 11 = 33 okuma, ≈ $0,09, belge başı 13–31 sn. Bağlayıcı: fatura-test/readers/uygulama_okuyucu.mjs +
   fatura-test/canli_test.sh (test yolunu açar/kapatır, görüntüleri siler); yeniden puanlama (harcamasız): yeniden_puanla.py.
   Özet: fatura-test/rapor-canli-3tur.txt (ham sonuçlar results/ içinde, git dışı). Genel %91,4 (birim dönüşümü sonrası).
-  Gerçek bulgular: (1) Söylemezoğlu "685X4" koli içi okunamadı → uygulama carpan=1 verip 120 yerine 5 şişe yazıyor, sayım sorusu
+  Gerçek bulgular: (1) Tedarikçi I "685X4" koli içi okunamadı → uygulama carpan=1 verip 120 yerine 5 şişe yazıyor, sayım sorusu
   YOK (sessiz eksik) — öneri eslestirme.js ~satır 354: belge birimi 'diger' + kural yok + aiCarpan==1 + adet malzeme → carpan=null (barista sayar);
-  (2) belge no hanesi okuma hataları (S→5, bir sıfır düşmesi) — içerik izi (sql/33) mükerrer korumasını sürdürür; (3) Macromax
-  miktar/tutar yanlış (09); (4) 08 genel toplam 887,71→867,71 (uygulamanın toplam kontrolü yakalar); (5) ŞOK "Mis Dilimli" adında
+  (2) belge no hanesi okuma hataları (S→5, bir sıfır düşmesi) — içerik izi (sql/33) mükerrer korumasını sürdürür; (3) Mikrofiber bez
+  miktar/tutar yanlış (09); (4) 08 genel toplam 887,71→867,71 (uygulamanın toplam kontrolü yakalar); (5) Tedarikçi F "Mis Dilimli" adında
   "peynir" yok → takip dışı (tasarım gereği, sessiz). Test düzeneği kaynaklı olanlar: KDV hariç tutarın dahile çevrilmemesi (09 tutarları),
   02'deki tek 180 sn zaman aşımı (sunucu 9 sn'de okumuştu; CLI takıldı).
 
@@ -51,7 +53,7 @@
 - "Yapman gerekenler"de malzeme farkı satırları kaldırıldı (yalnız eylemler). Stok listesi: ad ana yazı renginde, kart üstü boşluk yok.
   Rapor kartındaki amber kutunun yazısı açık temada okunmuyordu (eski koyu kart rengi) → düzeltildi.
 - Ekran görüntüleri: ekran-goruntuleri/v2/20-*, 21-*, 22-* (yerel demo; başsız Chrome: .local-work/cekim.mjs).
-- Selen'in 180 L süt irsaliyesi (Sütaş, 15 Kas 18:47) stoğa girmedi: özet ekranında "Bu ürün Barista süt değil"e basılmış
+- Selen'in 180 L süt irsaliyesi (Tedarikçi A, 15 Kas 18:47) stoğa girmedi: özet ekranında "Bu ürün Barista süt değil"e basılmış
   (satır "SÜT YARIM YAĞLI 1 L") → satır sessizce düşüldü, boş irsaliye kaydedildi. Açık karar: "değil" satırı sessizce
   atmak yerine kuruluma (patrona) düşsün mü + 180 L canlıya nasıl girilsin.
 - Starbucks 15 Kas demo sayımı (hepsi 20 L idi) sayim_duzelt ile gerçekçi değerlere çekildi (CANLIDA; süt 14 L, espresso 650 g…;
@@ -90,8 +92,8 @@
   >5 nötr; koyu temada kırmızı zemin düzeltildi.
 
 ## Gerçek tedarikçi belgeleri testi (2026-11-13) · CANLIDA
-- 5 gerçek belge (Metro termal e-fatura, SMB/Algida dondurma e-faturası, Sütaş e-irsaliye, Arslanlar DVG şurup e-faturası,
-  Söylemezoğlu e-irsaliye). Yeni test mekânı "Colombia Coffee TEST" (yerel). İlk durum: AI eşleştirme 9/19; irsaliye hiç
+- 5 gerçek belge (Tedarikçi H termal e-fatura, Tedarikçi B dondurma e-faturası, Tedarikçi A e-irsaliye, Tedarikçi E DVG şurup e-faturası,
+  Tedarikçi I e-irsaliye). Yeni test mekânı "Colombia Coffee TEST" (yerel). İlk durum: AI eşleştirme 9/19; irsaliye hiç
   kaydedilemiyordu ("fatura değil" / "en alttaki toplamı yaz"); çamaşır suyu ve maden suyu "Kaynak suyu"na, KAYMAK dondurma
   KAYNAK suyuna gidiyordu; dondurmalar takip dışı sayılıyordu (AI "aromalı süt ≠ süt" kuralını "Antep fıstıklı dondurma ≠
   Dondurma" diye genelliyordu).
@@ -540,7 +542,7 @@ programı çıktıları; gerçek (sentetik olmayan) fatura fotoğrafları.
    public.acik_trendi(int);`, 13/14/15 için önceki işlev metinleri `kahve-stok-yedek` yedeğinde.
 
 ## İlk GERÇEK fiş testi — 2026-10-23 (kod değişmedi, gpt-4.1-mini, 0,0026 $)
-- Set: `Desktop\test-faturalar-gercek` (kullanıcının telefonla çektiği gerçek fişler; G01 = ŞOK market fişi). Fişler
+- Set: `Desktop\test-faturalar-gercek` (kullanıcının telefonla çektiği gerçek fişler; G01 = Tedarikçi F market fişi). Fişler
   biriktikçe buraya eklenir; kod ölçüm bitene kadar dondurulur. Test için fişteki 3 ürün malzeme tanımlandı.
 - G01: 8 satırdan 5 doğru, 2 kurulum, 1 yanlış. Tedarikçi, VKN, tarih, KDV 46,60, genel toplam 427,42 doğru; fiş no okunmadı.
 - Bulgu 1 (yanlış): "1,033Kg X 99,00" çarpanı AI'da ürün adına yapıştı ("1,033KG TADPİ PİLİÇ BAGET KG") → eşleştirme

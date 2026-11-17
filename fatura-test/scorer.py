@@ -39,7 +39,7 @@ def num_eq(a, b, tol_rel=0.0, tol_abs=0.011):
 
 
 def aggregate(items):
-    """Aynı ürün birden çok satırda geldiyse (ör. ŞOK) topla."""
+    """Aynı ürün birden çok satırda geldiyse (ör. Tedarikçi F) topla."""
     out = {}
     for it in items:
         k = norm(it.get("urun"))
@@ -143,30 +143,30 @@ def traps(gt_by_file, pred_by_file):
     def t(name, ok, detail):
         res.append({"tuzak": name, "gecti": bool(ok), "detay": detail})
 
-    a = find("05_arslanlar_fatura.jpg", "almond")
-    t("Koli çarpanı: Arslanlar '750ML*12' → 4 şişe (48 değil)",
+    a = find("05_tedarikci_e_fatura.jpg", "almond")
+    t("Koli çarpanı: Tedarikçi E '750ML*12' → 4 şişe (48 değil)",
       a and num_eq(a.get("miktar"), 4) and a.get("stok_miktar") not in (48, 36000),
       a and {"miktar": a.get("miktar"), "stok_miktar": a.get("stok_miktar")})
 
-    s = items("10_soylemezoglu_irsaliye.jpg")
+    s = items("10_tedarikci_i_irsaliye.jpg")
     tot = sum(float(i.get("stok_miktar") or 0) for i in s)
-    t("Koli çarpanı: Söylemezoğlu 25 koli → 360 şişe", num_eq(tot, 360), {"toplam_sise": tot})
+    t("Koli çarpanı: Tedarikçi I 25 koli → 360 şişe", num_eq(tot, 360), {"toplam_sise": tot})
 
     gider_ok = all(i.get("sinif") == "gider" for f in
-                   ("03_salipazari_fis.jpg", "04_matbaa_fis.jpg", "09_metro_5669.jpg") for i in items(f)) \
-        and all(items(f) for f in ("03_salipazari_fis.jpg", "04_matbaa_fis.jpg", "09_metro_5669.jpg"))
+                   ("03_tedarikci_c_fis.jpg", "04_tedarikci_d_fis.jpg", "09_tedarikci_h_belge2.jpg") for i in items(f)) \
+        and all(items(f) for f in ("03_tedarikci_c_fis.jpg", "04_tedarikci_d_fis.jpg", "09_tedarikci_h_belge2.jpg"))
     t("Gider ayrımı: jüt ip, reklam, temizlik stoğa girmiyor", gider_ok, None)
 
-    m = find("07_manav_fis.jpg", "meyve")
+    m = find("07_tedarikci_g_fis.jpg", "meyve")
     t("Belirsiz kalem: 'MEYVE 400 TL' için kg soruluyor",
       m and m.get("belirsiz") and m.get("stok_miktar") in (None, 0), m)
 
-    sk = find("06_sok_fis.jpg", "mis")
-    t("Gramaj yok: ŞOK Mis peynir işaretleniyor", sk and sk.get("belirsiz"), sk and sk.get("belirsiz"))
+    sk = find("06_tedarikci_f_fis.jpg", "mis")
+    t("Gramaj yok: Tedarikçi F Mis peynir işaretleniyor", sk and sk.get("belirsiz"), sk and sk.get("belirsiz"))
 
-    inv = [i.get("tutar") for f in ("01_sutas_irsaliye.jpg", "10_soylemezoglu_irsaliye.jpg") for i in items(f)]
+    inv = [i.get("tutar") for f in ("01_tedarikci_a_irsaliye.jpg", "10_tedarikci_i_irsaliye.jpg") for i in items(f)]
     t("İrsaliye: fiyat uydurulmuyor", inv and all(x in (None, 0, 0.0) for x in inv), inv)
 
-    su = find("01_sutas_irsaliye.jpg", "sut")
-    t("Süt: Sütaş 180 L doğru okunuyor", su and num_eq(su.get("stok_miktar"), 180), su and su.get("stok_miktar"))
+    su = find("01_tedarikci_a_irsaliye.jpg", "sut")
+    t("Süt: Tedarikçi A 180 L doğru okunuyor", su and num_eq(su.get("stok_miktar"), 180), su and su.get("stok_miktar"))
     return res
